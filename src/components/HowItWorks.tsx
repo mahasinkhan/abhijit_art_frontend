@@ -3,22 +3,31 @@ import { motion } from "framer-motion";
 
 /* ══════════════════════════════════════════════════════════════
    ABHIJIT ART — How It Works (live / auto-advancing)
-   Rose-gold theme (light pink + golden), slower cycle, full-width.
+   Restyled to the About page system: ivory canvas, terracotta =
+   the step happening now, gold = steps already done.
    Drop in at: src/components/HowItWorks.tsx
    ══════════════════════════════════════════════════════════════ */
 
-const INK = "#141419";
-const MUTED = "#6c6c78";
-const GOLD = "#c2974a";            // golden accent (eyebrow, progress, chevrons)
-const PROGRESS = "#caa05a";        // golden connector fill
-const RING = "#ec92ad";            // pink pulse ring
-const LINE = "#efe2e8";            // soft pink-tinted dashed line
-const FILL = "linear-gradient(145deg, #f4a9c4 0%, #cda14f 100%)"; // rose-gold badge
-const TODO_BG = "#fbeef2";         // light pink (upcoming)
-const TODO_FG = "#dcb0c0";         // muted rose icon (upcoming)
-const TODO_TITLE = "#c9aeb6";      // muted rose title (upcoming)
+const IVORY = "#f7f3ea";      // page canvas (matches Home hero, seamless join)
+const IVORY_2 = "#f2ebdd";    // upcoming-step badge
+const CARD = "#fffdf8";
+const INK = "#2a231d";
+const MUTED = "#7b7167";
+const TERRA = "#d9542f";      // current step
+const TERRA_DK = "#b23f1e";
+const GOLD = "#c2974a";       // completed steps + connector fill
+const GOLD_DK = "#a87f38";
+const LINE = "#e7dcc8";
 
-const STEP_MS = 3200; // time each step stays active (slower)
+const SERIF = "'Fraunces', 'Playfair Display', serif";
+const SANS = "'DM Sans', system-ui, sans-serif";
+
+const FILL_ACTIVE = `linear-gradient(145deg, ${TERRA} 0%, ${TERRA_DK} 100%)`;
+const FILL_DONE = `linear-gradient(145deg, ${GOLD} 0%, ${GOLD_DK} 100%)`;
+const TODO_FG = "#c0b39c";    // muted sand icon (upcoming)
+const TODO_TITLE = "#a99c86"; // muted sand title (upcoming)
+
+const STEP_MS = 3200; // time each step stays active
 
 type IcoProps = { size?: number; stroke?: number };
 const base = (s: number, w: number) => ({
@@ -26,27 +35,27 @@ const base = (s: number, w: number) => ({
   stroke: "currentColor", strokeWidth: w, strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
 });
 
-const FileIcon = ({ size = 30, stroke = 2 }: IcoProps) => (
+const FileIcon = ({ size = 30, stroke = 1.8 }: IcoProps) => (
   <svg {...base(size, stroke)}>
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
     <polyline points="14 2 14 8 20 8" />
     <line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="16" y2="17" /><line x1="8" y1="9" x2="10" y2="9" />
   </svg>
 );
-const CloudUpIcon = ({ size = 30, stroke = 2 }: IcoProps) => (
+const CloudUpIcon = ({ size = 30, stroke = 1.8 }: IcoProps) => (
   <svg {...base(size, stroke)}>
     <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 4 16.25" />
     <polyline points="16 16 12 12 8 16" /><line x1="12" y1="12" x2="12" y2="21" />
   </svg>
 );
-const ClipCheckIcon = ({ size = 30, stroke = 2 }: IcoProps) => (
+const ClipCheckIcon = ({ size = 30, stroke = 1.8 }: IcoProps) => (
   <svg {...base(size, stroke)}>
     <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
     <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
     <path d="m9 14 2 2 4-4" />
   </svg>
 );
-const TruckIcon = ({ size = 30, stroke = 2 }: IcoProps) => (
+const TruckIcon = ({ size = 30, stroke = 1.8 }: IcoProps) => (
   <svg {...base(size, stroke)}>
     <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
     <path d="M15 18H9" />
@@ -54,10 +63,10 @@ const TruckIcon = ({ size = 30, stroke = 2 }: IcoProps) => (
     <circle cx="17" cy="18" r="2" /><circle cx="7" cy="18" r="2" />
   </svg>
 );
-const CheckIcon = ({ size = 30, stroke = 2.6 }: IcoProps) => (
+const CheckIcon = ({ size = 30, stroke = 2.4 }: IcoProps) => (
   <svg {...base(size, stroke)}><polyline points="20 6 9 17 4 12" /></svg>
 );
-const ChevIcon = ({ size = 15, stroke = 2.4 }: IcoProps) => (
+const ChevIcon = ({ size = 15, stroke = 2.2 }: IcoProps) => (
   <svg {...base(size, stroke)}><polyline points="9 18 15 12 9 6" /></svg>
 );
 
@@ -81,7 +90,10 @@ export default function HowItWorks() {
   return (
     <section style={hw.section}>
       <div style={hw.inner}>
-        <p style={hw.eyebrow}>HOW IT WORKS</p>
+        <p style={hw.eyebrow}>
+          <span style={hw.eyeDash} />
+          <span>How It Works</span>
+        </p>
         <h2 style={hw.title}>From idea to delivery in four simple steps</h2>
 
         <motion.div
@@ -103,8 +115,8 @@ export default function HowItWorks() {
               style={{
                 left: `${25 + i * 25}%`,
                 color: active > i ? "#fff" : GOLD,
-                background: active > i ? PROGRESS : "#fff",
-                borderColor: active > i ? PROGRESS : LINE,
+                background: active > i ? GOLD : CARD,
+                borderColor: active > i ? GOLD : LINE,
               }}
             >
               <ChevIcon />
@@ -120,12 +132,13 @@ export default function HowItWorks() {
                 <div
                   className={`hw-badge ${stage === "active" ? "is-active" : ""}`}
                   style={{
-                    background: filled ? FILL : TODO_BG,
+                    background: stage === "active" ? FILL_ACTIVE : stage === "done" ? FILL_DONE : IVORY_2,
                     color: filled ? "#fff" : TODO_FG,
+                    border: stage === "todo" ? `1px solid ${LINE}` : "1px solid transparent",
                     boxShadow: stage === "active"
-                      ? `0 0 0 9px rgba(236,146,173,.16), 0 16px 34px rgba(202,160,90,.32)`
+                      ? `0 0 0 9px rgba(217,84,47,.10), 0 16px 34px rgba(217,84,47,.26)`
                       : stage === "done"
-                        ? `0 8px 20px rgba(202,160,90,.22)`
+                        ? `0 8px 20px rgba(194,151,74,.26)`
                         : "none",
                   }}
                 >
@@ -151,7 +164,7 @@ export default function HowItWorks() {
         }
         .hw-progress {
           position: absolute; top: 45px; left: 12.5%; height: 3px; border-radius: 3px; z-index: 0;
-          background: ${PROGRESS};
+          background: ${GOLD};
           transition: width .8s cubic-bezier(.4,0,.2,1);
         }
         .hw-chev {
@@ -159,22 +172,23 @@ export default function HowItWorks() {
           width: 30px; height: 30px; border-radius: 50%;
           border: 1px solid ${LINE};
           display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 4px 12px rgba(20,20,25,.06); z-index: 2;
+          box-shadow: 0 4px 12px rgba(42,35,29,.07); z-index: 2;
           transition: background .55s ease, color .55s ease, border-color .55s ease;
         }
         .hw-step { position: relative; z-index: 1; text-align: center; padding: 0 12px; min-width: 0; }
         .hw-badge {
           position: relative; width: 92px; height: 92px; border-radius: 50%;
           margin: 0 auto 18px; display: flex; align-items: center; justify-content: center;
-          transition: color .55s ease, box-shadow .55s ease, transform .55s cubic-bezier(.2,.8,.2,1);
+          box-sizing: border-box;
+          transition: color .55s ease, box-shadow .55s ease, background .55s ease, transform .55s cubic-bezier(.2,.8,.2,1);
         }
         .hw-badge.is-active { transform: scale(1.07); }
         .hw-ring {
-          position: absolute; inset: 0; border-radius: 50%; border: 2px solid ${RING};
+          position: absolute; inset: -1px; border-radius: 50%; border: 2px solid ${TERRA};
           animation: hwPulse 2.6s cubic-bezier(.4,0,.2,1) infinite;
         }
         @keyframes hwPulse {
-          0%   { transform: scale(.92); opacity: .55; }
+          0%   { transform: scale(.92); opacity: .5; }
           70%  { opacity: 0; }
           100% { transform: scale(1.55); opacity: 0; }
         }
@@ -196,10 +210,15 @@ export default function HowItWorks() {
 }
 
 const hw: Record<string, React.CSSProperties> = {
-  section: { background: "#ffffff", padding: "84px 0", position: "relative", overflow: "hidden" },
+  section: { background: IVORY, padding: "88px 0", position: "relative", overflow: "hidden", fontFamily: SANS },
   inner: { maxWidth: 1600, margin: "0 auto", padding: "0 clamp(16px, 3vw, 40px)", textAlign: "center", boxSizing: "border-box" },
-  eyebrow: { color: GOLD, fontWeight: 800, letterSpacing: 3, fontSize: 12, margin: "0 0 10px" },
-  title: { fontFamily: "'Playfair Display', serif", fontSize: "clamp(26px, 3.4vw, 38px)", fontWeight: 800, color: INK, margin: 0, letterSpacing: -0.4 },
-  stepTitle: { fontSize: 18, fontWeight: 700, margin: "0 0 6px", transition: "color .55s ease" },
-  stepSub: { fontSize: 13.5, color: MUTED, lineHeight: 1.55, margin: 0, maxWidth: 190, marginLeft: "auto", marginRight: "auto" },
+  eyebrow: {
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 14,
+    color: TERRA, fontFamily: SANS, fontWeight: 700, letterSpacing: 2.6,
+    fontSize: 12, textTransform: "uppercase", margin: "0 0 16px",
+  },
+  eyeDash: { width: 34, height: 2, background: TERRA, borderRadius: 2, display: "block", flexShrink: 0 },
+  title: { fontFamily: SERIF, fontSize: "clamp(28px, 3.4vw, 42px)", fontWeight: 700, color: INK, margin: 0, letterSpacing: -0.8, lineHeight: 1.12 },
+  stepTitle: { fontFamily: SERIF, fontSize: 19, fontWeight: 700, margin: "0 0 6px", letterSpacing: -0.3, transition: "color .55s ease" },
+  stepSub: { fontSize: 13.5, color: MUTED, lineHeight: 1.6, margin: 0, maxWidth: 195, marginLeft: "auto", marginRight: "auto" },
 };

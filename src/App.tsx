@@ -8,17 +8,20 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Services from "./pages/Services";
-import Products from "./pages/Products";
 import About from "./pages/About";
 import SoftwareService from "./pages/SoftwareService";
 import DigitalMarketing from "./pages/DigitalMarketing";
 import MyBookings from "./pages/MyBookings";
+import BookingDetails from "./pages/BookingDetails";
 import AdminDashboard from "./pages/AdminDashboard";
 
-/* Renders the app chrome (header/footer/chat) on every page except the dashboard. */
+/* Renders the app chrome (header/footer/chat) on every page except the dashboard and auth pages. */
 function Shell() {
   const location = useLocation();
-  const bare = location.pathname.startsWith("/admin"); // dashboard = no marketing chrome
+  // pages that render standalone — no header / footer / chat widget
+  const bareRoutes = ["/login", "/register"];
+  const bare =
+    location.pathname.startsWith("/admin") || bareRoutes.includes(location.pathname);
 
   return (
     <>
@@ -29,11 +32,11 @@ function Shell() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/services" element={<Services />} />
-          <Route path="/products" element={<Products />} />
           <Route path="/about" element={<About />} />
           <Route path="/software-service" element={<SoftwareService />} />
           <Route path="/digital-marketing" element={<DigitalMarketing />} />
           <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+          <Route path="/my-bookings/:id" element={<ProtectedRoute><BookingDetails /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
         </Routes>
       </main>

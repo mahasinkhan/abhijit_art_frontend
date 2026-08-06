@@ -352,7 +352,7 @@ export default function About() {
         @media (max-width: 920px) { .ab-dots-corner { width: 140px; height: 90px; top: 16px; } }
 
         .ab-accent-rule {
-          display: block; width: 64px; height: 3px; border-radius: 2px;
+          display: block; width: 64px; height: 3px; border-radius: 3px;
           margin: 18px 0 6px;
           background: linear-gradient(90deg, ${ACCENT}, ${GOLD});
         }
@@ -363,14 +363,14 @@ export default function About() {
         .ab-eyebrow-line { color: ${ACCENT}; font-weight: 800; letter-spacing: 3px; font-size: 13px; margin: 0 0 20px; position: relative; padding-bottom: 12px; }
         .ab-eyebrow-line::after { content: ""; position: absolute; left: 0; bottom: 0; width: 46px; height: 3px; border-radius: 2px; background: ${ACCENT}; }
         .ab-hero-btns { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 20px; }
-        .ab-hero-media { aspect-ratio: 5 / 4; width: 100%; border-radius: 18px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 70% 30%, #f6dcc6 0%, #f7f3ea 70%); }
+        .ab-hero-media { aspect-ratio: 5 / 4; width: 100%; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 70% 30%, #f6dcc6 0%, #f7f3ea 70%); }
         @media (max-width: 920px) { .ab-hero-media { max-width: 560px; margin: 0 auto; aspect-ratio: 4 / 3; } }
 
         .ab-statbar {
           position: relative; overflow: hidden;
           display: grid; grid-template-columns: repeat(4, 1fr);
           background: linear-gradient(180deg, #fffefb 0%, ${CREAM} 100%);
-          border: 1px solid ${LINE}; border-radius: 20px;
+          border: 1px solid ${LINE}; border-radius: 6px;
           padding: 14px 12px; margin-top: 24px;
           box-shadow: 0 10px 30px rgba(42,35,29,0.06), 0 0 0 1px rgba(217,84,47,0.04) inset, 0 0 22px rgba(217,84,47,0.05);
           transition: box-shadow .4s ease, transform .4s ease;
@@ -390,7 +390,7 @@ export default function About() {
         .ab-trusted {
           position: relative; display: flex; align-items: center; gap: 28px; flex-wrap: wrap;
           background: linear-gradient(180deg, #fffefb 0%, ${CREAM} 100%);
-          border: 1px solid ${LINE}; border-radius: 20px; padding: 14px 28px; margin-top: 18px;
+          border: 1px solid ${LINE}; border-radius: 6px; padding: 14px 28px; margin-top: 18px;
           box-shadow: 0 10px 28px rgba(42,35,29,0.05), 0 0 18px rgba(194,151,74,0.05);
           transition: box-shadow .4s ease, transform .4s ease;
         }
@@ -460,8 +460,8 @@ const s: Record<string, React.CSSProperties> = {
   heroAccent: { backgroundImage: `linear-gradient(120deg, ${ACCENT} 0%, ${GOLD} 100%)`, WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent" },
   heroP: { color: MUTED, fontSize: 15, lineHeight: 1.6, margin: "0 0 10px", maxWidth: 560 },
   hl: { color: ACCENT, fontWeight: 800 },
-  btnSolid: { display: "inline-flex", alignItems: "center", background: ACCENT, color: "#fff", padding: "14px 26px", borderRadius: 12, fontWeight: 800, fontSize: 13, letterSpacing: 1, textDecoration: "none", boxShadow: `0 10px 24px ${ACCENT}40` },
-  btnOutline: { display: "inline-flex", alignItems: "center", background: "transparent", color: ACCENT_DK, padding: "14px 26px", borderRadius: 12, fontWeight: 800, fontSize: 13, letterSpacing: 1, textDecoration: "none", border: `1.5px solid ${ACCENT}` },
+  btnSolid: { display: "inline-flex", alignItems: "center", background: ACCENT, color: "#fff", padding: "14px 26px", borderRadius: 4, fontWeight: 800, fontSize: 13, letterSpacing: 1, textDecoration: "none", boxShadow: `0 10px 24px ${ACCENT}40` },
+  btnOutline: { display: "inline-flex", alignItems: "center", background: "transparent", color: ACCENT_DK, padding: "14px 26px", borderRadius: 4, fontWeight: 800, fontSize: 13, letterSpacing: 1, textDecoration: "none", border: `1.5px solid ${ACCENT}` },
   heroImg: { width: "100%", height: "100%", display: "block", objectFit: "contain" },
   statIco: { color: ACCENT, display: "inline-flex", flexShrink: 0 },
   statBig: { fontFamily: "'Fraunces', serif", fontSize: "clamp(24px, 3vw, 34px)", fontWeight: 800, color: ACCENT, lineHeight: 1 },
@@ -469,7 +469,7 @@ const s: Record<string, React.CSSProperties> = {
   trustIco: { color: "#8a7e72", display: "inline-flex" },
   trustLabel: { fontSize: 11, fontWeight: 700, color: "#6b6258", letterSpacing: 0.5, textTransform: "uppercase", textAlign: "center", lineHeight: 1.3 },
 
-  story: { background: CARD, border: `1px solid ${LINE}`, borderRadius: 22, padding: "42px clamp(28px, 4vw, 56px)", boxShadow: "0 8px 26px rgba(42,35,29,0.05)" },
+  story: { background: CARD, border: `1px solid ${LINE}`, borderRadius: 8, padding: "42px clamp(28px, 4vw, 56px)", boxShadow: "0 8px 26px rgba(42,35,29,0.05)" },
   storyHead: { fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: "clamp(22px, 3vw, 32px)", lineHeight: 1.2, margin: 0, color: INK },
   storyP: { color: MUTED, fontSize: 16, lineHeight: 1.8, margin: "0 0 14px" },
 
@@ -480,16 +480,16 @@ const s: Record<string, React.CSSProperties> = {
   tlTitle: { fontFamily: "'Fraunces', serif", fontSize: 21, fontWeight: 700, margin: "0 0 6px", color: INK },
   tlDesc: { fontSize: 14.5, color: MUTED, lineHeight: 1.65, margin: 0 },
 
-  svcCard: { background: CARD, border: `1px solid ${LINE}`, borderRadius: 16, padding: "24px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center", boxShadow: "0 6px 18px rgba(42,35,29,0.04)" },
+  svcCard: { background: CARD, border: `1px solid ${LINE}`, borderRadius: 6, padding: "24px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center", boxShadow: "0 6px 18px rgba(42,35,29,0.04)" },
   svcEmoji: { fontSize: 30, lineHeight: 1 },
   svcName: { fontSize: 14.5, fontWeight: 700, color: INK },
 
-  visitCard: { background: CREAM, border: `1px solid ${LINE}`, borderRadius: 22, padding: "34px clamp(28px, 3vw, 44px)", boxShadow: "0 6px 20px rgba(42,35,29,0.05)" },
+  visitCard: { background: CREAM, border: `1px solid ${LINE}`, borderRadius: 8, padding: "34px clamp(28px, 3vw, 44px)", boxShadow: "0 6px 20px rgba(42,35,29,0.05)" },
   visitHead: { fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 700, margin: "0 0 16px", color: ACCENT },
   visitLine: { color: MUTED, fontSize: 15.5, margin: "0 0 12px", lineHeight: 1.5 },
-  contactCard: { background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT_DK} 100%)`, borderRadius: 22, padding: "34px clamp(28px, 3vw, 44px)", color: "#fff", boxShadow: `0 18px 44px ${ACCENT}33` },
+  contactCard: { background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT_DK} 100%)`, borderRadius: 8, padding: "34px clamp(28px, 3vw, 44px)", color: "#fff", boxShadow: `0 18px 44px ${ACCENT}33` },
   contactHead: { fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 700, margin: "0 0 10px", color: "#fff" },
   contactSub: { color: "rgba(255,255,255,0.92)", fontSize: 15.5, lineHeight: 1.65, margin: "0 0 16px" },
   contactMail: { color: "#fff", fontWeight: 700, fontSize: 15.5, margin: "0 0 20px" },
-  cta: { display: "inline-block", background: "#fff", color: ACCENT_DK, padding: "12px 26px", borderRadius: 12, fontWeight: 800, fontSize: 15, textDecoration: "none", boxShadow: "0 8px 20px rgba(0,0,0,0.12)" },
+  cta: { display: "inline-block", background: "#fff", color: ACCENT_DK, padding: "12px 26px", borderRadius: 4, fontWeight: 800, fontSize: 15, textDecoration: "none", boxShadow: "0 8px 20px rgba(0,0,0,0.12)" },
 };
