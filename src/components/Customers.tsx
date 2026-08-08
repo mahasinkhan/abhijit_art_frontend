@@ -177,7 +177,7 @@ export default function Customers() {
       const params = new URLSearchParams();
       if (q.trim()) params.set("q", q.trim());
       if (source) params.set("source", source);
-      const { data } = await api.get(`/users?${params.toString()}`);
+      const { data } = await api.get(`/api/users?${params.toString()}`);
       setRows(data || []);
     } catch (e: any) {
       setError(e?.response?.data?.message || "Couldn't load customers.");
@@ -478,7 +478,7 @@ function CustomerDrawer({
     setErr("");
     try {
       if (editing) {
-        await api.patch(`/users/${customer!.id}`, f);
+        await api.patch(`/api/users/${customer!.id}`, f);
         onDone("Customer updated.");
       } else {
         await api.post("/api/users", f);
@@ -494,7 +494,7 @@ function CustomerDrawer({
     setBusy(true);
     setErr("");
     try {
-      await api.delete(`/users/${customer!.id}`);
+      await api.delete(`/api/users/${customer!.id}`);
       onDone("Customer deleted.");
     } catch (e: any) {
       setErr(e?.response?.data?.message || "Couldn't delete this customer.");
