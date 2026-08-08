@@ -481,7 +481,7 @@ function CustomerDrawer({
         await api.patch(`/users/${customer!.id}`, f);
         onDone("Customer updated.");
       } else {
-        await api.post("/users", f);
+        await api.post("/api/users", f);
         onDone("Walk-in customer added.");
       }
     } catch (e: any) {
@@ -601,7 +601,7 @@ function EmailDrawer({
     setBusy(true);
     setErr("");
     try {
-      const { data } = await api.post("/users/email", {
+      const { data } = await api.post("/api/users/email", {
         userIds: withEmail.map((r) => r.id),
         subject,
         body,

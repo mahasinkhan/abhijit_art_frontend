@@ -209,7 +209,7 @@ export default function InvoiceMaker() {
      user actually asked for; a short "Saved to Invoices" tick confirms it landed */
   const persistInvoice = (payload: Record<string, unknown>) => {
     api
-      .post("/invoices", payload)
+      .post("/api/invoices", payload)
       .then(() => {
         setSavedTick(true);
         setTimeout(() => setSavedTick(false), 2600);
@@ -257,7 +257,7 @@ export default function InvoiceMaker() {
     setMailBusy(true);
     setMailErr("");
     try {
-      await api.post("/invoices/email", {
+      await api.post("/api/invoices/email", {
         to: mailTo.trim(),
         subject: mailSubject,
         message: mailMessage,

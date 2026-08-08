@@ -129,7 +129,7 @@ export default function Settings() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get("/security/status");
+        const res = await api.get("/api/security/status");
         setPinSet(Boolean(res.data?.pinSet));
       } catch {
         setPinSet(null);
@@ -148,7 +148,7 @@ export default function Settings() {
 
     setPinSaving(true);
     try {
-      await api.post("/security/pin", pinSet
+      await api.post("/api/security/pin", pinSet
         ? { newPin, currentPin: curPin }
         : { newPin, password: accPw });
       setPinMsg({

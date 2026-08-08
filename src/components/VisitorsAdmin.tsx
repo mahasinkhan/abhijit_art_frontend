@@ -18,8 +18,8 @@ export default function VisitorsAdmin() {
 
   useEffect(() => {
     Promise.all([
-      api.get("/visitors").then((r) => setVisitors(r.data || [])),
-      api.get("/visitors/leads").then((r) => setLeads(r.data || [])),
+      api.get("/api/visitors").then((r) => setVisitors(r.data || [])),
+      api.get("/api/visitors/leads").then((r) => setLeads(r.data || [])),
     ])
       .catch(() => setError("Could not load visitor data."))
       .finally(() => setLoading(false));

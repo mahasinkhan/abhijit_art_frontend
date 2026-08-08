@@ -180,7 +180,7 @@ export default function Bookings() {
     setLoading(true);
     setError("");
     try {
-      const { data } = await api.get("/bookings");
+      const { data } = await api.get("/api/bookings");
       setRows(data || []);
     } catch (e: any) {
       setError(e?.response?.data?.message || "Couldn't load bookings.");

@@ -19,7 +19,7 @@ export default function SecurityPinCard() {
 
   const loadStatus = async () => {
     try {
-      const res = await api.get("/security/status");
+      const res = await api.get("/api/security/status");
       setPinSet(Boolean(res.data?.pinSet));
     } catch {
       setPinSet(null);
@@ -38,7 +38,7 @@ export default function SecurityPinCard() {
 
     setSaving(true);
     try {
-      await api.post("/security/pin", pinSet
+      await api.post("/api/security/pin", pinSet
         ? { newPin: next, currentPin: current }
         : { newPin: next, password });
       setMsg({

@@ -321,7 +321,7 @@ export default function Invoices() {
     initial ? setLoading(true) : setRefreshing(true);
     setError("");
     try {
-      const res = await api.get("/invoices", { timeout: REQ_TIMEOUT });
+      const res = await api.get("/api/invoices", { timeout: REQ_TIMEOUT });
       setList(Array.isArray(res.data) ? res.data : []);
     } catch (e: any) {
       setError(errMessage(e, "Couldn't load invoices."));

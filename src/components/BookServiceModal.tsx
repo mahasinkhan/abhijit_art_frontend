@@ -121,7 +121,7 @@ export default function BookServiceModal({ service, onClose }: Props) {
     setError("");
     try {
       /* category cards have no DB id — the backend resolves by name */
-      await api.post("/bookings", { serviceName: service.title, ...form });
+      await api.post("/api/bookings", { serviceName: service.title, ...form });
       const name = service.title;
       onClose();
       setDone(`Your booking for "${name}" was sent! Check "My Bookings".`);

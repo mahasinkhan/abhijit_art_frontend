@@ -27,7 +27,7 @@ export default function ChatWidget() {
     }
     setLoading(true);
     try {
-      await api.post("/visitors/lead", { ...form, page: window.location.pathname });
+      await api.post("/api/visitors/lead", { ...form, page: window.location.pathname });
       setSent(true);
     } catch {
       setError("Something went wrong. Please try again.");

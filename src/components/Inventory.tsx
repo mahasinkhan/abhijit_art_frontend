@@ -343,7 +343,7 @@ export default function Inventory() {
       if (lowOnly) params.set("low", "1");
       const [it, sm] = await Promise.all([
         api.get(`/inventory/items?${params.toString()}`),
-        api.get("/inventory/summary"),
+        api.get("/api/inventory/summary"),
       ]);
       setItems(it.data);
       setSummary(sm.data);
@@ -357,7 +357,7 @@ export default function Inventory() {
 
   const loadCategories = useCallback(async () => {
     try {
-      const { data } = await api.get("/inventory/categories");
+      const { data } = await api.get("/api/inventory/categories");
       setCategories(data);
     } catch {
       /* non-fatal */
@@ -366,7 +366,7 @@ export default function Inventory() {
 
   const loadSuppliers = useCallback(async () => {
     try {
-      const { data } = await api.get("/inventory/suppliers");
+      const { data } = await api.get("/api/inventory/suppliers");
       setSuppliers(data);
     } catch (e: any) {
       setError(e?.response?.data?.message || "Couldn't load suppliers.");
@@ -755,7 +755,7 @@ function ItemDrawer({
         });
         onSaved("Item updated.");
       } else {
-        await api.post("/inventory/items", {
+        await api.post("/api/inventory/items", {
           sku: f.sku, name: f.name, category: f.category, unit: f.unit,
           openingQty: f.openingQty, reorderLevel: f.reorderLevel,
           costPrice: f.costPrice, sellPrice: f.sellPrice === "" ? null : f.sellPrice,
@@ -1189,7 +1189,7 @@ function SupplierDrawer({
     setErr("");
     try {
       if (editing) await api.patch(`/inventory/suppliers/${supplier!.id}`, { ...f, pin });
-      else await api.post("/inventory/suppliers", { ...f, pin });
+      else await api.post("/api/inventory/suppliers", { ...f, pin });
       onSaved(editing ? "Supplier updated." : "Supplier added.");
     } catch (e: any) {
       setErr(e?.response?.data?.message || "Couldn't save the supplier.");

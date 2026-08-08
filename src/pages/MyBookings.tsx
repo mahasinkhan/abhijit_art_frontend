@@ -249,7 +249,7 @@ export default function MyBookings() {
     setLoading(true);
     setError("");
     try {
-      const res = await api.get("/bookings/mine");
+      const res = await api.get("/api/bookings/mine");
       const d = res.data;
       const list = Array.isArray(d) ? d : d?.bookings ?? d?.data ?? [];
       setRaw(Array.isArray(list) ? list : []);

@@ -385,7 +385,7 @@ export default function Services() {
     setSubmitting(true);
     try {
       // these cards are categories without a DB id — send the name.
-      await api.post("/bookings", { serviceName: booking.title, ...form });
+      await api.post("/api/bookings", { serviceName: booking.title, ...form });
       const name = booking.title;
       closeBooking();
       setDone(`Your booking for "${name}" was sent! Check "My Bookings".`);

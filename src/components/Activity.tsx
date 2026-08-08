@@ -99,7 +99,7 @@ export default function Activity() {
     initial ? setLoading(true) : setRefreshing(true);
     setError("");
     try {
-      const res = await api.get("/security/audit", { params: { limit: 200 } });
+      const res = await api.get("/api/security/audit", { params: { limit: 200 } });
       setLogs(Array.isArray(res.data) ? res.data : []);
     } catch (e: any) {
       setError(e?.response?.data?.message || "Couldn't load the activity log.");

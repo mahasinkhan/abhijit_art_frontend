@@ -226,7 +226,7 @@ export default function BookingDetails() {
     if (rawBooking) return;
     (async () => {
       try {
-        const res = await api.get("/bookings/mine");
+        const res = await api.get("/api/bookings/mine");
         const list = Array.isArray(res.data) ? res.data : res.data?.bookings ?? res.data?.data ?? [];
         const found = list.find((x: any) => String(x.id ?? x._id) === String(id));
         if (found) setRawBooking(found);
@@ -255,7 +255,7 @@ export default function BookingDetails() {
     if (!b) return;
     (async () => {
       try {
-        const res = await api.get("/services");
+        const res = await api.get("/api/services");
         const svcs = Array.isArray(res.data) ? res.data : res.data?.services ?? [];
         const match = svcs.find(
           (s: any) =>
