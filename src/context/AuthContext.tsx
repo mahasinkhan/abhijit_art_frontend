@@ -27,8 +27,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem("token");
     if (token) {
       getCurrentUser()
-        .then((res) => setUser(res.data))
-        .catch(() => localStorage.removeItem("token"))
+        .then((res) => {
+          setUser(res.data);
+        })
+        .catch((err) => {
+          console.error("Token validation failed:", err.message);
+          // Only logout if 401, not on network errors
+          if (err.response?.status === 401) {
+            localStorage.removeItem("token");
+          }
+          // Keep token if network error — user will try again
+        })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
