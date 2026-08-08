@@ -342,7 +342,7 @@ export default function Inventory() {
       if (cat) params.set("category", cat);
       if (lowOnly) params.set("low", "1");
       const [it, sm] = await Promise.all([
-        api.get(`/inventory/items?${params.toString()}`),
+        api.get(`/api/inventory/items?${params.toString()}`),
         api.get("/api/inventory/summary"),
       ]);
       setItems(it.data);
@@ -746,7 +746,7 @@ function ItemDrawer({
     setErr("");
     try {
       if (editing) {
-        await api.patch(`/inventory/items/${item!.id}`, {
+        await api.patch(`/api/inventory/items/${item!.id}`, {
           sku: f.sku, name: f.name, category: f.category, unit: f.unit,
           reorderLevel: f.reorderLevel, costPrice: f.costPrice,
           sellPrice: f.sellPrice === "" ? null : f.sellPrice,
@@ -775,7 +775,7 @@ function ItemDrawer({
     setBusy(true);
     setErr("");
     try {
-      await api.delete(`/inventory/items/${item!.id}`, { data: { pin } });
+      await api.delete(`/api/inventory/items/${item!.id}`, { data: { pin } });
       onDeleted("Item deleted.");
     } catch (e: any) {
       setErr(e?.response?.data?.message || "Couldn't delete the item.");
@@ -927,7 +927,7 @@ function MoveDrawer({
         body.quantity = qty;
         if (type === "purchase") body.unitCost = unitCost;
       }
-      await api.post(`/inventory/items/${item.id}/move`, body);
+      await api.post(`/api/inventory/items/${item.id}/move`, body);
       onSaved(`Stock updated — ${item.name} now ${qtyFmt(projected)} ${item.unit}.`);
     } catch (e: any) {
       setErr(e?.response?.data?.message || "Couldn't record the movement.");
@@ -1047,7 +1047,7 @@ function HistoryDrawer({ item, onClose }: { item: Item; onClose: () => void }) {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.get(`/inventory/items/${item.id}`);
+        const { data } = await api.get(`/api/inventory/items/${item.id}`);
         setMovements(data.movements || []);
       } catch (e: any) {
         setErr(e?.response?.data?.message || "Couldn't load history.");
@@ -1188,7 +1188,7 @@ function SupplierDrawer({
     setBusy(true);
     setErr("");
     try {
-      if (editing) await api.patch(`/inventory/suppliers/${supplier!.id}`, { ...f, pin });
+      if (editing) await api.patch(`/api/inventory/suppliers/${supplier!.id}`, { ...f, pin });
       else await api.post("/api/inventory/suppliers", { ...f, pin });
       onSaved(editing ? "Supplier updated." : "Supplier added.");
     } catch (e: any) {
@@ -1200,7 +1200,7 @@ function SupplierDrawer({
     setBusy(true);
     setErr("");
     try {
-      await api.delete(`/inventory/suppliers/${supplier!.id}`, { data: { pin } });
+      await api.delete(`/api/inventory/suppliers/${supplier!.id}`, { data: { pin } });
       onDeleted("Supplier deleted.");
     } catch (e: any) {
       setErr(e?.response?.data?.message || "Couldn't delete the supplier.");

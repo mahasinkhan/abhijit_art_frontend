@@ -212,7 +212,7 @@ export default function InventoryDashboard(props: DashProps = {}) {
     setError("");
     try {
       const params = new URLSearchParams({ granularity: bucketGran, from, to });
-      const { data } = await api.get(`/inventory/dashboard?${params.toString()}`);
+      const { data } = await api.get(`/api/inventory/dashboard?${params.toString()}`);
       setD(data);
     } catch (e: any) {
       setError(e?.response?.data?.message || "Couldn't load the dashboard.");
