@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -28,7 +29,7 @@ export default function Header() {
 
   const activeIndex = links.findIndex((l) => l.to === location.pathname);
 
-  /* ---- sliding ink rule ---- */
+  /* ---- sliding ink rule (desktop) ---- */
   const moveInk = useCallback((i: number) => {
     const nav = navRef.current;
     const el = i >= 0 ? itemRefs.current[i] : null;
@@ -60,14 +61,18 @@ export default function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  /* ---- drawer: close on route change, lock scroll, esc ---- */
+  /* ---- close drawer on route change ---- */
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
+  /* ---- lock scroll (BOTH html + body so a sticky header can't scroll away) + Esc ---- */
   useEffect(() => {
+    const html = document.documentElement;
+    html.style.overflow = menuOpen ? "hidden" : "";
     document.body.style.overflow = menuOpen ? "hidden" : "";
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
     window.addEventListener("keydown", onKey);
     return () => {
+      html.style.overflow = "";
       document.body.style.overflow = "";
       window.removeEventListener("keydown", onKey);
     };
@@ -169,45 +174,68 @@ export default function Header() {
         </button>
       </div>
 
-      {/* Mobile drawer */}
-      <div className={`aa-drawer ${menuOpen ? "open" : ""}`}>
-        <div className="aa-drawer-card">
-          {links.map((l) => (
-            <Link
-              key={l.to}
-              to={l.to}
-              className={`aa-drawer-link ${location.pathname === l.to ? "is-active" : ""}`}
-              onClick={() => setMenuOpen(false)}
-            >
-              {l.label}
-            </Link>
-          ))}
+      {/* Mobile drawer — portaled to <body> so no page CSS (overflow clip / sticky) can hide it */}
+      {createPortal(
+        <div className={`aa-menu ${menuOpen ? "open" : ""}`} aria-hidden={!menuOpen}>
+          <div className="aa-menu-backdrop" onClick={() => setMenuOpen(false)} />
+          <aside className="aa-menu-panel" role="dialog" aria-modal="true" aria-label="Menu">
+            <div className="aa-menu-head">
+              <img
+                src="/images/abhijit_art_logo.png"
+                alt="Abhijit Art"
+                className="aa-menu-logo"
+              />
+              <button
+                className="aa-menu-close"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                <span />
+                <span />
+              </button>
+            </div>
 
-          <div className="aa-drawer-foot">
-            {!user && (
-              <>
-                <Link to="/login" className="aa-btn-ghost wide" onClick={() => setMenuOpen(false)}>
-                  Log in
+            <nav className="aa-menu-nav">
+              {links.map((l) => (
+                <Link
+                  key={l.to}
+                  to={l.to}
+                  className={`aa-menu-link ${location.pathname === l.to ? "is-active" : ""}`}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {l.label}
+                  <span className="aa-menu-chev" aria-hidden="true">→</span>
                 </Link>
-                <Link to="/register" className="aa-btn-solid wide" onClick={() => setMenuOpen(false)}>
-                  Register free
-                </Link>
-              </>
-            )}
-            {user && (
-              <>
-                <div className="aa-user wide">
-                  <span className="aa-avatar">{initial}</span>
-                  <span className="aa-username">{firstName}</span>
-                </div>
-                <button className="aa-btn-ghost wide" onClick={handleLogout}>
-                  Log out
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
+              ))}
+            </nav>
+
+            <div className="aa-menu-foot">
+              {!user && (
+                <>
+                  <Link to="/login" className="aa-btn-ghost wide" onClick={() => setMenuOpen(false)}>
+                    Log in
+                  </Link>
+                  <Link to="/register" className="aa-btn-solid wide" onClick={() => setMenuOpen(false)}>
+                    Register free
+                  </Link>
+                </>
+              )}
+              {user && (
+                <>
+                  <div className="aa-user wide">
+                    <span className="aa-avatar">{initial}</span>
+                    <span className="aa-username">{firstName}</span>
+                  </div>
+                  <button className="aa-btn-ghost wide" onClick={handleLogout}>
+                    Log out
+                  </button>
+                </>
+              )}
+            </div>
+          </aside>
+        </div>,
+        document.body
+      )}
     </header>
   );
 }
@@ -281,7 +309,7 @@ const CSS = `
   pointer-events:none;
 }
 
-/* ---------- actions ---------- */
+/* ---------- actions (shared by desktop + drawer) ---------- */
 .aa-hdr-actions{display:flex; align-items:center; gap:10px; padding-left:14px; border-left:1px solid rgba(42,35,29,.1);}
 .aa-btn-ghost{
   display:inline-flex; align-items:center; justify-content:center;
@@ -334,26 +362,78 @@ const CSS = `
 .aa-hdr.is-open .aa-burger span:first-child{transform:translateY(3.4px) rotate(45deg);}
 .aa-hdr.is-open .aa-burger span:last-child{transform:translateY(-3.4px) rotate(-45deg);}
 
-/* ---------- drawer ---------- */
-.aa-drawer{max-width:1320px; margin:0 auto; overflow:hidden; max-height:0; opacity:0; transition:max-height .45s cubic-bezier(.22,.9,.24,1), opacity .3s ease;}
-.aa-drawer.open{max-height:80vh; opacity:1;}
-.aa-drawer-card{
-  margin-top:10px; padding:10px; border-radius:24px;
-  background:rgba(255,255,255,.92); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px);
-  border:1px solid rgba(42,35,29,.08); box-shadow:0 26px 50px -32px rgba(42,35,29,.8);
-  max-height:78vh; overflow-y:auto;
+/* ---------- mobile drawer (portaled to <body>) ---------- */
+.aa-menu{
+  --ivory:#f7f3ea; --ink:#2a231d; --terra:#d9542f; --gold:#c2974a;
+  position:fixed; inset:0; z-index:2000;
+  font-family:"DM Sans",system-ui,-apple-system,sans-serif;
+  pointer-events:none;                 /* inert while closed */
 }
-.aa-drawer-link{
-  display:block; padding:14px 16px; border-radius:14px;
-  font-size:12px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+.aa-menu.open{pointer-events:auto;}
+.aa-menu *{box-sizing:border-box;}
+.aa-menu a{text-decoration:none;}
+.aa-menu :focus-visible{outline:2px solid var(--terra); outline-offset:3px; border-radius:10px;}
+
+.aa-menu-backdrop{
+  position:absolute; inset:0;
+  background:rgba(30,24,19,.42);
+  -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px);
+  opacity:0; transition:opacity .35s ease;
+}
+.aa-menu.open .aa-menu-backdrop{opacity:1;}
+
+.aa-menu-panel{
+  position:absolute; top:0; right:0; height:100%;
+  width:min(360px, 88vw);
+  display:flex; flex-direction:column;
+  background:var(--ivory);
+  border-left:1px solid rgba(42,35,29,.08);
+  box-shadow:-24px 0 60px -30px rgba(42,35,29,.7);
+  transform:translateX(100%);
+  transition:transform .4s cubic-bezier(.22,.9,.24,1);
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+.aa-menu.open .aa-menu-panel{transform:translateX(0);}
+
+.aa-menu-head{
+  position:sticky; top:0; z-index:1;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:18px 18px 14px; background:var(--ivory);
+  border-bottom:1px solid rgba(42,35,29,.08);
+}
+.aa-menu-logo{height:40px; width:auto; display:block;}
+.aa-menu-close{
+  position:relative; width:40px; height:40px; flex:none;
+  display:grid; place-items:center;
+  border-radius:12px; border:1px solid rgba(42,35,29,.14); background:#fff; cursor:pointer;
+}
+.aa-menu-close span{position:absolute; width:16px; height:1.8px; border-radius:2px; background:var(--ink);}
+.aa-menu-close span:first-child{transform:rotate(45deg);}
+.aa-menu-close span:last-child{transform:rotate(-45deg);}
+
+.aa-menu-nav{display:flex; flex-direction:column; padding:10px;}
+.aa-menu-link{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 14px; border-radius:12px;
+  font-size:13px; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
   color:rgba(42,35,29,.72);
+  transition:background .2s ease, color .2s ease;
 }
-.aa-drawer-link + .aa-drawer-link{border-top:1px solid rgba(42,35,29,.05);}
-.aa-drawer-link.is-active{color:var(--terra); background:rgba(217,84,47,.07);}
-.aa-drawer-foot{display:flex; flex-direction:column; gap:10px; padding:12px 6px 6px; margin-top:8px; border-top:1px solid rgba(42,35,29,.08);}
+.aa-menu-link:hover{background:rgba(217,84,47,.06); color:var(--ink);}
+.aa-menu-link.is-active{color:var(--terra); background:rgba(217,84,47,.08);}
+.aa-menu-chev{opacity:0; transform:translateX(-6px); color:var(--terra); transition:opacity .2s ease, transform .2s ease;}
+.aa-menu-link:hover .aa-menu-chev, .aa-menu-link.is-active .aa-menu-chev{opacity:1; transform:translateX(0);}
+
+.aa-menu-foot{
+  margin-top:auto; padding:16px;
+  display:flex; flex-direction:column; gap:10px;
+  border-top:1px solid rgba(42,35,29,.08);
+}
 .aa-btn-ghost.wide,.aa-btn-solid.wide,.aa-user.wide{width:100%; justify-content:center; padding-top:13px; padding-bottom:13px;}
 .aa-user.wide{padding:8px 14px;}
 
+/* ---------- breakpoints ---------- */
 @media (max-width:1220px){
   .aa-only-desktop{display:none !important;}
   .aa-burger{display:grid;}
@@ -364,6 +444,6 @@ const CSS = `
   .aa-hdr-logo{height:38px;}
 }
 @media (prefers-reduced-motion:reduce){
-  .aa-hdr *,.aa-hdr *::after{transition-duration:.01ms !important; animation-duration:.01ms !important;}
+  .aa-hdr *,.aa-hdr *::after,.aa-menu *{transition-duration:.01ms !important; animation-duration:.01ms !important;}
 }
-`;
+`;  

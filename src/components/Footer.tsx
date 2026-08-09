@@ -1,5 +1,20 @@
 import { Link } from "react-router-dom";
 
+/* Studio location — to pin the EXACT spot, open Google Maps → Share →
+   "Embed a map" and paste that iframe's src into MAP_EMBED below. */
+const MAP_QUERY = "Abhijit Art, Berhampore, Murshidabad, West Bengal";
+const MAP_EMBED = `https://maps.google.com/maps?q=${encodeURIComponent(MAP_QUERY)}&z=15&output=embed`;
+const MAP_DIR = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(MAP_QUERY)}`;
+
+const printItems = [
+  "Flex printing",
+  "Laser cutting",
+  "Digital printing",
+  "Sticker cutting",
+  "Stamp making",
+  "PVC cards",
+];
+
 export default function Footer() {
   const year = new Date().getFullYear();
 
@@ -9,11 +24,40 @@ export default function Footer() {
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
 
+  /* open the ChatWidget (it listens for this event); optional prefilled message */
+  const openChat = (message?: string) =>
+    window.dispatchEvent(new CustomEvent("aa:open-chat", { detail: message ? { message } : {} }));
+
   return (
     <footer className="aaf">
       <style>{CSS}</style>
 
       <div className="aaf-inner">
+        {/* ── Map ── */}
+        <div className="aaf-map">
+          <iframe
+            className="aaf-map-frame"
+            title="Abhijit Art studio location"
+            src={MAP_EMBED}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            allowFullScreen
+          />
+          <div className="aaf-map-card">
+            <span className="aaf-map-eyebrow">Visit the studio</span>
+            <h4 className="aaf-map-title">Abhijit Art</h4>
+            <p className="aaf-map-addr">
+              Berhampore, Murshidabad,<br />West Bengal, India
+            </p>
+            <a className="aaf-map-dir" href={MAP_DIR} target="_blank" rel="noreferrer">
+              Get directions
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14M13 5l7 7-7 7" />
+              </svg>
+            </a>
+          </div>
+        </div>
+
         <div className="aaf-grid">
           {/* Brand */}
           <div className="aaf-brand">
@@ -36,19 +80,20 @@ export default function Footer() {
             </div>
 
             <div className="aaf-socials">
-              <a href="#" aria-label="Abhijit Art on Facebook" className="aaf-social">
+              {/* Replace href with the real profile URL when ready */}
+              <a href="#" onClick={(e) => e.preventDefault()} aria-label="Abhijit Art on Facebook" className="aaf-social">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
                   <path d="M13.5 21v-8h2.7l.4-3.1h-3.1V7.9c0-.9.25-1.5 1.55-1.5h1.65V3.6c-.29-.04-1.27-.13-2.42-.13-2.4 0-4.05 1.47-4.05 4.16V9.9H7.5V13h2.73v8h3.27z" />
                 </svg>
               </a>
-              <a href="#" aria-label="Abhijit Art on Instagram" className="aaf-social">
+              <a href="#" onClick={(e) => e.preventDefault()} aria-label="Abhijit Art on Instagram" className="aaf-social">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7">
                   <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
                   <circle cx="12" cy="12" r="3.8" />
                   <circle cx="17.1" cy="6.9" r="1" fill="currentColor" stroke="none" />
                 </svg>
               </a>
-              <a href="#" aria-label="Abhijit Art on WhatsApp" className="aaf-social">
+              <a href="https://wa.me/917405179066" target="_blank" rel="noreferrer" aria-label="Abhijit Art on WhatsApp" className="aaf-social">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
                   <path d="M12 2a10 10 0 0 0-8.53 15.2L2 22l4.94-1.42A10 10 0 1 0 12 2zm0 2a8 8 0 1 1-4.2 14.8l-.35-.21-2.5.72.73-2.42-.23-.37A8 8 0 0 1 12 4zm-3.1 4.1c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02s.87 2.34 1 2.5c.12.16 1.7 2.72 4.19 3.7 2.06.82 2.48.66 2.93.62.45-.04 1.44-.59 1.65-1.16.2-.57.2-1.05.14-1.15-.06-.1-.22-.16-.46-.28s-1.44-.71-1.66-.79c-.22-.08-.38-.12-.55.12-.16.24-.62.79-.76.95-.14.16-.28.18-.52.06-.24-.12-1.03-.38-1.96-1.21-.72-.64-1.21-1.44-1.35-1.68-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.75-1.8-.19-.46-.39-.4-.54-.41h-.45z" />
                 </svg>
@@ -61,22 +106,26 @@ export default function Footer() {
             <h4 className="aaf-head">Explore</h4>
             <Link to="/" className="aaf-link">Home</Link>
             <Link to="/services" className="aaf-link">Services</Link>
-            <Link to="/products" className="aaf-link">Products</Link>
             <Link to="/about" className="aaf-link">About us</Link>
             <Link to="/digital-marketing" className="aaf-link">Digital marketing</Link>
             <Link to="/software-service" className="aaf-link">Software service</Link>
           </nav>
 
-          {/* Work */}
+          {/* Work — each opens the chat with a prefilled enquiry */}
           <div className="aaf-col">
             <h4 className="aaf-head">What we print</h4>
-            <ul className="aaf-list">
-              <li>Flex printing</li>
-              <li>Laser cutting</li>
-              <li>Digital printing</li>
-              <li>Sticker cutting</li>
-              <li>Stamp making</li>
-              <li>PVC cards</li>
+            <ul className="aaf-print">
+              {printItems.map((item) => (
+                <li key={item}>
+                  <button
+                    type="button"
+                    className="aaf-print-btn"
+                    onClick={() => openChat(`Hi! I'd like a quote for ${item}.`)}
+                  >
+                    {item}
+                  </button>
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -90,18 +139,20 @@ export default function Footer() {
             </div>
             <div className="aaf-fact">
               <span className="aaf-label">Email</span>
-              <a className="aaf-value aaf-mailto" href="mailto:admin@avijitart.com">
-                admin@avijitart.com
+              <a className="aaf-value aaf-mailto" href="mailto:abhijitart85@gmail.com">
+                abhijitart85@gmail.com
               </a>
             </div>
             <div className="aaf-fact">
               <span className="aaf-label">Open</span>
               <span className="aaf-value">
-                Mon–Sat · 9:00 AM – 8:00 PM<br />Sunday · 10:00 AM – 4:00 PM
+                Open daily · 10:00 AM – 8:00 PM<br />Tuesday · Closed
               </span>
             </div>
 
-            <Link to="/services" className="aaf-cta">Start your project</Link>
+            <button type="button" className="aaf-cta" onClick={() => openChat("Hi! I'd like to start a new project with Abhijit Art.")}>
+              Start your project
+            </button>
           </div>
         </div>
 
@@ -140,7 +191,42 @@ const CSS = `
 .aaf a{text-decoration:none;}
 .aaf :focus-visible{outline:2px solid var(--terra); outline-offset:3px; border-radius:6px;}
 
-.aaf-inner{position:relative; max-width:1320px; margin:0 auto; padding:76px 40px 26px;}
+.aaf-inner{position:relative; max-width:1320px; margin:0 auto; padding:72px 40px 26px;}
+
+/* ── map ── */
+.aaf-map{
+  position:relative; margin-bottom:60px; border-radius:24px; overflow:hidden;
+  border:1px solid rgba(42,35,29,.08); background:#e8e2d5;
+  box-shadow:0 28px 56px -36px rgba(42,35,29,.6);
+}
+.aaf-map-frame{display:block; width:100%; height:340px; border:0;
+  filter:grayscale(.18) contrast(1.03) brightness(1.02);}
+.aaf-map::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  box-shadow:inset 0 0 90px rgba(42,35,29,.14);
+  background:linear-gradient(105deg, rgba(247,243,234,.30), transparent 34%);
+}
+.aaf-map-card{
+  position:absolute; left:26px; bottom:26px; z-index:2; max-width:312px;
+  padding:22px 24px; border-radius:18px;
+  background:rgba(255,255,255,.86);
+  -webkit-backdrop-filter:blur(16px) saturate(150%); backdrop-filter:blur(16px) saturate(150%);
+  border:1px solid rgba(255,255,255,.7);
+  box-shadow:0 20px 44px -22px rgba(42,35,29,.6);
+}
+.aaf-map-card::before{content:""; display:block; width:40px; height:3px; border-radius:3px;
+  margin-bottom:14px; background:linear-gradient(90deg,var(--terra),var(--gold));}
+.aaf-map-eyebrow{font-size:9.5px; font-weight:700; letter-spacing:.2em; text-transform:uppercase; color:var(--gold);}
+.aaf-map-title{margin:6px 0 8px; font-size:20px; font-weight:800; color:var(--ink); letter-spacing:-.01em;}
+.aaf-map-addr{margin:0 0 16px; font-size:13.5px; line-height:1.6; color:rgba(42,35,29,.66);}
+.aaf-map-dir{
+  display:inline-flex; align-items:center; gap:8px; padding:10px 18px; border-radius:999px;
+  font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  color:#fff; background:linear-gradient(135deg,var(--terra),#e57a45);
+  box-shadow:0 12px 24px -14px rgba(217,84,47,.9); transition:transform .25s ease, box-shadow .25s ease;
+}
+.aaf-map-dir:hover{transform:translateY(-2px); box-shadow:0 16px 30px -14px rgba(217,84,47,1);}
+
 .aaf-grid{display:grid; gap:48px 44px; grid-template-columns:1.45fr .8fr .9fr 1.1fr;}
 
 /* brand */
@@ -192,9 +278,17 @@ const CSS = `
 .aaf-link:hover{color:var(--ink);}
 .aaf-link:hover::after{transform:scaleX(1);}
 
-.aaf-list{list-style:none; margin:0; padding:0;}
-.aaf-list li{position:relative; padding:6px 0 6px 16px; font-size:14px; color:rgba(42,35,29,.62);}
-.aaf-list li::before{content:""; position:absolute; left:0; top:14px; width:6px; height:1px; background:var(--terra);}
+/* what we print (clickable → chat) */
+.aaf-print{list-style:none; margin:0; padding:0; display:flex; flex-direction:column;}
+.aaf-print-btn{
+  position:relative; width:fit-content; margin:0; padding:6px 0 6px 16px; text-align:left;
+  font-family:inherit; font-size:14px; color:rgba(42,35,29,.62);
+  background:none; border:0; cursor:pointer; transition:color .25s ease;
+}
+.aaf-print-btn::before{content:""; position:absolute; left:0; top:14px; width:6px; height:1px;
+  background:var(--terra); transition:width .25s ease;}
+.aaf-print-btn:hover{color:var(--ink);}
+.aaf-print-btn:hover::before{width:12px;}
 
 /* contact card */
 .aaf-card{
@@ -211,8 +305,8 @@ const CSS = `
 .aaf-cta{
   margin-top:20px; width:100%;
   display:inline-flex; align-items:center; justify-content:center; padding:13px 22px; border-radius:999px;
-  font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
-  color:#fff; background:linear-gradient(135deg,var(--terra),#e57a45);
+  font-family:inherit; font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  color:#fff; background:linear-gradient(135deg,var(--terra),#e57a45); border:0; cursor:pointer;
   box-shadow:0 14px 26px -14px rgba(217,84,47,.95);
   transition:transform .25s ease, box-shadow .25s ease;
 }
@@ -242,7 +336,14 @@ const CSS = `
   .aaf-brand{grid-column:1 / -1;}
 }
 @media (max-width:640px){
-  .aaf-inner{padding:56px 22px 24px;}
+  .aaf-inner{padding:52px 22px 24px;}
+  .aaf-map{margin-bottom:40px;}
+  .aaf-map-frame{height:240px;}
+  .aaf-map-card{
+    position:static; max-width:none; border-radius:0;
+    background:rgba(255,255,255,.92); -webkit-backdrop-filter:none; backdrop-filter:none;
+    box-shadow:none; border:0; border-top:1px solid rgba(42,35,29,.08);
+  }
   .aaf-grid{grid-template-columns:1fr; gap:38px;}
   .aaf-logo{height:56px;}
   .aaf-base{justify-content:flex-start; margin-top:44px;}

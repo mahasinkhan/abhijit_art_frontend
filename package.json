@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/optimize-images.mjs",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "images": "node scripts/optimize-images.mjs",
+    "images:watch": "node scripts/optimize-images.mjs --watch",
+    "images:force": "node scripts/optimize-images.mjs --force"
   },
   "dependencies": {
     "axios": "^1.16.1",
@@ -25,6 +29,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^6.0.1",
+    "chokidar": "^4.0.3",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

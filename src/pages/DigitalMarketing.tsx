@@ -3,9 +3,10 @@ import { motion } from "framer-motion";
 
 /* ══════════════════════════════════════════════════════════════
    ABHIJIT ART — Digital Marketing & Advertising  (→ /digital-marketing)
-   Redesigned to match Home / About / Services / Software Service:
-   flat ivory background, Fraunces + DM Sans, terracotta + gold.
-   Every advertising channel we run, in one place.
+   Hero visual: plain static image, no frame / circle / card.
+     public/images/Digital_Marketing/digital_marketing.png
+     →  referenced as /images/Digital_Marketing/digital_marketing.png
+   Rest of the page unchanged (channels grid, why-us, CTA).
    Requires: npm install framer-motion
    ══════════════════════════════════════════════════════════════ */
 
@@ -63,14 +64,9 @@ const whyUs = [
   "Measurable results & reporting",
 ];
 
-/* 8 channels arranged in a ring for the hero */
-const ring = [channels[0], channels[1], channels[2], channels[3], channels[9], channels[10], channels[6], channels[5]];
-
 const EASE: [number, number, number, number] = [0.2, 0.8, 0.2, 1];
 
 export default function DigitalMarketing() {
-  const R = 142; // ring radius (px)
-
   return (
     <div style={s.page}>
       {/* ══ HERO ══ */}
@@ -104,46 +100,20 @@ export default function DigitalMarketing() {
               </div>
             </motion.div>
 
-            {/* animated channel ring */}
-            <div className="dm-ringwrap" style={s.ringWrap}>
-              <div style={s.ringBlob} />
-              <motion.div
-                style={s.ring}
-                initial={{ opacity: 0, scale: 0.92 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.6, ease: EASE }}
-              >
-                <div style={s.ringCircle} />
-                <motion.div
-                  style={s.ringCenter}
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: "spring", stiffness: 220, damping: 16, delay: 0.15 }}
-                >
-                  <MegaphoneIcon size={32} stroke={1.6} />
-                  <span style={s.ringCenterText}>ADVERTISING</span>
-                </motion.div>
-
-                {ring.map((ch, i) => {
-                  const Icon = ch.Icon;
-                  const angle = (i / ring.length) * Math.PI * 2 - Math.PI / 2;
-                  const x = Math.cos(angle) * R;
-                  const y = Math.sin(angle) * R;
-                  return (
-                    <motion.div
-                      key={ch.name}
-                      className="dm-bubble"
-                      style={{ ...s.bubble, left: "50%", top: "50%", marginLeft: x - 32, marginTop: y - 32, color: ch.c, animationDelay: `${i * 0.4}s` }}
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ type: "spring", stiffness: 240, damping: 15, delay: 0.25 + i * 0.07 }}
-                    >
-                      <Icon size={25} stroke={1.7} />
-                    </motion.div>
-                  );
-                })}
-              </motion.div>
-            </div>
+            {/* hero image — plain, no frame */}
+            <motion.div
+              className="dm-heroimg"
+              style={s.heroImgWrap}
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.6, ease: EASE }}
+            >
+              <img
+                src="/images/Digital_Marketing/digital_marketing.png"
+                alt="Abhijit Art — digital marketing & advertising"
+                style={s.heroImg}
+              />
+            </motion.div>
           </div>
         </div>
       </section>
@@ -234,6 +204,7 @@ export default function DigitalMarketing() {
 
         .dm-hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: clamp(32px, 5vw, 72px); align-items: center; }
         @media (max-width: 940px) { .dm-hero { grid-template-columns: 1fr; } }
+        @media (max-width: 940px) { .dm-heroimg { min-height: auto; margin-top: 6px; } }
 
         .dm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 50px; }
         @media (max-width: 1080px) { .dm-grid { grid-template-columns: repeat(3, 1fr); } }
@@ -245,14 +216,10 @@ export default function DigitalMarketing() {
         .dm-why { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; max-width: 820px; margin: 40px auto 0; }
         @media (max-width: 560px) { .dm-why { grid-template-columns: 1fr; } }
 
-        @keyframes dmFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
-        .dm-bubble { animation: dmFloat 4s ease-in-out infinite; }
-
         @media (max-width: 880px) { .dm-cta { flex-direction: column !important; align-items: flex-start !important; } }
 
         a:focus-visible, button:focus-visible { outline: 2px solid ${TERRA}; outline-offset: 3px; }
         @media (prefers-reduced-motion: reduce) {
-          .dm-bubble { animation: none !important; }
           .dm-card { transition: none; }
         }
       `}</style>
@@ -283,14 +250,9 @@ const s: Record<string, React.CSSProperties> = {
   btnSolid: { display: "inline-flex", alignItems: "center", background: TERRA, color: "#fff", padding: "16px 30px", borderRadius: 4, textDecoration: "none", fontWeight: 700, fontSize: 13, letterSpacing: 1.6, boxShadow: `0 14px 30px ${TERRA}33` },
   btnGhost: { display: "inline-flex", alignItems: "center", background: "transparent", color: INK, padding: "16px 30px", borderRadius: 4, textDecoration: "none", fontWeight: 700, fontSize: 13, letterSpacing: 1.6, border: `1px solid ${INK}33` },
 
-  /* ── Ring ── */
-  ringWrap: { position: "relative", display: "flex", justifyContent: "center", alignItems: "center", minHeight: 380 },
-  ringBlob: { position: "absolute", width: 400, height: 400, borderRadius: "50%", background: "#efe4d2", zIndex: 0 },
-  ring: { position: "relative", zIndex: 1, width: 360, height: 360 },
-  ringCircle: { position: "absolute", inset: 18, borderRadius: "50%", border: `1.5px dashed ${TERRA}55` },
-  ringCenter: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: 132, height: 132, borderRadius: "50%", color: "#fdfaf4", background: INK, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: "0 18px 40px rgba(42,35,29,.28)", zIndex: 2 },
-  ringCenterText: { fontSize: 10.5, fontWeight: 800, letterSpacing: 1.8, color: GOLD },
-  bubble: { position: "absolute", width: 64, height: 64, borderRadius: "50%", background: CARD, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 26px rgba(42,35,29,.12)", border: `1px solid ${BORDER}`, zIndex: 1 },
+  /* ── Hero image — plain, no frame ── */
+  heroImgWrap: { position: "relative", display: "flex", justifyContent: "center", alignItems: "center", minHeight: 380 },
+  heroImg: { width: "100%", maxWidth: 540, height: "auto", display: "block", objectFit: "contain" },
 
   /* ── Sections ── */
   section: { background: IVORY, padding: "clamp(64px, 9vw, 104px) 0" },
