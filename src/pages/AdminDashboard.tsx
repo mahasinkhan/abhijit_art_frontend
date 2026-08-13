@@ -6,13 +6,14 @@ import PostFeed from "../components/PostFeed";
 import VisitorsAdmin from "../components/VisitorsAdmin";
 import InvoiceMaker from "../components/InvoiceMaker";
 import Invoices from "../components/Invoices";
+import PaymentReminders from "../components/PaymentReminders";
 import Activity from "../components/Activity";
 import Inventory from "../components/Inventory";
 import Customers from "../components/Customers";
 import Bookings from "../components/Bookings";
 import Settings from "../components/Settings";
 
-type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "activity" | "posts" | "visitors" | "settings";
+type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "activity" | "posts" | "visitors" | "settings";
 
 const ACCENT = "#d9542f";
 
@@ -21,6 +22,7 @@ const ico = { width: 19, height: 19, viewBox: "0 0 24 24", fill: "none", stroke:
 const IconBookings = () => (<svg {...ico}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M9 12h6M9 16h6" /></svg>);
 const IconBilling = () => (<svg {...ico}><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>);
 const IconInvoices = () => (<svg {...ico}><path d="M16 3H6a2 2 0 0 0-2 2v11" /><rect x="8" y="6" width="12" height="15" rx="2" /><path d="M11 11h6M11 15h4" /></svg>);
+const IconReminders = () => (<svg {...ico}><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>);
 const IconActivity = () => (<svg {...ico}><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z" /><path d="m9 12 2 2 4-4" /></svg>);
 const IconPosts = () => (<svg {...ico}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>);
 const IconVisitors = () => (<svg {...ico}><line x1="6" y1="20" x2="6" y2="14" /><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /></svg>);
@@ -34,12 +36,13 @@ const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "inventory", label: "Inventory", Icon: IconInventory },
   { id: "billing", label: "Billing", Icon: IconBilling },
   { id: "invoices", label: "Invoices", Icon: IconInvoices },
+  { id: "reminders", label: "Reminders", Icon: IconReminders },
   { id: "activity", label: "Activity", Icon: IconActivity },
   { id: "posts", label: "Posts", Icon: IconPosts },
   { id: "visitors", label: "Visitors", Icon: IconVisitors },
   { id: "settings", label: "Settings", Icon: IconSettings },
 ];
-const TITLES: Record<Tab, string> = { bookings: "Bookings", customers: "Customers", inventory: "Inventory", billing: "Billing", invoices: "Invoices", activity: "Activity", posts: "Posts", visitors: "Visitors", settings: "Settings" };
+const TITLES: Record<Tab, string> = { bookings: "Bookings", customers: "Customers", inventory: "Inventory", billing: "Billing", invoices: "Invoices", reminders: "Payment reminders", activity: "Activity", posts: "Posts", visitors: "Visitors", settings: "Settings" };
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -126,6 +129,8 @@ export default function AdminDashboard() {
           {activeTab === "billing" && <InvoiceMaker />}
 
           {activeTab === "invoices" && <Invoices />}
+
+          {activeTab === "reminders" && <PaymentReminders />}
 
           {activeTab === "activity" && <Activity />}
 

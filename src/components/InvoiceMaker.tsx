@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api";
 
 /* ══════════════════════════════════════════════════════════════
@@ -11,9 +11,11 @@ import api from "../api";
 
    Fill in business + client details and line items → live preview
    → download as PDF (print popup). Supports an advance / part payment
-   (shows Advance paid + Balance due). Every downloaded/emailed bill is
-   also saved to the Invoices history — opt-in, asked exactly once,
-   then automatic. Fully client-side.
+   (shows Advance paid + Balance due) and a cash/online payment method.
+   Typing a Client name suggests customers billed before and fills their
+   details (new invoice number is kept, so it's always a fresh bill).
+   Every downloaded/emailed bill is also saved to the Invoices history —
+   opt-in, asked exactly once, then automatic. Fully client-side.
    ══════════════════════════════════════════════════════════════ */
 
 /* ── tokens (aligned to the admin/inventory system) ── */
@@ -45,6 +47,9 @@ const num = (v: any) => {
 
 type Item = { id: string; desc: string; qty: string; rate: string };
 type Party = { name: string; address: string; phone: string; email: string; gstin: string; pan: string };
+type PayMethod = "cash" | "online";
+/* a past customer, distilled from saved invoices for the name autocomplete */
+type CustomerLite = { name: string; phone: string; email: string; gstin: string; address: string };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -107,6 +112,9 @@ function Icon({ name, size = 16 }: { name: string; size?: number }) {
     send: <path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" {...p} />,
     check: <path d="M20 6 9 17l-5-5" {...p} />,
     x: <path d="M18 6 6 18M6 6l12 12" {...p} />,
+    user: (<><circle cx="12" cy="8" r="4" {...p} /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" {...p} /></>),
+    banknote: (<><rect x="2" y="6" width="20" height="12" rx="2" {...p} /><circle cx="12" cy="12" r="2.5" {...p} /><path d="M6 12h.01M18 12h.01" {...p} /></>),
+    card: (<><rect x="2.5" y="5" width="19" height="14" rx="2" {...p} /><path d="M2.5 9.5h19" {...p} /></>),
   };
   return (<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>{map[name]}</svg>);
 }
@@ -139,6 +147,12 @@ export default function InvoiceMaker() {
   const [logoOk, setLogoOk] = useState(true);
   const [warranty, setWarranty] = useState("");
   const [advance, setAdvance] = useState("0"); // advance / part payment received now
+  const [payMethod, setPayMethod] = useState<PayMethod>("cash"); // how the customer is paying — cash vs online
+
+  /* customer autocomplete — distilled from saved invoices, for the name field */
+  const [customers, setCustomers] = useState<CustomerLite[]>([]);
+  const [nameSuggestOpen, setNameSuggestOpen] = useState(false);
+  const [activeSug, setActiveSug] = useState(-1);
 
   /* auto-save to the Invoices history — asked once, then remembered */
   const [autosave, setAutosave] = useState<"on" | "off" | "">(loadAutosave);
@@ -154,6 +168,58 @@ export default function InvoiceMaker() {
   const [mailBusy, setMailBusy] = useState(false);
   const [mailErr, setMailErr] = useState("");
   const [mailSent, setMailSent] = useState("");
+
+  /* pull saved invoices once and distil a unique customer list (newest first,
+     keyed on phone-or-name) for the client-name autocomplete. Best-effort. */
+  useEffect(() => {
+    let alive = true;
+    api
+      .get("/api/invoices")
+      .then((res) => {
+        if (!alive) return;
+        const seen = new Set<string>();
+        const out: CustomerLite[] = [];
+        for (const inv of Array.isArray(res.data) ? res.data : []) {
+          const name = String(inv.clientName || "").trim();
+          const phone = String(inv.clientPhone || "").trim();
+          if (!name && !phone) continue;
+          const key = (phone || name).toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({
+            name,
+            phone,
+            email: String(inv.clientEmail || "").trim(),
+            gstin: String(inv.clientGstin || "").trim(),
+            address: String(inv.clientAddr || "").trim(),
+          });
+        }
+        setCustomers(out);
+      })
+      .catch(() => { /* best-effort — no suggestions if it fails */ });
+    return () => { alive = false; };
+  }, []);
+
+  const nameQuery = client.name.trim().toLowerCase();
+  const suggestions = useMemo(() => {
+    if (!nameQuery) return [];
+    return customers
+      .filter(
+        (c) =>
+          c.name.toLowerCase().includes(nameQuery) ||
+          c.phone.toLowerCase().includes(nameQuery) ||
+          c.email.toLowerCase().includes(nameQuery),
+      )
+      .slice(0, 6);
+  }, [customers, nameQuery]);
+
+  /* fill the whole client block from a picked customer; keep the invoice number
+     as-is so this stays a brand-new bill, not an edit of their old one */
+  const pickCustomer = (c: CustomerLite) => {
+    setClient((cl) => ({ ...cl, name: c.name, phone: c.phone, email: c.email, gstin: c.gstin, address: c.address }));
+    setNameSuggestOpen(false);
+    setActiveSug(-1);
+  };
 
   /* totals */
   const { subtotal, discountAmt, taxable, taxAmt, total } = useMemo(() => {
@@ -191,6 +257,8 @@ export default function InvoiceMaker() {
     setNotes("Thank you for your business!");
     setWarranty("");
     setAdvance("0");
+    setPayMethod("cash");
+    setNameSuggestOpen(false);
     setDate(today());
     setInvNo(nextInvoiceNo());
   };
@@ -198,11 +266,12 @@ export default function InvoiceMaker() {
   /* the invoice payload the /invoices endpoint accepts. Totals are recomputed
      on the server, and it's keyed on invoiceNo, so Download-then-Send on the
      same bill updates one record instead of creating two. paidAmount carries
-     the advance; the server clamps it to the total. */
+     the advance; the server clamps it to the total. paymentMethod = cash|online. */
   const invoicePayload = () => ({
     invNo, date, biz, client,
     items: items.filter((it) => it.desc.trim() || num(it.rate) > 0),
     discType, discVal, taxPct, notes, warranty, paidAmount: advancePaid,
+    paymentMethod: payMethod,
   });
 
   /* fire-and-forget POST — a save hiccup must never block the PDF/email the
@@ -490,9 +559,45 @@ export default function InvoiceMaker() {
 
             <div style={st.subHead}>Bill to</div>
             <div style={st.row}>
-              <Field label="Client name" half>
-                <input className="iv-in" style={st.input} value={client.name} placeholder="Customer name" onChange={(e) => setClient({ ...client, name: e.target.value })} />
-              </Field>
+              {/* client name — autocomplete from past customers */}
+              <div style={{ ...st.field, flex: 1, minWidth: 0, position: "relative" }}>
+                <span style={st.fieldLabel}>
+                  Client name<span style={st.fieldHint}> · type to search saved customers</span>
+                </span>
+                <input
+                  className="iv-in"
+                  style={st.input}
+                  value={client.name}
+                  placeholder="Customer name"
+                  autoComplete="off"
+                  onChange={(e) => { setClient({ ...client, name: e.target.value }); setNameSuggestOpen(true); setActiveSug(-1); }}
+                  onFocus={() => { if (client.name.trim()) setNameSuggestOpen(true); }}
+                  onBlur={() => setTimeout(() => setNameSuggestOpen(false), 120)}
+                  onKeyDown={(e) => {
+                    if (!nameSuggestOpen || suggestions.length === 0) return;
+                    if (e.key === "ArrowDown") { e.preventDefault(); setActiveSug((i) => Math.min(i + 1, suggestions.length - 1)); }
+                    else if (e.key === "ArrowUp") { e.preventDefault(); setActiveSug((i) => Math.max(i - 1, 0)); }
+                    else if (e.key === "Enter") { if (activeSug >= 0) { e.preventDefault(); pickCustomer(suggestions[activeSug]); } }
+                    else if (e.key === "Escape") { setNameSuggestOpen(false); }
+                  }}
+                />
+                {nameSuggestOpen && suggestions.length > 0 && (
+                  <div style={st.suggestBox}>
+                    {suggestions.map((c, i) => (
+                      <button
+                        key={(c.phone || c.name) + i}
+                        type="button"
+                        className="iv-sug"
+                        style={{ ...st.suggestItem, ...(i === activeSug ? { background: "#fffcf9" } : null) }}
+                        onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
+                      >
+                        <span style={st.suggestName}>{c.name || "—"}</span>
+                        <span style={st.suggestMeta}>{c.phone || c.email}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <Field label="Phone" half>
                 <input className="iv-in" style={st.input} value={client.phone} onChange={(e) => setClient({ ...client, phone: e.target.value })} />
               </Field>
@@ -549,6 +654,27 @@ export default function InvoiceMaker() {
               <Field label="GST %" half>
                 <input className="iv-in" style={st.input} type="number" min="0" value={taxPct} onChange={(e) => setTaxPct(e.target.value)} />
               </Field>
+            </div>
+
+            {/* payment method — cash vs online (UPI/card/bank). Saved on the bill
+                and editable later in the Invoices tab. Kept off the printed PDF. */}
+            <div style={st.field}>
+              <span style={st.fieldLabel}>
+                Payment method<span style={st.fieldHint}> · how they paid</span>
+              </span>
+              <div style={st.segWrap}>
+                {(["cash", "online"] as PayMethod[]).map((mth, idx) => (
+                  <button
+                    key={mth}
+                    type="button"
+                    className="iv-seg"
+                    style={{ ...st.segBtn, ...(idx === 1 ? { borderLeft: `1px solid ${LINE}` } : null), ...(payMethod === mth ? st.segBtnOn : null) }}
+                    onClick={() => setPayMethod(mth)}
+                  >
+                    <Icon name={mth === "cash" ? "banknote" : "card"} size={14} /> {mth === "cash" ? "Cash" : "Online"}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* advance / part payment */}
@@ -814,7 +940,7 @@ export default function InvoiceMaker() {
 
         .iv-in { transition: border-color .18s, box-shadow .18s; }
         .iv-in:focus { border-color: ${TERRA}; box-shadow: 0 0 0 3px ${TERRA}22; outline: none; }
-        .iv-cta, .iv-ghost, .iv-add, .iv-del, .iv-link { transition: all .2s ease; }
+        .iv-cta, .iv-ghost, .iv-add, .iv-del, .iv-link, .iv-seg, .iv-sug { transition: all .2s ease; }
         .iv-cta:hover:not(:disabled) { background: ${TERRA_DK}; box-shadow: 0 12px 26px ${TERRA}40; transform: translateY(-1px); }
         .iv-cta:disabled, .iv-ghost:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
         .iv-ghost:hover { background: #fffcf9; border-color: ${TERRA}55; color: ${TERRA}; }
@@ -822,8 +948,10 @@ export default function InvoiceMaker() {
         .iv-del:hover:not(:disabled) { color: ${TERRA}; background: #fdecea; }
         .iv-del:disabled { opacity: .35; cursor: not-allowed; }
         .iv-link:hover { color: ${TERRA}; }
+        .iv-seg:hover { color: ${TERRA}; }
+        .iv-sug:hover { background: #fffcf9; }
         @media (max-width: 1100px) { .iv-layout { grid-template-columns: minmax(0,1fr) !important; } .iv-preview { position: static !important; } }
-        @media (prefers-reduced-motion: reduce) { .iv-in,.iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link { transition: none !important; } }
+        @media (prefers-reduced-motion: reduce) { .iv-in,.iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug { transition: none !important; } }
       `}</style>
     </div>
   );
@@ -904,6 +1032,20 @@ const st: Record<string, React.CSSProperties> = {
     textAlign: "right", fontVariantNumeric: "tabular-nums",
   },
 
+  /* customer autocomplete dropdown */
+  suggestBox: {
+    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 60, marginTop: 4,
+    background: CARD, border: `1px solid ${LINE}`, boxShadow: "0 16px 38px -14px rgba(24,22,28,.30)",
+    maxHeight: 240, overflowY: "auto",
+  },
+  suggestItem: {
+    display: "flex", alignItems: "baseline", gap: 10, width: "100%", textAlign: "left",
+    padding: "9px 12px", border: "none", background: "transparent", cursor: "pointer",
+    fontFamily: SANS, borderBottom: `1px solid #f4f1ec`,
+  },
+  suggestName: { fontWeight: 700, color: INK, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  suggestMeta: { fontSize: 12, color: MUTE, marginLeft: "auto", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" },
+
   itemHead: { fontSize: 10.5, fontWeight: 700, color: MUTE, letterSpacing: 0.7, textTransform: "uppercase", padding: "0 2px 8px" },
   itemRow: { marginBottom: 8 },
   colAmtVal: { textAlign: "right", fontSize: 13, fontWeight: 800, color: INK, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" },
@@ -913,6 +1055,11 @@ const st: Record<string, React.CSSProperties> = {
   },
   delBtn: { width: 30, height: 30, flex: "none", display: "grid", placeItems: "center", borderRadius: 0, border: "none", background: "transparent", color: FAINT, cursor: "pointer" },
   divider: { height: 1, background: "#f2e8de", margin: "18px 0 4px" },
+
+  /* payment-method segmented toggle */
+  segWrap: { display: "inline-flex", border: `1px solid ${LINE}`, background: CARD },
+  segBtn: { padding: "10px 18px", border: "none", background: "transparent", color: BODY, fontFamily: SANS, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 },
+  segBtnOn: { background: TERRA, color: "#fff" },
 
   /* ── send-invoice modal ── */
   backdrop: { position: "fixed", inset: 0, background: "rgba(24,22,28,.5)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, boxSizing: "border-box" },
