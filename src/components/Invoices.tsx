@@ -7,8 +7,9 @@ import api from "../api";
    Stored bills (POST /invoices): search (invoice no / name / phone / email),
    filter by a period preset (today → year-to-date) + status, re-download the
    exact PDF, EDIT the bill in place, record payments and review the full
-   PAYMENT HISTORY (each payment is cash or online), cancel, delete. Sensitive
-   actions require the security PIN. Prefix ivh-.
+   PAYMENT HISTORY (each payment is cash or online), cancel, delete, and SEND
+   the invoice to the client by Email or WhatsApp. Sensitive actions require
+   the security PIN. Prefix ivh-.
 
    PAYMENT LEDGER: every payment (advance + each part payment) is its own row
    with amount + cash|online. The invoice's paidAmount is the SUM of that
@@ -27,6 +28,8 @@ const CARD = "#ffffff";
 const TERRA = "#d9542f";
 const TERRA_DK = "#c8481f";
 const GREEN = "#15733f";
+const WA = "#1fa855";     // WhatsApp accent green
+const WA_DK = "#178544";
 const SANS = "'DM Sans', system-ui, sans-serif";
 
 const GLOW =
@@ -66,6 +69,12 @@ const escapeHtml = (s: any) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 const escapeLines = (s: any) => escapeHtml(s).replace(/\r?\n/g, "<br/>");
 const csvCell = (s: any) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+/* normalise a phone for wa.me — digits only; a bare 10-digit Indian mobile gets +91 */
+const waDigits = (raw: string) => {
+  let d = String(raw || "").replace(/\D/g, "").replace(/^0+/, "");
+  if (d.length === 10) d = "91" + d;
+  return d;
+};
 
 const errMessage = (e: any, fallback: string) => {
   if (e?.code === "ECONNABORTED") return "The server didn't respond in time. Check the backend is running, then try again.";
@@ -156,6 +165,7 @@ type Invoice = {
   status: InvStatus;
   createdAt: string;
   updatedAt: string;
+  pdfUrl?: string | null; // signed public PDF link, attached by the backend on GET
 };
 
 type EditItem = { desc: string; qty: string; rate: string };
@@ -231,6 +241,18 @@ function Icon({ name, size = 16 }: { name: string; size?: number }) {
     edit: (<><path d="M12 20h9" {...p} /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" {...p} /></>),
     plus: <path d="M12 5v14M5 12h14" {...p} />,
     x: <path d="M18 6 6 18M6 6l12 12" {...p} />,
+    mail: <path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3.2 6.5 12 13l8.8-6.5" {...p} />,
+    /* WhatsApp: outlined bubble + solid handset */
+    whatsapp: (
+      <>
+        <path d="M3.8 20.2 5 16.4A8.4 8.4 0 1 1 8.2 19l-4.4 1.2z" {...p} />
+        <path
+          d="M9.2 8.6c-.15 0-.4.05-.6.3-.2.25-.75.73-.75 1.77s.77 2.05.88 2.2c.1.14 1.5 2.4 3.68 3.28 1.83.72 2.2.58 2.6.55.4-.04 1.24-.5 1.42-1 .18-.5.18-.9.12-1l-.55-.27s-1.05-.52-1.22-.58c-.16-.06-.28-.1-.4.1l-.55.7c-.1.12-.2.13-.37.05-.16-.08-.9-.33-1.66-1.05-.6-.55-1.02-1.22-1.14-1.42-.1-.2-.01-.3.07-.4l.28-.35c.1-.12.13-.2.2-.34.06-.13.03-.25 0-.35-.05-.1-.4-1.13-.6-1.55-.14-.3-.28-.3-.4-.3H9.2z"
+          fill="currentColor"
+          stroke="none"
+        />
+      </>
+    ),
   };
   return (<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>{map[name]}</svg>);
 }
@@ -411,6 +433,18 @@ export default function Invoices() {
   const [editSaving, setEditSaving] = useState(false);
   const [editErr, setEditErr] = useState("");
   const [editDone, setEditDone] = useState(false);
+
+  /* send modal (Email / WhatsApp — send the invoice to the client) */
+  const [sendTarget, setSendTarget] = useState<Invoice | null>(null);
+  const [sendChannel, setSendChannel] = useState<"email" | "whatsapp">("email");
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [waTo, setWaTo] = useState("");
+  const [waMessage, setWaMessage] = useState("");
+  const [sendBusy, setSendBusy] = useState(false);
+  const [sendErr, setSendErr] = useState("");
+  const [sendDone, setSendDone] = useState<{ title: string; detail?: string; tone: string } | null>(null);
 
   const load = async (initial = false) => {
     initial ? setLoading(true) : setRefreshing(true);
@@ -668,6 +702,107 @@ export default function Invoices() {
     }
   };
 
+  /* ── send (email / whatsapp) ── */
+  const openSend = (inv: Invoice, channel: "email" | "whatsapp") => {
+    setSendErr("");
+    setSendDone(null);
+    setSendBusy(false);
+    setSendChannel(channel);
+
+    const total = num(inv.total);
+    const paid = effectivePaid(inv);
+    const due = round2(Math.max(total - paid, 0));
+    const bizName = inv.business?.name || "Abhijit Art";
+
+    setEmailTo(inv.clientEmail || "");
+    setEmailSubject(`Invoice ${inv.invoiceNo} from ${bizName}`);
+    setEmailMessage(
+      `Dear ${inv.clientName || "Customer"},\n\n` +
+        `Please find your invoice ${inv.invoiceNo}, for a total of ${rupee(total)}` +
+        (due > 0.005 ? `, with a balance due of ${rupee(due)}` : " — paid in full, thank you") +
+        `.\n\nDo let us know if anything needs correcting — just reply to this email.\n\n` +
+        `Warm regards,\n${bizName}`,
+    );
+
+    setWaTo(inv.clientPhone || "");
+    setWaMessage(
+      `Dear ${inv.clientName || "Customer"},\n\n` +
+        `Here is your invoice ${inv.invoiceNo} from ${bizName}.\n\n` +
+        `Total: ${rupee(total)}` +
+        (paid > 0.005 ? `\nPaid: ${rupee(paid)}` : "") +
+        (due > 0.005 ? `\nBalance due: ${rupee(due)}` : "") +
+        `\n\nThank you for your business!`,
+    );
+
+    setSendTarget(inv);
+  };
+
+  /* emails the invoice via the same endpoint the Billing tab uses (works for
+     any status; the invoice is rendered inside the email, totals recomputed
+     server-side). Reconstructs the payload from the stored bill. */
+  const sendEmailNow = async () => {
+    if (!sendTarget) return;
+    if (!emailTo.trim()) { setSendErr("Enter the client's email address."); return; }
+    setSendBusy(true);
+    setSendErr("");
+    try {
+      const inv = sendTarget;
+      await api.post(
+        "/api/invoices/email",
+        {
+          to: emailTo.trim(),
+          subject: emailSubject,
+          message: emailMessage,
+          invoice: {
+            invNo: inv.invoiceNo,
+            date: inv.date,
+            biz: inv.business || {},
+            client: {
+              name: inv.clientName || "",
+              address: inv.clientAddr || "",
+              phone: inv.clientPhone || "",
+              email: inv.clientEmail || "",
+              gstin: inv.clientGstin || "",
+              pan: "",
+            },
+            items: (Array.isArray(inv.items) ? inv.items : []).map((it) => ({ desc: it.desc, qty: num(it.qty), rate: num(it.rate) })),
+            discType: inv.discType,
+            discVal: inv.discVal,
+            taxPct: inv.taxPct,
+            notes: inv.notes || "",
+            warranty: inv.warranty || "",
+            paidAmount: effectivePaid(inv),
+          },
+        },
+        { timeout: REQ_TIMEOUT },
+      );
+      setSendDone({ title: "Email sent", detail: `${inv.invoiceNo} → ${emailTo.trim()}`, tone: GREEN });
+      setTimeout(() => setSendTarget(null), 1600);
+    } catch (e: any) {
+      setSendErr(errMessage(e, "Couldn't send the email."));
+    } finally {
+      setSendBusy(false);
+    }
+  };
+
+  /* opens WhatsApp with the message + the invoice PDF link prefilled. wa.me
+     can't attach the file, so it carries a tap-to-open link (already on the
+     loaded invoice). Synchronous — no popup-block workaround needed. */
+  const sendWhatsAppNow = () => {
+    if (!sendTarget) return;
+    const digits = waDigits(waTo);
+    if (digits.length < 10) {
+      setSendErr("Enter a valid WhatsApp number — a 10-digit Indian mobile, or one with its country code.");
+      return;
+    }
+    const inv = sendTarget;
+    const link = inv.pdfUrl ? `\n\n📄 Invoice PDF: ${inv.pdfUrl}` : "";
+    const url = `https://wa.me/${digits}?text=${encodeURIComponent(waMessage + link)}`;
+    window.open(url, "_blank");
+    setSendDone({ title: "Opening WhatsApp…", detail: `+${digits}`, tone: WA });
+    setTimeout(() => setSendTarget(null), 1400);
+  };
+
   const exportCsv = () => {
     const head = ["Invoice No", "Date", "Client", "Phone", "Email", "GSTIN", "Source", "Method", "Subtotal", "Discount", "GST", "Total", "Paid", "Due", "Status"];
     const body = shown.map((inv) => {
@@ -701,6 +836,11 @@ export default function Invoices() {
   const payNewBalance = round2(Math.max(payTotal - payNewPaid, 0));
   const payPreview = deriveStatus(payNewPaid, payTotal);
   const payFullyPaid = payBalanceNow <= 0.005;
+
+  /* live values for the send modal */
+  const sendTotal = sendTarget ? num(sendTarget.total) : 0;
+  const sendPaid = sendTarget ? effectivePaid(sendTarget) : 0;
+  const sendDue = round2(Math.max(sendTotal - sendPaid, 0));
 
   return (
     <div style={st.page}>
@@ -821,7 +961,7 @@ export default function Invoices() {
                   <th style={{ ...st.th, textAlign: "right", width: 120 }}>Total</th>
                   <th style={{ ...st.th, textAlign: "right", width: 130 }}>Due</th>
                   <th style={{ ...st.th, width: 110 }}>Status</th>
-                  <th style={{ ...st.th, textAlign: "right", width: 160 }}>Actions</th>
+                  <th style={{ ...st.th, textAlign: "right", width: 220 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -833,6 +973,7 @@ export default function Invoices() {
                   const paid = effectivePaid(inv);
                   const due = round2(Math.max(total - paid, 0));
                   const editLocked = inv.status === "paid" || inv.status === "cancelled";
+                  const sendLocked = inv.status === "cancelled";
                   return (
                     <tr key={inv.id} className="ivh-tr">
                       <td style={{ ...st.td, color: FAINT, textAlign: "center" }}>{i + 1}</td>
@@ -885,6 +1026,16 @@ export default function Invoices() {
                         </button>
                         <button className="ivh-icon" style={st.iconBtn} onClick={() => printInvoice(inv)} title="Download / print">
                           <Icon name="download" size={16} />
+                        </button>
+                        <button className="ivh-icon" style={st.iconBtn} onClick={() => openSend(inv, "email")}
+                          disabled={sendLocked}
+                          title={sendLocked ? "Cancelled — nothing to send" : "Email this invoice to the client"}>
+                          <Icon name="mail" size={16} />
+                        </button>
+                        <button className="ivh-icon ivh-wa" style={st.iconBtn} onClick={() => openSend(inv, "whatsapp")}
+                          disabled={sendLocked}
+                          title={sendLocked ? "Cancelled — nothing to send" : "Send this invoice on WhatsApp"}>
+                          <span style={{ color: WA, display: "inline-flex" }}><Icon name="whatsapp" size={17} /></span>
                         </button>
                         <button className="ivh-icon ivh-danger" style={st.iconBtn} onClick={() => openDelete(inv)} title="Delete">
                           <Icon name="trash" size={16} />
@@ -1250,6 +1401,106 @@ export default function Invoices() {
         </div>
       )}
 
+      {/* ═══════════ send modal (email / whatsapp) ═══════════ */}
+      {sendTarget && (
+        <div style={st.backdrop} onClick={() => !sendBusy && !sendDone && setSendTarget(null)}>
+          <div className="ivh-modal" style={{ ...st.editModal, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+            {sendDone ? (
+              <SuccessPanel title={sendDone.title} detail={sendDone.detail} tone={sendDone.tone} />
+            ) : (
+              <>
+                <div style={st.payHead}>
+                  <div>
+                    <h3 style={st.modalTitle}>Send invoice · {sendTarget.invoiceNo}</h3>
+                    <p style={st.paySub}>{sendTarget.clientName || "—"}</p>
+                  </div>
+                  <button className="ivh-icon" style={st.iconBtn} onClick={() => setSendTarget(null)} aria-label="Close"><Icon name="x" size={18} /></button>
+                </div>
+
+                {/* channel toggle */}
+                <div style={st.segWrap}>
+                  {(["email", "whatsapp"] as const).map((ch, idx) => (
+                    <button key={ch} type="button"
+                      className={`ivh-seg${sendChannel === ch ? " on" : ""}`}
+                      style={{
+                        ...st.segBtn,
+                        ...(idx === 1 ? { borderLeft: `1px solid ${LINE}` } : null),
+                        ...(sendChannel === ch ? (ch === "whatsapp" ? st.segBtnWa : st.segBtnOn) : null),
+                      }}
+                      onClick={() => { setSendChannel(ch); setSendErr(""); }}>
+                      <Icon name={ch === "email" ? "mail" : "whatsapp"} size={14} /> {ch === "email" ? "Email" : "WhatsApp"}
+                    </button>
+                  ))}
+                </div>
+
+                {sendChannel === "email" ? (
+                  <>
+                    <div style={st.sendNote}>
+                      The invoice is included in the email itself — the client sees it without downloading anything.
+                    </div>
+                    <label style={{ display: "block" }}>
+                      <span style={st.fieldLabel}>Send to</span>
+                      <input className="ivh-in" style={st.editInput} type="email" value={emailTo}
+                        onChange={(e) => setEmailTo(e.target.value)} placeholder="client@example.com" autoFocus />
+                    </label>
+                    <label style={{ display: "block", marginTop: 10 }}>
+                      <span style={st.fieldLabel}>Subject</span>
+                      <input className="ivh-in" style={st.editInput} value={emailSubject}
+                        onChange={(e) => setEmailSubject(e.target.value)} />
+                    </label>
+                    <label style={{ display: "block", marginTop: 10 }}>
+                      <span style={st.fieldLabel}>Message</span>
+                      <textarea className="ivh-in" style={{ ...st.editTextarea, minHeight: 122 }} value={emailMessage}
+                        onChange={(e) => setEmailMessage(e.target.value)} />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <div style={st.sendNoteWa}>
+                      Opens WhatsApp with the message ready to send.{" "}
+                      {sendTarget.pdfUrl ? "A link to the invoice PDF is added automatically." : "The PDF link will appear once the site is deployed with a public URL."}{" "}
+                      WhatsApp can't attach the file itself.
+                    </div>
+                    <label style={{ display: "block" }}>
+                      <span style={st.fieldLabel}>WhatsApp number</span>
+                      <input className="ivh-in" style={st.editInput} value={waTo}
+                        onChange={(e) => setWaTo(e.target.value)} placeholder="e.g. 7405179066" autoFocus />
+                    </label>
+                    <label style={{ display: "block", marginTop: 10 }}>
+                      <span style={st.fieldLabel}>Message</span>
+                      <textarea className="ivh-in" style={{ ...st.editTextarea, minHeight: 132 }} value={waMessage}
+                        onChange={(e) => setWaMessage(e.target.value)} />
+                    </label>
+                  </>
+                )}
+
+                <div style={st.sendSummary}>
+                  <span style={{ fontSize: 12.5, color: MUTE, fontWeight: 600 }}>
+                    Total{sendDue > 0.005 ? ` · balance ${rupee(sendDue)}` : ""}
+                  </span>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: TERRA, fontVariantNumeric: "tabular-nums" }}>{rupee(sendTotal)}</span>
+                </div>
+
+                {sendErr && <div style={{ ...st.errBanner, marginTop: 4, marginBottom: 0 }}>{sendErr}</div>}
+
+                <div style={{ ...st.editFoot, marginTop: 18 }}>
+                  <button className="ivh-ghost" style={st.ghostBtn} onClick={() => setSendTarget(null)} disabled={sendBusy}>Cancel</button>
+                  {sendChannel === "email" ? (
+                    <button className="ivh-save" style={st.saveBtn} onClick={sendEmailNow} disabled={sendBusy || !emailTo.trim()}>
+                      {sendBusy ? <span className="ivh-spin" style={st.spin} /> : <><Icon name="mail" size={15} /> Send email</>}
+                    </button>
+                  ) : (
+                    <button className="ivh-wabtn" style={st.waBtn} onClick={sendWhatsAppNow} disabled={waDigits(waTo).length < 10}>
+                      <Icon name="whatsapp" size={16} /> Open WhatsApp
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* delete confirm */}
       {delTarget && (
         <div style={st.backdrop} onClick={() => !deleting && !delDone && setDelTarget(null)}>
@@ -1301,7 +1552,7 @@ export default function Invoices() {
         .ivh-datesel:hover { border-color: ${TERRA}55; }
         .ivh-datesel:focus { outline: none; border-color: ${TERRA}; box-shadow: 0 0 0 3px ${TERRA}22; }
 
-        .ivh-ghost, .ivh-chip, .ivh-icon, .ivh-nolink, .ivh-del-cta, .ivh-save, .ivh-cancelinv, .ivh-seg, .ivh-addline { transition: all .16s ease; }
+        .ivh-ghost, .ivh-chip, .ivh-icon, .ivh-nolink, .ivh-del-cta, .ivh-save, .ivh-cancelinv, .ivh-seg, .ivh-addline, .ivh-wabtn { transition: all .16s ease; }
         .ivh-ghost:hover:not(:disabled) { background: #fffcf9; border-color: ${TERRA}55; color: ${TERRA}; }
         .ivh-ghost:disabled { opacity: .45; cursor: not-allowed; }
 
@@ -1316,11 +1567,15 @@ export default function Invoices() {
 
         .ivh-icon:not(:disabled):hover { color: ${TERRA}; background: #fffcf9; }
         .ivh-icon.ivh-danger:not(:disabled):hover { color: #d33; background: #fdecea; }
+        .ivh-icon.ivh-wa:not(:disabled):hover { color: ${WA_DK}; background: #edfaf1; }
         .ivh-icon:disabled { opacity: .4; cursor: not-allowed; }
 
         .ivh-save { min-width: 128px; display: inline-flex; align-items: center; justify-content: center; }
         .ivh-save:hover:not(:disabled) { background: ${TERRA_DK}; box-shadow: 0 10px 22px ${TERRA}40; }
         .ivh-save:disabled { opacity: .6; cursor: default; }
+
+        .ivh-wabtn:hover:not(:disabled) { background: ${WA_DK}; box-shadow: 0 10px 22px ${WA}45; }
+        .ivh-wabtn:disabled { opacity: .6; cursor: default; }
 
         .ivh-del-cta { min-width: 128px; display: inline-flex; align-items: center; justify-content: center; }
         .ivh-del-cta:hover:not(:disabled) { background: #b3271a; }
@@ -1354,7 +1609,7 @@ export default function Invoices() {
         @keyframes ivhRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
         @media (prefers-reduced-motion: reduce) {
-          .ivh-in,.ivh-datesel,.ivh-ghost,.ivh-chip,.ivh-icon,.ivh-nolink,.ivh-del-cta,.ivh-save,.ivh-cancelinv,.ivh-seg,.ivh-addline,.ivh-skel,
+          .ivh-in,.ivh-datesel,.ivh-ghost,.ivh-chip,.ivh-icon,.ivh-nolink,.ivh-del-cta,.ivh-save,.ivh-cancelinv,.ivh-seg,.ivh-addline,.ivh-wabtn,.ivh-skel,
           .ivh-modal,.ivh-spin,.ivh-success,.ivh-successring,.ivh-checkcircle,.ivh-checkmark,.ivh-successtitle,.ivh-successsub
           { animation: none !important; transition: none !important; }
           .ivh-checkcircle,.ivh-checkmark { stroke-dashoffset: 0 !important; }
@@ -1377,7 +1632,12 @@ const st: Record<string, React.CSSProperties> = {
   },
   saveBtn: {
     padding: "10px 18px", borderRadius: 0, border: "none", background: TERRA, color: "#fff",
+    fontFamily: SANS, fontWeight: 800, fontSize: 13.5, cursor: "pointer", gap: 7,
+  },
+  waBtn: {
+    padding: "10px 18px", borderRadius: 0, border: "none", background: WA, color: "#fff",
     fontFamily: SANS, fontWeight: 800, fontSize: 13.5, cursor: "pointer",
+    minWidth: 128, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
   },
 
   statsHead: { marginBottom: 8 },
@@ -1410,7 +1670,7 @@ const st: Record<string, React.CSSProperties> = {
 
   tableCard: { borderRadius: 0, overflow: "hidden" },
   tableWrap: { overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 940 },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 1060 },
   th: { textAlign: "left", padding: "13px 18px", fontSize: 10.5, letterSpacing: 0.7, textTransform: "uppercase", color: MUTE, background: SOFT, borderBottom: `1px solid ${LINE_COOL}`, fontWeight: 700, whiteSpace: "nowrap" },
   td: { padding: "14px 18px", borderBottom: `1px solid #f4f1ec`, color: "#2a2f3a", verticalAlign: "top" },
   clientMeta: { display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" },
@@ -1455,6 +1715,7 @@ const st: Record<string, React.CSSProperties> = {
   segWrap: { display: "inline-flex", border: `1px solid ${LINE}`, background: CARD },
   segBtn: { padding: "9px 18px", border: "none", background: "transparent", color: BODY, fontFamily: SANS, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 },
   segBtnOn: { background: TERRA, color: "#fff" },
+  segBtnWa: { background: WA, color: "#fff" },
 
   linesHead: { display: "grid", gridTemplateColumns: "1fr 62px 92px 96px 30px", gap: 8, padding: "0 2px 6px", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: FAINT },
   lineRow: { display: "grid", gridTemplateColumns: "1fr 62px 92px 96px 30px", gap: 8, alignItems: "center", marginBottom: 8 },
@@ -1480,6 +1741,11 @@ const st: Record<string, React.CSSProperties> = {
   editGrandRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 2px", marginTop: 4, borderTop: `1px solid ${LINE}`, fontSize: 16 },
   editGrandVal: { fontWeight: 800, color: TERRA, fontVariantNumeric: "tabular-nums" },
   editFoot: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22, flexWrap: "wrap" },
+
+  /* send modal */
+  sendNote: { padding: "11px 14px", background: "#fffcf9", border: `1px solid ${LINE}`, fontSize: 12.5, color: BODY, lineHeight: 1.55, margin: "12px 0" },
+  sendNoteWa: { padding: "11px 14px", background: "#effaf3", border: "1px solid #cfead9", fontSize: 12.5, color: "#2f6a45", lineHeight: 1.55, margin: "12px 0" },
+  sendSummary: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", margin: "14px 0 2px", background: "#fbf7f3", border: `1px solid ${LINE}` },
 
   payHead: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 4 },
   paySub: { fontSize: 13, color: MUTE, margin: "0 0 4px", fontWeight: 600 },

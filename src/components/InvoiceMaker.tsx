@@ -15,7 +15,8 @@ import api from "../api";
    Typing a Client name suggests customers billed before and fills their
    details (new invoice number is kept, so it's always a fresh bill).
    Every downloaded/emailed bill is also saved to the Invoices history —
-   opt-in, asked exactly once, then automatic. Fully client-side.
+   opt-in, asked exactly once, then automatic. Send on WhatsApp opens a
+   wa.me chat with the invoice PDF link prefilled. Fully client-side.
    ══════════════════════════════════════════════════════════════ */
 
 /* ── tokens (aligned to the admin/inventory system) ── */
@@ -30,6 +31,8 @@ const CARD = "#ffffff";
 const TERRA = "#d9542f";
 const TERRA_DK = "#c8481f";
 const GREEN = "#15733f";
+const WA = "#1fa855";        // WhatsApp accent green
+const WA_DK = "#178544";
 
 const SANS = "'DM Sans', system-ui, sans-serif";
 
@@ -115,6 +118,17 @@ function Icon({ name, size = 16 }: { name: string; size?: number }) {
     user: (<><circle cx="12" cy="8" r="4" {...p} /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" {...p} /></>),
     banknote: (<><rect x="2" y="6" width="20" height="12" rx="2" {...p} /><circle cx="12" cy="12" r="2.5" {...p} /><path d="M6 12h.01M18 12h.01" {...p} /></>),
     card: (<><rect x="2.5" y="5" width="19" height="14" rx="2" {...p} /><path d="M2.5 9.5h19" {...p} /></>),
+    /* WhatsApp: outlined speech bubble + solid handset */
+    whatsapp: (
+      <>
+        <path d="M3.8 20.2 5 16.4A8.4 8.4 0 1 1 8.2 19l-4.4 1.2z" {...p} />
+        <path
+          d="M9.2 8.6c-.15 0-.4.05-.6.3-.2.25-.75.73-.75 1.77s.77 2.05.88 2.2c.1.14 1.5 2.4 3.68 3.28 1.83.72 2.2.58 2.6.55.4-.04 1.24-.5 1.42-1 .18-.5.18-.9.12-1l-.55-.27s-1.05-.52-1.22-.58c-.16-.06-.28-.1-.4.1l-.55.7c-.1.12-.2.13-.37.05-.16-.08-.9-.33-1.66-1.05-.6-.55-1.02-1.22-1.14-1.42-.1-.2-.01-.3.07-.4l.28-.35c.1-.12.13-.2.2-.34.06-.13.03-.25 0-.35-.05-.1-.4-1.13-.6-1.55-.14-.3-.28-.3-.4-.3H9.2z"
+          fill="currentColor"
+          stroke="none"
+        />
+      </>
+    ),
   };
   return (<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>{map[name]}</svg>);
 }
@@ -168,6 +182,14 @@ export default function InvoiceMaker() {
   const [mailBusy, setMailBusy] = useState(false);
   const [mailErr, setMailErr] = useState("");
   const [mailSent, setMailSent] = useState("");
+
+  /* send-on-whatsapp modal */
+  const [waOpen, setWaOpen] = useState(false);
+  const [waTo, setWaTo] = useState("");
+  const [waMessage, setWaMessage] = useState("");
+  const [waBusy, setWaBusy] = useState(false);
+  const [waErr, setWaErr] = useState("");
+  const [waSent, setWaSent] = useState("");
 
   /* pull saved invoices once and distil a unique customer list (newest first,
      keyed on phone-or-name) for the client-name autocomplete. Best-effort. */
@@ -308,6 +330,15 @@ export default function InvoiceMaker() {
     pendingSave.current = null;
   };
 
+  /* bump the saved sequence so the next invoice number increments (shared by
+     Download / Email / WhatsApp) */
+  const bumpSeq = () => {
+    try {
+      const m = invNo.match(/(\d+)$/);
+      if (m) localStorage.setItem("aa_invoice_seq", m[1]);
+    } catch { /* ignore */ }
+  };
+
   const openMail = () => {
     setMailErr("");
     setMailSent("");
@@ -333,33 +364,83 @@ export default function InvoiceMaker() {
         invoice: {
           invNo, date, biz, client,
           items: items.filter((it) => it.desc.trim() || num(it.rate) > 0),
-          discType, discVal, taxPct, notes, warranty,
+          discType, discVal, taxPct, notes, warranty, paidAmount: advancePaid,
         },
       });
       setMailSent(`Invoice emailed to ${mailTo.trim()}.`);
       maybeSaveInvoice(); // save to the Invoices history (asks once, then auto)
       setMailBusy(false);
-      // bump the sequence just like Download does, so the next invoice is new
-      try {
-        const m = invNo.match(/(\d+)$/);
-        if (m) localStorage.setItem("aa_invoice_seq", m[1]);
-      } catch { /* ignore */ }
+      bumpSeq(); // so the next invoice is a new number
     } catch (e: any) {
       setMailErr(e?.response?.data?.message || "Couldn't send the invoice.");
       setMailBusy(false);
     }
   };
 
+  const openWhatsApp = () => {
+    setWaErr("");
+    setWaSent("");
+    setWaTo(client.phone || "");
+    setWaMessage(
+      `Dear ${client.name || "Customer"},\n\n` +
+        `Here is your invoice ${invNo} from ${biz.name || "Abhijit Art"}.\n\n` +
+        `Total: ${rupee(total)}` +
+        (advancePaid > 0 ? `\nAdvance paid: ${rupee(advancePaid)}\nBalance due: ${rupee(balanceDue)}` : "") +
+        `\n\nThank you for your business!`,
+    );
+    setWaOpen(true);
+  };
+
+  /* opens WhatsApp with the message prefilled. wa.me can't attach a file, so
+     we save the bill first, grab its shareable PDF link and append it to the
+     text. The blank tab is opened synchronously (before any await) so the
+     browser doesn't treat the later redirect as a blocked popup. Because a
+     "send" makes the bill a real issued invoice, this always persists it —
+     the PDF link needs a saved record — regardless of the autosave opt-in. */
+  const sendWhatsApp = async () => {
+    const digits = waDigits(waTo);
+    if (digits.length < 10) {
+      setWaErr("Enter a valid WhatsApp number — a 10-digit Indian mobile, or one with its country code.");
+      return;
+    }
+    setWaBusy(true);
+    setWaErr("");
+
+    const win = window.open("about:blank", "_blank"); // keep the user-gesture alive
+
+    let pdfUrl = "";
+    try {
+      const res = await api.post("/api/invoices", invoicePayload());
+      const inv = res?.data || {};
+      pdfUrl = inv.pdfUrl || "";
+      // some responses don't inline the signed link — fetch it by id as a fallback
+      if (!pdfUrl && inv.id) {
+        try {
+          const g = await api.get(`/api/invoices/${inv.id}`);
+          pdfUrl = g?.data?.pdfUrl || "";
+        } catch { /* ignore — send the message without a link */ }
+      }
+      setSavedTick(true);
+      setTimeout(() => setSavedTick(false), 2600);
+      bumpSeq();
+    } catch {
+      /* saving / link generation failed — still open WhatsApp with the text */
+    }
+
+    const finalMsg = waMessage + (pdfUrl ? `\n\n📄 Invoice PDF: ${pdfUrl}` : "");
+    const url = `https://wa.me/${digits}?text=${encodeURIComponent(finalMsg)}`;
+    if (win) win.location.href = url;
+    else window.open(url, "_blank");
+
+    setWaBusy(false);
+    setWaSent(`Opening WhatsApp for +${digits}…`);
+    setTimeout(() => { setWaOpen(false); setWaSent(""); }, 1500);
+  };
+
   const hasLines = items.some((it) => it.desc.trim() || num(it.rate) > 0);
 
   const download = () => {
-    // bump the saved sequence so the next invoice number increments
-    try {
-      const m = invNo.match(/(\d+)$/);
-      if (m) localStorage.setItem("aa_invoice_seq", m[1]);
-    } catch {
-      /* ignore */
-    }
+    bumpSeq(); // increment the next invoice number
 
     maybeSaveInvoice(); // save to the Invoices history (asks once, then auto)
 
@@ -497,6 +578,15 @@ export default function InvoiceMaker() {
           >
             <Icon name="mail" size={15} /> Send by email
           </button>
+          <button
+            className="iv-wa"
+            style={st.ghostBtn}
+            onClick={openWhatsApp}
+            disabled={!hasLines}
+            title={hasLines ? "Send this invoice on WhatsApp" : "Add at least one line item first"}
+          >
+            <span style={{ color: WA, display: "inline-flex" }}><Icon name="whatsapp" size={16} /></span> Send on WhatsApp
+          </button>
           <button className="iv-cta" style={st.cta} onClick={download} disabled={!hasLines}
             title={hasLines ? "Open a printable PDF" : "Add at least one line item first"}>
             <Icon name="download" size={16} /> Download PDF
@@ -506,7 +596,7 @@ export default function InvoiceMaker() {
 
       {!hasLines && (
         <div style={st.needItems}>
-          Add a line item below to enable <b>Send by email</b> and <b>Download PDF</b>.
+          Add a line item below to enable <b>Send by email</b>, <b>Send on WhatsApp</b> and <b>Download PDF</b>.
         </div>
       )}
 
@@ -883,6 +973,67 @@ export default function InvoiceMaker() {
         </div>
       )}
 
+      {/* ── send invoice on WhatsApp ── */}
+      {waOpen && (
+        <div style={st.backdrop} onClick={() => !waBusy && setWaOpen(false)}>
+          <div style={st.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={st.modalHead}>
+              <h3 style={st.modalTitle}>Send invoice {invNo} on WhatsApp</h3>
+              <button className="iv-x" style={st.xBtn} onClick={() => setWaOpen(false)} aria-label="Close">
+                <Icon name="x" size={17} />
+              </button>
+            </div>
+
+            <div style={st.modalBody}>
+              {waSent ? (
+                <div style={st.okBox}>{waSent}</div>
+              ) : (
+                <>
+                  <div style={st.waNote}>
+                    Opens WhatsApp with this message ready to send. A shareable link to the
+                    invoice PDF is added automatically — WhatsApp can't attach the file itself.
+                  </div>
+
+                  <Field label="WhatsApp number" hint="10-digit mobile, or with country code">
+                    <input className="iv-in" style={st.input} value={waTo}
+                      onChange={(e) => setWaTo(e.target.value)} placeholder="e.g. 7405179066" autoFocus />
+                  </Field>
+                  <Field label="Message">
+                    <textarea className="iv-in" style={{ ...st.input, minHeight: 150, resize: "vertical" }}
+                      value={waMessage} onChange={(e) => setWaMessage(e.target.value)} />
+                  </Field>
+
+                  <div style={st.mailSummary}>
+                    <span>{items.filter((it) => it.desc.trim() || num(it.rate) > 0).length} line item(s)</span>
+                    <span style={st.mailTotal}>{rupee(total)}</span>
+                  </div>
+                </>
+              )}
+
+              {waErr && <div style={st.errBox}>{waErr}</div>}
+            </div>
+
+            <div style={st.modalFoot}>
+              {waSent ? (
+                <button className="iv-wacta" style={{ ...st.waCta, marginLeft: "auto" }} onClick={() => setWaOpen(false)}>Done</button>
+              ) : (
+                <>
+                  <button className="iv-ghost" style={st.ghostBtn} onClick={() => setWaOpen(false)} disabled={waBusy}>Cancel</button>
+                  <button
+                    className="iv-wacta"
+                    style={st.waCta}
+                    onClick={sendWhatsApp}
+                    disabled={waBusy || waDigits(waTo).length < 10}
+                  >
+                    {waBusy ? "Preparing…" : <><Icon name="whatsapp" size={16} /> Open WhatsApp</>}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── one-time: save invoices automatically? ── */}
       {askSave && (
         <div style={{ ...st.backdrop, zIndex: 1100 }}>
@@ -940,10 +1091,14 @@ export default function InvoiceMaker() {
 
         .iv-in { transition: border-color .18s, box-shadow .18s; }
         .iv-in:focus { border-color: ${TERRA}; box-shadow: 0 0 0 3px ${TERRA}22; outline: none; }
-        .iv-cta, .iv-ghost, .iv-add, .iv-del, .iv-link, .iv-seg, .iv-sug { transition: all .2s ease; }
+        .iv-cta, .iv-ghost, .iv-add, .iv-del, .iv-link, .iv-seg, .iv-sug, .iv-wa, .iv-wacta { transition: all .2s ease; }
         .iv-cta:hover:not(:disabled) { background: ${TERRA_DK}; box-shadow: 0 12px 26px ${TERRA}40; transform: translateY(-1px); }
-        .iv-cta:disabled, .iv-ghost:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
-        .iv-ghost:hover { background: #fffcf9; border-color: ${TERRA}55; color: ${TERRA}; }
+        .iv-cta:disabled, .iv-ghost:disabled, .iv-wa:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+        .iv-ghost:hover:not(:disabled) { background: #fffcf9; border-color: ${TERRA}55; color: ${TERRA}; }
+        /* WhatsApp button: same ghost shape as Send by email, green accent */
+        .iv-wa:hover:not(:disabled) { background: #edfaf1; border-color: ${WA}66; color: ${WA_DK}; }
+        .iv-wacta:hover:not(:disabled) { background: ${WA_DK}; box-shadow: 0 12px 26px ${WA}45; transform: translateY(-1px); }
+        .iv-wacta:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
         .iv-add:hover { border-color: ${TERRA}66; color: ${TERRA}; background: #fffcf9; }
         .iv-del:hover:not(:disabled) { color: ${TERRA}; background: #fdecea; }
         .iv-del:disabled { opacity: .35; cursor: not-allowed; }
@@ -951,7 +1106,7 @@ export default function InvoiceMaker() {
         .iv-seg:hover { color: ${TERRA}; }
         .iv-sug:hover { background: #fffcf9; }
         @media (max-width: 1100px) { .iv-layout { grid-template-columns: minmax(0,1fr) !important; } .iv-preview { position: static !important; } }
-        @media (prefers-reduced-motion: reduce) { .iv-in,.iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug { transition: none !important; } }
+        @media (prefers-reduced-motion: reduce) { .iv-in,.iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug,.iv-wa,.iv-wacta { transition: none !important; } }
       `}</style>
     </div>
   );
@@ -969,6 +1124,13 @@ function signStamp() {
     day: "numeric", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit", hour12: true,
   });
+}
+/* normalise a phone for wa.me — digits only; a bare 10-digit Indian mobile
+   gets +91, anything that already carries a country code is left as-is */
+function waDigits(raw: string) {
+  let d = String(raw || "").replace(/\D/g, "").replace(/^0+/, "");
+  if (d.length === 10) d = "91" + d;
+  return d;
 }
 /* escape, then turn typed newlines into line breaks for the PDF */
 function escapeLines(s: string) {
@@ -996,6 +1158,12 @@ const st: Record<string, React.CSSProperties> = {
   ghostBtn: {
     display: "inline-flex", alignItems: "center", gap: 7, padding: "11px 18px", borderRadius: 0,
     border: `1px solid ${LINE}`, background: CARD, color: INK, fontFamily: SANS, fontWeight: 700, fontSize: 13.5, cursor: "pointer",
+  },
+  /* WhatsApp modal primary — filled green */
+  waCta: {
+    display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 20px", borderRadius: 0,
+    border: "none", background: WA, color: "#fff", fontFamily: SANS, fontWeight: 700, fontSize: 13.5,
+    cursor: "pointer", boxShadow: `0 10px 22px ${WA}30`,
   },
 
   layout: { display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16, alignItems: "start" },
@@ -1071,6 +1239,7 @@ const st: Record<string, React.CSSProperties> = {
   modalFoot: { display: "flex", justifyContent: "flex-end", gap: 10, padding: "16px 22px", borderTop: `1px solid ${LINE}`, background: CARD, flexShrink: 0, flexWrap: "wrap" },
   needItems: { marginBottom: 16, padding: "11px 15px", background: "#fbf3e3", border: "1px solid #efdcb2", fontSize: 12.5, color: "#8a6a1c", lineHeight: 1.55 },
   mailNote: { padding: "11px 14px", background: "#fffcf9", border: `1px solid ${LINE}`, fontSize: 12.5, color: BODY, lineHeight: 1.55, marginBottom: 4 },
+  waNote: { padding: "11px 14px", background: "#effaf3", border: "1px solid #cfead9", fontSize: 12.5, color: "#2f6a45", lineHeight: 1.55, marginBottom: 4 },
   mailSummary: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 18, paddingTop: 14, borderTop: `1px solid ${LINE}`, fontSize: 12.5, color: MUTE, fontWeight: 600 },
   mailTotal: { fontSize: 17, fontWeight: 800, color: TERRA, fontVariantNumeric: "tabular-nums" },
   okBox: { padding: "13px 16px", background: "#e8f6ee", border: "1px solid #bfe3cd", color: "#15733f", fontSize: 13.5, fontWeight: 600 },
