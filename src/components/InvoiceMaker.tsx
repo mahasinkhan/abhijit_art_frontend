@@ -1,25 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api";
 
-/* ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
-   INVOICE MAKER  ??  admin billing tool
+/* ══════════════════════════════════════════════════════════════
+   INVOICE MAKER  ·  admin billing tool
 
    Same design system as the Inventory module: DM Sans throughout,
    square corners, warm orange-glow cards, hairline borders, heavy
-   tabular figures. The invoice PAPER stays plain white ??? it previews
+   tabular figures. The invoice PAPER stays plain white — it previews
    a printed document, so it must not carry the UI's tint.
 
-   Fill in business + client details and line items ??? live preview
-   ??? download as PDF (print popup). Supports an advance / part payment
+   Fill in business + client details and line items → live preview
+   → download as PDF (print popup). Supports an advance / part payment
    (shows Advance paid + Balance due) and a cash/online payment method.
    Typing a Client name suggests customers billed before and fills their
    details (new invoice number is kept, so it's always a fresh bill).
-   Every downloaded/emailed bill is also saved to the Invoices history ???
+   Every downloaded/emailed bill is also saved to the Invoices history —
    opt-in, asked exactly once, then automatic. Send on WhatsApp opens a
    wa.me chat with the invoice PDF link prefilled. Fully client-side.
-   ?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????? */
+   ══════════════════════════════════════════════════════════════ */
 
-/* ?????? tokens (aligned to the admin/inventory system) ?????? */
+/* ── tokens (aligned to the admin/inventory system) ── */
 const INK = "#1f2430";
 const BODY = "#545a67";
 const MUTE = "#8a8f9a";
@@ -42,7 +42,7 @@ const GLOW =
 const GLOW_SHADOW = "0 1px 2px rgba(17,20,30,.04), 0 10px 26px -18px rgba(217,84,47,.28)";
 
 const rupee = (n: number) =>
-  "???" + (Number.isFinite(n) ? n : 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  "₹" + (Number.isFinite(n) ? n : 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const num = (v: any) => {
   const n = parseFloat(String(v));
   return Number.isFinite(n) ? n : 0;
@@ -102,7 +102,7 @@ const nextInvoiceNo = () => {
   return `AA-${stamp}-${String(seq).padStart(3, "0")}`;
 };
 
-/* ?????? icons ?????? */
+/* ── icons ── */
 function Icon({ name, size = 16 }: { name: string; size?: number }) {
   const p = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   const map: Record<string, JSX.Element> = {
@@ -139,14 +139,14 @@ function Field({ label, children, half, hint }: { label: string; children: React
     <label style={{ ...st.field, ...(half ? { flex: 1, minWidth: 0 } : {}) }}>
       <span style={st.fieldLabel}>
         {label}
-        {hint && <span style={st.fieldHint}> ?? {hint}</span>}
+        {hint && <span style={st.fieldHint}> · {hint}</span>}
       </span>
       {children}
     </label>
   );
 }
 
-/* ??????????????????????????????????????????????????????????????????????????? component ??????????????????????????????????????????????????????????????????????????? */
+/* ───────────────────────── component ───────────────────────── */
 export default function InvoiceMaker() {
   const [biz, setBiz] = useState<Party>(loadBiz);
   const [client, setClient] = useState<Party>({ name: "", address: "", phone: "", email: "", gstin: "", pan: "" });
@@ -161,14 +161,14 @@ export default function InvoiceMaker() {
   const [logoOk, setLogoOk] = useState(true);
   const [warranty, setWarranty] = useState("");
   const [advance, setAdvance] = useState("0"); // advance / part payment received now
-  const [payMethod, setPayMethod] = useState<PayMethod>("cash"); // how the customer is paying ??? cash vs online
+  const [payMethod, setPayMethod] = useState<PayMethod>("cash"); // how the customer is paying — cash vs online
 
-  /* customer autocomplete ??? distilled from saved invoices, for the name field */
+  /* customer autocomplete — distilled from saved invoices, for the name field */
   const [customers, setCustomers] = useState<CustomerLite[]>([]);
   const [nameSuggestOpen, setNameSuggestOpen] = useState(false);
   const [activeSug, setActiveSug] = useState(-1);
 
-  /* auto-save to the Invoices history ??? asked once, then remembered */
+  /* auto-save to the Invoices history — asked once, then remembered */
   const [autosave, setAutosave] = useState<"on" | "off" | "">(loadAutosave);
   const [askSave, setAskSave] = useState(false);   // one-time opt-in modal
   const [savedTick, setSavedTick] = useState(false); // brief "Saved" confirmation
@@ -218,7 +218,7 @@ export default function InvoiceMaker() {
         }
         setCustomers(out);
       })
-      .catch(() => { /* best-effort ??? no suggestions if it fails */ });
+      .catch(() => { /* best-effort — no suggestions if it fails */ });
     return () => { alive = false; };
   }, []);
 
@@ -252,7 +252,7 @@ export default function InvoiceMaker() {
     return { subtotal, discountAmt, taxable, taxAmt, total: taxable + taxAmt };
   }, [items, discType, discVal, taxPct]);
 
-  /* advance / balance for a part payment ??? advance can't exceed the total */
+  /* advance / balance for a part payment — advance can't exceed the total */
   const advancePaid = Math.min(Math.max(num(advance), 0), total);
   const balanceDue = Math.max(total - advancePaid, 0);
 
@@ -296,7 +296,7 @@ export default function InvoiceMaker() {
     paymentMethod: payMethod,
   });
 
-  /* fire-and-forget POST ??? a save hiccup must never block the PDF/email the
+  /* fire-and-forget POST — a save hiccup must never block the PDF/email the
      user actually asked for; a short "Saved to Invoices" tick confirms it landed */
   const persistInvoice = (payload: Record<string, unknown>) => {
     api
@@ -306,7 +306,7 @@ export default function InvoiceMaker() {
         setTimeout(() => setSavedTick(false), 2600);
       })
       .catch(() => {
-        /* best-effort history save ??? ignore failures */
+        /* best-effort history save — ignore failures */
       });
   };
 
@@ -316,7 +316,7 @@ export default function InvoiceMaker() {
   const maybeSaveInvoice = () => {
     if (autosave === "on") return persistInvoice(invoicePayload());
     if (autosave === "off") return;
-    // undecided ??? capture this bill and ask once
+    // undecided → capture this bill and ask once
     pendingSave.current = invoicePayload();
     setAskSave(true);
   };
@@ -347,7 +347,7 @@ export default function InvoiceMaker() {
     setMailMessage(
       `Dear ${client.name || "Customer"},\n\n` +
         `Please find your invoice ${invNo} below, for a total of ${rupee(total)}.\n\n` +
-        `Do let us know if anything needs correcting ??? just reply to this email.\n\n` +
+        `Do let us know if anything needs correcting — just reply to this email.\n\n` +
         `Warm regards,\n${biz.name || "Abhijit Art"}`,
     );
     setMailOpen(true);
@@ -395,12 +395,12 @@ export default function InvoiceMaker() {
      we save the bill first, grab its shareable PDF link and append it to the
      text. The blank tab is opened synchronously (before any await) so the
      browser doesn't treat the later redirect as a blocked popup. Because a
-     "send" makes the bill a real issued invoice, this always persists it ???
-     the PDF link needs a saved record ??? regardless of the autosave opt-in. */
+     "send" makes the bill a real issued invoice, this always persists it —
+     the PDF link needs a saved record — regardless of the autosave opt-in. */
   const sendWhatsApp = async () => {
     const digits = waDigits(waTo);
     if (digits.length < 10) {
-      setWaErr("Enter a valid WhatsApp number ??? a 10-digit Indian mobile, or one with its country code.");
+      setWaErr("Enter a valid WhatsApp number — a 10-digit Indian mobile, or one with its country code.");
       return;
     }
     setWaBusy(true);
@@ -413,27 +413,27 @@ export default function InvoiceMaker() {
       const res = await api.post("/api/invoices", invoicePayload());
       const inv = res?.data || {};
       pdfUrl = inv.pdfUrl || "";
-      // some responses don't inline the signed link ??? fetch it by id as a fallback
+      // some responses don't inline the signed link — fetch it by id as a fallback
       if (!pdfUrl && inv.id) {
         try {
           const g = await api.get(`/api/invoices/${inv.id}`);
           pdfUrl = g?.data?.pdfUrl || "";
-        } catch { /* ignore ??? send the message without a link */ }
+        } catch { /* ignore — send the message without a link */ }
       }
       setSavedTick(true);
       setTimeout(() => setSavedTick(false), 2600);
       bumpSeq();
     } catch {
-      /* saving / link generation failed ??? still open WhatsApp with the text */
+      /* saving / link generation failed — still open WhatsApp with the text */
     }
 
-    const finalMsg = waMessage + (pdfUrl ? `\n\n???? Invoice PDF: ${pdfUrl}` : "");
+    const finalMsg = waMessage + (pdfUrl ? `\n\n📄 Invoice PDF: ${pdfUrl}` : "");
     const url = `https://wa.me/${digits}?text=${encodeURIComponent(finalMsg)}`;
     if (win) win.location.href = url;
     else window.open(url, "_blank");
 
     setWaBusy(false);
-    setWaSent(`Opening WhatsApp for +${digits}???`);
+    setWaSent(`Opening WhatsApp for +${digits}…`);
     setTimeout(() => { setWaOpen(false); setWaSent(""); }, 1500);
   };
 
@@ -451,7 +451,7 @@ export default function InvoiceMaker() {
       .map(
         (it, i) => `<tr>
           <td class="c">${i + 1}</td>
-          <td>${escapeHtml(it.desc) || "???"}</td>
+          <td>${escapeHtml(it.desc) || "—"}</td>
           <td class="r">${num(it.qty)}</td>
           <td class="r">${rupee(num(it.rate))}</td>
           <td class="r">${rupee(num(it.qty) * num(it.rate))}</td>
@@ -462,14 +462,14 @@ export default function InvoiceMaker() {
     const totRows =
       `<tr><td class="lbl">Subtotal</td><td class="r">${rupee(subtotal)}</td></tr>` +
       (discountAmt > 0
-        ? `<tr><td class="lbl">Discount${discType === "percent" ? ` (${num(discVal)}%)` : ""}</td><td class="r">??? ${rupee(
+        ? `<tr><td class="lbl">Discount${discType === "percent" ? ` (${num(discVal)}%)` : ""}</td><td class="r">− ${rupee(
             discountAmt
           )}</td></tr>`
         : "") +
       (num(taxPct) > 0 ? `<tr><td class="lbl">GST (${num(taxPct)}%)</td><td class="r">${rupee(taxAmt)}</td></tr>` : "") +
       `<tr class="grand"><td class="lbl">Total</td><td class="r">${rupee(total)}</td></tr>` +
       (advancePaid > 0
-        ? `<tr><td class="lbl">Advance paid</td><td class="r" style="color:${GREEN}">??? ${rupee(advancePaid)}</td></tr>` +
+        ? `<tr><td class="lbl">Advance paid</td><td class="r" style="color:${GREEN}">− ${rupee(advancePaid)}</td></tr>` +
           `<tr class="due"><td class="lbl">Balance due</td><td class="r">${rupee(balanceDue)}</td></tr>`
         : "");
 
@@ -479,7 +479,7 @@ export default function InvoiceMaker() {
         <div class="sign-name">${bizName}</div>
         <div class="sign-line"></div>
         <div class="sign-role">Authorized Signatory</div>
-        <div class="sign-meta">Digitally signed ?? ${signedAt}</div>
+        <div class="sign-meta">Digitally signed · ${signedAt}</div>
       </div>`;
 
     const w = window.open("", "_blank", "width=820,height=1000");
@@ -523,7 +523,7 @@ export default function InvoiceMaker() {
         <div>
           <img src="/images/abhijit_art_logo.png" alt="${bizName}" style="height:76px;width:auto;display:block;margin-bottom:8px" onerror="this.outerHTML='<h1>${bizName}</h1>'" />
           <div class="muted">${escapeLines(biz.address)}<br/>
-            ${biz.phone ? "??? " + escapeHtml(biz.phone) + " &nbsp;" : ""}${biz.email ? "??? " + escapeHtml(biz.email) : ""}
+            ${biz.phone ? "☎ " + escapeHtml(biz.phone) + " &nbsp;" : ""}${biz.email ? "✉ " + escapeHtml(biz.email) : ""}
             ${biz.gstin ? "<br/>GSTIN: " + escapeHtml(biz.gstin) : ""}${biz.pan ? "<br/>PAN: " + escapeHtml(biz.pan) : ""}</div>
         </div>
         <div class="inv-title">
@@ -535,9 +535,9 @@ export default function InvoiceMaker() {
       <div class="parties">
         <div>
           <div class="lab">Bill to</div>
-          <div class="strong">${escapeHtml(client.name) || "???"}</div>
-          <div class="muted">${escapeLines(client.address)}${client.phone ? "<br/>??? " + escapeHtml(client.phone) : ""}${
-      client.email ? "<br/>??? " + escapeHtml(client.email) : ""
+          <div class="strong">${escapeHtml(client.name) || "—"}</div>
+          <div class="muted">${escapeLines(client.address)}${client.phone ? "<br/>☎ " + escapeHtml(client.phone) : ""}${
+      client.email ? "<br/>✉ " + escapeHtml(client.email) : ""
     }${client.gstin ? "<br/>GSTIN: " + escapeHtml(client.gstin) : ""}</div>
         </div>
       </div>
@@ -546,7 +546,7 @@ export default function InvoiceMaker() {
       <table class="totals"><tbody>${totRows}</tbody></table>
       ${signatureHtml}
       ${notes.trim() || warranty.trim() ? `<div class="notes">${notes.trim() ? `<b>Notes:</b> ${escapeHtml(notes)}` : ""}${notes.trim() && warranty.trim() ? "<br/>" : ""}${warranty.trim() ? `<b>Warranty:</b> ${escapeHtml(warranty)}` : ""}</div>` : ""}
-      <div class="foot">Generated by Abhijit Art ?? ${new Date().toLocaleDateString("en-IN")}</div>
+      <div class="foot">Generated by Abhijit Art · ${new Date().toLocaleDateString("en-IN")}</div>
       </body></html>`);
     w.document.close();
     w.focus();
@@ -558,7 +558,7 @@ export default function InvoiceMaker() {
       <div style={st.head}>
         <div>
           <h1 style={st.title}>Invoice maker</h1>
-          <p style={st.sub}>Create an invoice ??? fill the details and download as PDF.</p>
+          <p style={st.sub}>Create an invoice — fill the details and download as PDF.</p>
         </div>
         <div style={st.headActions}>
           {savedTick && (
@@ -587,9 +587,6 @@ export default function InvoiceMaker() {
           >
             <span style={{ color: WA, display: "inline-flex" }}><Icon name="whatsapp" size={16} /></span> Send on WhatsApp
           </button>
-          <button className="iv-ghost iv-printbtn" style={st.ghostBtn} onClick={() => window.print()} disabled={!hasLines} title={hasLines ? "Print this invoice" : "Add at least one line item first"}>
-            <Icon name="receipt" size={15} /> Print
-          </button>
           <button className="iv-cta" style={st.cta} onClick={download} disabled={!hasLines}
             title={hasLines ? "Open a printable PDF" : "Add at least one line item first"}>
             <Icon name="download" size={16} /> Download PDF
@@ -604,14 +601,14 @@ export default function InvoiceMaker() {
       )}
 
       <div className="iv-layout" style={st.layout}>
-        {/* ?????? form ?????? */}
+        {/* ── form ── */}
         <div style={{ minWidth: 0 }}>
           {/* business */}
           <section className="iv-card" style={st.card}>
             <div style={st.cardHead}>
               <h2 style={st.cardTitle}>Your business</h2>
               <button className="iv-link" style={st.saveLink} onClick={saveBusiness}>
-                {saved ? "Saved ???" : "Save as default"}
+                {saved ? "Saved ✓" : "Save as default"}
               </button>
             </div>
             <div style={st.row}>
@@ -652,10 +649,10 @@ export default function InvoiceMaker() {
 
             <div style={st.subHead}>Bill to</div>
             <div style={st.row}>
-              {/* client name ??? autocomplete from past customers */}
+              {/* client name — autocomplete from past customers */}
               <div style={{ ...st.field, flex: 1, minWidth: 0, position: "relative" }}>
                 <span style={st.fieldLabel}>
-                  Client name<span style={st.fieldHint}> ?? type to search saved customers</span>
+                  Client name<span style={st.fieldHint}> · type to search saved customers</span>
                 </span>
                 <input
                   className="iv-in"
@@ -684,7 +681,7 @@ export default function InvoiceMaker() {
                         style={{ ...st.suggestItem, ...(i === activeSug ? { background: "#fffcf9" } : null) }}
                         onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
                       >
-                        <span style={st.suggestName}>{c.name || "???"}</span>
+                        <span style={st.suggestName}>{c.name || "—"}</span>
                         <span style={st.suggestMeta}>{c.phone || c.email}</span>
                       </button>
                     ))}
@@ -714,7 +711,7 @@ export default function InvoiceMaker() {
             <div className="iv-itemgrid" style={st.itemHead}>
               <span>Description</span>
               <span style={{ textAlign: "right" }}>Qty</span>
-              <span style={{ textAlign: "right" }}>Rate (???)</span>
+              <span style={{ textAlign: "right" }}>Rate (₹)</span>
               <span style={{ textAlign: "right" }}>Amount</span>
               <span />
             </div>
@@ -738,7 +735,7 @@ export default function InvoiceMaker() {
               <Field label="Discount" half>
                 <div style={{ display: "flex", gap: 8 }}>
                   <select className="iv-in" style={{ ...st.input, width: 70, flex: "none" }} value={discType} onChange={(e) => setDiscType(e.target.value as any)}>
-                    <option value="amount">???</option>
+                    <option value="amount">₹</option>
                     <option value="percent">%</option>
                   </select>
                   <input className="iv-in" style={st.input} type="number" min="0" value={discVal} onChange={(e) => setDiscVal(e.target.value)} />
@@ -749,11 +746,11 @@ export default function InvoiceMaker() {
               </Field>
             </div>
 
-            {/* payment method ??? cash vs online (UPI/card/bank). Saved on the bill
+            {/* payment method — cash vs online (UPI/card/bank). Saved on the bill
                 and editable later in the Invoices tab. Kept off the printed PDF. */}
             <div style={st.field}>
               <span style={st.fieldLabel}>
-                Payment method<span style={st.fieldHint}> ?? how they paid</span>
+                Payment method<span style={st.fieldHint}> · how they paid</span>
               </span>
               <div style={st.segWrap}>
                 {(["cash", "online"] as PayMethod[]).map((mth, idx) => (
@@ -772,7 +769,7 @@ export default function InvoiceMaker() {
 
             {/* advance / part payment */}
             <div style={st.row}>
-              <Field label="Advance received (???)" hint="Optional ??? paid now" half>
+              <Field label="Advance received (₹)" hint="Optional — paid now" half>
                 <input className="iv-in" style={st.input} type="number" min="0" value={advance}
                   placeholder="0" onChange={(e) => setAdvance(e.target.value)} />
               </Field>
@@ -798,11 +795,11 @@ export default function InvoiceMaker() {
           </section>
         </div>
 
-        {/* ?????? live preview ?????? */}
+        {/* ── live preview ── */}
         <div style={{ minWidth: 0 }}>
           <div className="iv-preview" style={st.previewWrap}>
             <div style={st.previewLabel}>Preview</div>
-            <div className="iv-paper" style={st.paper}>
+            <div style={st.paper}>
               <div style={st.pTop}>
                 <div>
                   {logoOk ? (
@@ -817,8 +814,8 @@ export default function InvoiceMaker() {
                   )}
                   <div style={st.pMuted}>
                     {biz.address}
-                    {biz.phone && <><br />??? {biz.phone}</>}
-                    {biz.email && <><br />??? {biz.email}</>}
+                    {biz.phone && <><br />☎ {biz.phone}</>}
+                    {biz.email && <><br />✉ {biz.email}</>}
                     {biz.gstin && <><br />GSTIN: {biz.gstin}</>}
                     {biz.pan && <><br />PAN: {biz.pan}</>}
                   </div>
@@ -833,11 +830,11 @@ export default function InvoiceMaker() {
               </div>
 
               <div style={st.pLab}>Bill to</div>
-              <div style={st.pStrong}>{client.name || "???"}</div>
+              <div style={st.pStrong}>{client.name || "—"}</div>
               <div style={st.pMuted}>
                 {client.address}
-                {client.phone && <><br />??? {client.phone}</>}
-                {client.email && <><br />??? {client.email}</>}
+                {client.phone && <><br />☎ {client.phone}</>}
+                {client.email && <><br />✉ {client.email}</>}
                 {client.gstin && <><br />GSTIN: {client.gstin}</>}
               </div>
 
@@ -860,7 +857,7 @@ export default function InvoiceMaker() {
                       .map((it, i) => (
                         <tr key={it.id}>
                           <td style={{ ...st.pTd, color: FAINT, textAlign: "center" }}>{i + 1}</td>
-                          <td style={st.pTd}>{it.desc || "???"}</td>
+                          <td style={st.pTd}>{it.desc || "—"}</td>
                           <td style={{ ...st.pTdNum }}>{num(it.qty)}</td>
                           <td style={{ ...st.pTdNum }}>{rupee(num(it.rate))}</td>
                           <td style={{ ...st.pTdNum }}>{rupee(num(it.qty) * num(it.rate))}</td>
@@ -874,7 +871,7 @@ export default function InvoiceMaker() {
                 <tbody>
                   <tr><td style={st.pTLbl}>Subtotal</td><td style={st.pTVal}>{rupee(subtotal)}</td></tr>
                   {discountAmt > 0 && (
-                    <tr><td style={st.pTLbl}>Discount{discType === "percent" ? ` (${num(discVal)}%)` : ""}</td><td style={st.pTVal}>??? {rupee(discountAmt)}</td></tr>
+                    <tr><td style={st.pTLbl}>Discount{discType === "percent" ? ` (${num(discVal)}%)` : ""}</td><td style={st.pTVal}>− {rupee(discountAmt)}</td></tr>
                   )}
                   {num(taxPct) > 0 && (
                     <tr><td style={st.pTLbl}>GST ({num(taxPct)}%)</td><td style={st.pTVal}>{rupee(taxAmt)}</td></tr>
@@ -882,7 +879,7 @@ export default function InvoiceMaker() {
                   <tr><td style={st.pGrandLbl}>Total</td><td style={st.pGrandVal}>{rupee(total)}</td></tr>
                   {advancePaid > 0 && (
                     <>
-                      <tr><td style={st.pTLbl}>Advance paid</td><td style={{ ...st.pTVal, color: GREEN }}>??? {rupee(advancePaid)}</td></tr>
+                      <tr><td style={st.pTLbl}>Advance paid</td><td style={{ ...st.pTVal, color: GREEN }}>− {rupee(advancePaid)}</td></tr>
                       <tr><td style={st.pDueLbl}>Balance due</td><td style={st.pDueVal}>{rupee(balanceDue)}</td></tr>
                     </>
                   )}
@@ -895,7 +892,7 @@ export default function InvoiceMaker() {
                 <div style={st.pSignName}>{biz.name || "Abhijit Art"}</div>
                 <div style={st.pSignLine} />
                 <div style={st.pSignRole}>Authorized Signatory</div>
-                <div style={st.pSignMeta}>Digitally signed ?? {signStamp()}</div>
+                <div style={st.pSignMeta}>Digitally signed · {signStamp()}</div>
               </div>
 
               {(notes.trim() || warranty.trim()) && (
@@ -911,7 +908,7 @@ export default function InvoiceMaker() {
         </div>
       </div>
 
-      {/* ?????? send invoice by email ?????? */}
+      {/* ── send invoice by email ── */}
       {mailOpen && (
         <div style={st.backdrop} onClick={() => !mailBusy && setMailOpen(false)}>
           <div style={st.modal} onClick={(e) => e.stopPropagation()}>
@@ -928,7 +925,7 @@ export default function InvoiceMaker() {
               ) : (
                 <>
                   <div style={st.mailNote}>
-                    The invoice is included in the email itself ??? the client sees it without
+                    The invoice is included in the email itself — the client sees it without
                     downloading anything. Totals are recalculated on the server before sending.
                   </div>
 
@@ -967,7 +964,7 @@ export default function InvoiceMaker() {
                     onClick={sendInvoice}
                     disabled={mailBusy || !mailTo.trim() || !mailSubject.trim()}
                   >
-                    {mailBusy ? "Sending???" : <><Icon name="send" size={15} /> Send invoice</>}
+                    {mailBusy ? "Sending…" : <><Icon name="send" size={15} /> Send invoice</>}
                   </button>
                 </>
               )}
@@ -976,7 +973,7 @@ export default function InvoiceMaker() {
         </div>
       )}
 
-      {/* ?????? send invoice on WhatsApp ?????? */}
+      {/* ── send invoice on WhatsApp ── */}
       {waOpen && (
         <div style={st.backdrop} onClick={() => !waBusy && setWaOpen(false)}>
           <div style={st.modal} onClick={(e) => e.stopPropagation()}>
@@ -994,7 +991,7 @@ export default function InvoiceMaker() {
                 <>
                   <div style={st.waNote}>
                     Opens WhatsApp with this message ready to send. A shareable link to the
-                    invoice PDF is added automatically ??? WhatsApp can't attach the file itself.
+                    invoice PDF is added automatically — WhatsApp can't attach the file itself.
                   </div>
 
                   <Field label="WhatsApp number" hint="10-digit mobile, or with country code">
@@ -1028,7 +1025,7 @@ export default function InvoiceMaker() {
                     onClick={sendWhatsApp}
                     disabled={waBusy || waDigits(waTo).length < 10}
                   >
-                    {waBusy ? "Preparing???" : <><Icon name="whatsapp" size={16} /> Open WhatsApp</>}
+                    {waBusy ? "Preparing…" : <><Icon name="whatsapp" size={16} /> Open WhatsApp</>}
                   </button>
                 </>
               )}
@@ -1037,7 +1034,7 @@ export default function InvoiceMaker() {
         </div>
       )}
 
-      {/* ?????? one-time: save invoices automatically? ?????? */}
+      {/* ── one-time: save invoices automatically? ── */}
       {askSave && (
         <div style={{ ...st.backdrop, zIndex: 1100 }}>
           <div style={{ ...st.modal, maxWidth: 440 }}>
@@ -1047,7 +1044,7 @@ export default function InvoiceMaker() {
             <div style={st.modalBody}>
               <p style={st.askText}>
                 Keep every invoice you download or email in the <b>Invoices</b> tab, so you can
-                find, reopen and re-download any bill later. You'll only be asked this once ??? after
+                find, reopen and re-download any bill later. You'll only be asked this once — after
                 this it happens automatically in the background.
               </p>
             </div>
@@ -1068,7 +1065,7 @@ export default function InvoiceMaker() {
         .iv-x { transition: all .18s; }
         .iv-x:hover { color: ${TERRA}; border-color: ${TERRA}55; background: #fffcf9; }
 
-        /* shared card surface ??? same warm glow as the inventory cards */
+        /* shared card surface — same warm glow as the inventory cards */
         .iv-card {
           background: ${GLOW};
           border: 1px solid ${LINE};
@@ -1108,18 +1105,6 @@ export default function InvoiceMaker() {
         .iv-link:hover { color: ${TERRA}; }
         .iv-seg:hover { color: ${TERRA}; }
         .iv-sug:hover { background: #fffcf9; }
-        /* iv-printcss */
-        @media print {
-          @page { size: A5; margin: 8mm; }
-          html, body { background: #fff !important; }
-          body * { visibility: hidden !important; }
-          .iv-paper, .iv-paper * { visibility: visible !important; }
-          .iv-paper { position: absolute !important; left: 0; top: 0; width: 100% !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; }
-          .iv-preview { position: static !important; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          tr { page-break-inside: avoid; }
-          thead { display: table-header-group; }
-        }
         @media (max-width: 1100px) { .iv-layout { grid-template-columns: minmax(0,1fr) !important; } .iv-preview { position: static !important; } }
         @media (prefers-reduced-motion: reduce) { .iv-in,.iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug,.iv-wa,.iv-wacta { transition: none !important; } }
       `}</style>
@@ -1140,7 +1125,7 @@ function signStamp() {
     hour: "2-digit", minute: "2-digit", hour12: true,
   });
 }
-/* normalise a phone for wa.me ??? digits only; a bare 10-digit Indian mobile
+/* normalise a phone for wa.me — digits only; a bare 10-digit Indian mobile
    gets +91, anything that already carries a country code is left as-is */
 function waDigits(raw: string) {
   let d = String(raw || "").replace(/\D/g, "").replace(/^0+/, "");
@@ -1155,7 +1140,7 @@ function escapeHtml(s: string) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 }
 
-/* ??????????????????????????????????????????????????????????????????????????? styles ??????????????????????????????????????????????????????????????????????????? */
+/* ───────────────────────── styles ───────────────────────── */
 const st: Record<string, React.CSSProperties> = {
   page: { fontFamily: SANS, color: INK, minWidth: 0, maxWidth: "100%" },
 
@@ -1174,7 +1159,7 @@ const st: Record<string, React.CSSProperties> = {
     display: "inline-flex", alignItems: "center", gap: 7, padding: "11px 18px", borderRadius: 0,
     border: `1px solid ${LINE}`, background: CARD, color: INK, fontFamily: SANS, fontWeight: 700, fontSize: 13.5, cursor: "pointer",
   },
-  /* WhatsApp modal primary ??? filled green */
+  /* WhatsApp modal primary — filled green */
   waCta: {
     display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 20px", borderRadius: 0,
     border: "none", background: WA, color: "#fff", fontFamily: SANS, fontWeight: 700, fontSize: 13.5,
@@ -1244,7 +1229,7 @@ const st: Record<string, React.CSSProperties> = {
   segBtn: { padding: "10px 18px", border: "none", background: "transparent", color: BODY, fontFamily: SANS, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 },
   segBtnOn: { background: TERRA, color: "#fff" },
 
-  /* ?????? send-invoice modal ?????? */
+  /* ── send-invoice modal ── */
   backdrop: { position: "fixed", inset: 0, background: "rgba(24,22,28,.5)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, boxSizing: "border-box" },
   modal: { width: "100%", maxWidth: 520, maxHeight: "calc(100vh - 40px)", background: "#fffdfb", border: `1px solid ${LINE}`, boxShadow: "0 30px 80px rgba(24,22,28,.34)", display: "flex", flexDirection: "column", boxSizing: "border-box", overflow: "hidden" },
   modalHead: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "17px 22px", borderBottom: `1px solid ${LINE}`, background: CARD, flexShrink: 0 },
@@ -1261,7 +1246,7 @@ const st: Record<string, React.CSSProperties> = {
   errBox: { marginTop: 16, padding: "11px 14px", fontSize: 13, lineHeight: 1.5, color: "#8a2f16", background: "#fdecea", border: "1px solid #f3cfc2" },
   askText: { margin: 0, fontSize: 13.5, lineHeight: 1.65, color: BODY },
 
-  /* ?????? preview: the paper stays plain white, it previews a printed doc ?????? */
+  /* ── preview: the paper stays plain white, it previews a printed doc ── */
   previewWrap: { position: "sticky", top: 20, minWidth: 0 },
   previewLabel: { fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: MUTE, marginBottom: 8 },
   paper: {
@@ -1294,5 +1279,3 @@ const st: Record<string, React.CSSProperties> = {
   pSignMeta: { fontSize: 10.5, color: FAINT, fontWeight: 600, marginTop: 3 },
   pNotes: { marginTop: 26, paddingTop: 15, borderTop: `1px solid ${LINE_COOL}`, fontSize: 12, color: MUTE, lineHeight: 1.6, wordBreak: "break-word" },
 };
-
-
