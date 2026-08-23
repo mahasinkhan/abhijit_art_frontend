@@ -587,6 +587,9 @@ export default function InvoiceMaker() {
           >
             <span style={{ color: WA, display: "inline-flex" }}><Icon name="whatsapp" size={16} /></span> Send on WhatsApp
           </button>
+          <button className="iv-ghost iv-printbtn" style={st.ghostBtn} onClick={() => window.print()} disabled={!hasLines} title="Print this invoice">
+            <Icon name="receipt" size={15} /> Print
+          </button>
           <button className="iv-cta" style={st.cta} onClick={download} disabled={!hasLines}
             title={hasLines ? "Open a printable PDF" : "Add at least one line item first"}>
             <Icon name="download" size={16} /> Download PDF
@@ -799,7 +802,7 @@ export default function InvoiceMaker() {
         <div style={{ minWidth: 0 }}>
           <div className="iv-preview" style={st.previewWrap}>
             <div style={st.previewLabel}>Preview</div>
-            <div style={st.paper}>
+            <div className="iv-paper" style={st.paper}>
               <div style={st.pTop}>
                 <div>
                   {logoOk ? (
@@ -1105,6 +1108,18 @@ export default function InvoiceMaker() {
         .iv-link:hover { color: ${TERRA}; }
         .iv-seg:hover { color: ${TERRA}; }
         .iv-sug:hover { background: #fffcf9; }
+        /* iv-printcss */
+        @media print {
+          @page { size: A5; margin: 8mm; }
+          html, body { background: #fff !important; }
+          body * { visibility: hidden !important; }
+          .iv-paper, .iv-paper * { visibility: visible !important; }
+          .iv-paper { position: absolute !important; left: 0; top: 0; width: 100% !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; }
+          .iv-preview { position: static !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          tr { page-break-inside: avoid; }
+          thead { display: table-header-group; }
+        }
         @media (max-width: 1100px) { .iv-layout { grid-template-columns: minmax(0,1fr) !important; } .iv-preview { position: static !important; } }
         @media (prefers-reduced-motion: reduce) { .iv-in,.iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug,.iv-wa,.iv-wacta { transition: none !important; } }
       `}</style>
