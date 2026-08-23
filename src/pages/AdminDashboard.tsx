@@ -211,7 +211,10 @@ export default function AdminDashboard() {
         .adm-backdrop { display: none; position: fixed; inset: 0; background: rgba(24,22,28,.45); z-index: 40; opacity: 0; transition: opacity .22s ease; }
         /* adm-drawercss */
         @media (max-width: 860px) {
-          .adm-burger { display: inline-flex; }
+          /* adm-fixhdr */
+            .adm-header { position: fixed; top: 0; left: 0; right: 0; z-index: 45; }
+            .adm-content { padding-top: 64px; }
+            .adm-burger { display: inline-flex; }
           .adm-backdrop { display: block; pointer-events: none; }
           .adm-backdrop.on { opacity: 1; pointer-events: auto; }
           .adm-sidebar, .adm-layout.collapsed .adm-sidebar { position: fixed; top: 0; left: 0; bottom: 0; height: 100vh; width: 264px; padding: 20px 14px; z-index: 50; border-right: 1px solid #ebebf0; border-bottom: none; transform: translateX(-100%); transition: transform .26s cubic-bezier(.22,1,.36,1); overflow-y: auto; }
