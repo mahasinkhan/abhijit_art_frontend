@@ -358,8 +358,10 @@ function printInvoice(inv: Invoice) {
       .sign-role{font-size:11px;color:${INK};font-weight:700;letter-spacing:.3px}
       .sign-meta{font-size:10.5px;color:${FAINT};font-weight:600;margin-top:3px}
       .notes{margin-top:30px;padding-top:16px;border-top:1px solid ${LINE_COOL};font-size:12.5px;color:${MUTE};line-height:1.6}
+      /* ivh-a5 */
+      @page { size: A5; margin: 8mm; }
       .foot{margin-top:40px;text-align:center;font-size:11px;color:${FAINT}}
-      @media print{body{padding:24px}}
+      @media print{body{padding:0}}
     </style></head><body>
     <div class="top">
       <div>
@@ -978,7 +980,7 @@ export default function Invoices() {
                     <tr key={inv.id} className="ivh-tr">
                       <td style={{ ...st.td, color: FAINT, textAlign: "center" }}>{i + 1}</td>
                       <td style={st.td}>
-                        <button className="ivh-nolink" style={st.noBtn} onClick={() => printInvoice(inv)} title="Download / print this bill">
+                        <button className="ivh-nolink" style={st.noBtn} onClick={() => printInvoice(inv)} title="Print this bill">
                           {inv.invoiceNo}
                         </button>
                       </td>
@@ -1024,7 +1026,7 @@ export default function Invoices() {
                         <button className="ivh-icon" style={st.iconBtn} onClick={() => openPay(inv)} title="Payments & history">
                           <Icon name="banknote" size={17} />
                         </button>
-                        <button className="ivh-icon" style={st.iconBtn} onClick={() => printInvoice(inv)} title="Download / print">
+                        <button className="ivh-icon" style={st.iconBtn} onClick={() => printInvoice(inv)} title="Print">
                           <Icon name="download" size={16} />
                         </button>
                         <button className="ivh-icon" style={st.iconBtn} onClick={() => openSend(inv, "email")}
