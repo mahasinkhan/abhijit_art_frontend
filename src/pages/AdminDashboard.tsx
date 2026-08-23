@@ -12,8 +12,10 @@ const Activity         = lazy(() => import("../components/Activity"));
 const AdminPostUpload  = lazy(() => import("../components/AdminPostUpload"));
 const PostFeed         = lazy(() => import("../components/PostFeed"));
 const Settings         = lazy(() => import("../components/Settings"));
+const Tasks            = lazy(() => import("../components/Tasks"));
+const Employees        = lazy(() => import("../components/Employees"));
 
-type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "activity" | "posts" | "settings";
+type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "activity" | "posts" | "employees" | "tasks" | "settings";
 
 const ACCENT = "#d9542f";
 
@@ -28,6 +30,8 @@ const IconPosts     = () => (<svg {...ico}><rect x="3" y="3" width="18" height="
 const IconSettings  = () => (<svg {...ico}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>);
 const IconCustomers = () => (<svg {...ico}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
 const IconInventory = () => (<svg {...ico}><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.3 7 12 12l8.7-5M12 22V12" /></svg>);
+const IconEmployees = () => (<svg {...ico}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>);
+const IconTasks     = () => (<svg {...ico}><rect x="9" y="3" width="13" height="13" rx="1"/><path d="M5 7H2a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-3"/><path d="m5 12 2 2 4-4"/></svg>);
 
 const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "bookings",  label: "Bookings",  Icon: IconBookings  },
@@ -38,13 +42,16 @@ const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "reminders", label: "Reminders", Icon: IconReminders },
   { id: "activity",  label: "Activity",  Icon: IconActivity  },
   { id: "posts",     label: "Posts",     Icon: IconPosts     },
+  { id: "employees", label: "Employees", Icon: IconEmployees },
+  { id: "tasks",     label: "Tasks",     Icon: IconTasks     },
   { id: "settings",  label: "Settings",  Icon: IconSettings  },
 ];
 
 const TITLES: Record<Tab, string> = {
   bookings: "Bookings", customers: "Customers", inventory: "Inventory",
   billing: "Billing", invoices: "Invoices", reminders: "Payment reminders",
-  activity: "Activity", posts: "Posts", settings: "Settings",
+  activity: "Activity", posts: "Posts", employees: "Employees", tasks: "Tasks",
+  settings: "Settings",
 };
 
 export default function AdminDashboard() {
@@ -54,6 +61,9 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("bookings");
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // when admin clicks "Assign Task" on an employee card, jump to Tasks and
+  // prefill the assignee in the new-task form
+  const [taskPrefillEmp, setTaskPrefillEmp] = useState<string | null>(null);
 
   const handleLogout = () => { logout(); navigate("/login"); };
   const initial = (user?.name?.[0] || "A").toUpperCase();
@@ -136,6 +146,18 @@ export default function AdminDashboard() {
                 <PostFeed isAdmin={true} refreshKey={feedKey} />
               </div>
             )}
+            {activeTab === "employees" && (
+              <Employees
+                onAssignTask={(id) => { setTaskPrefillEmp(id); setActiveTab("tasks"); }}
+              />
+            )}
+            {activeTab === "tasks"     && (
+              <Tasks
+                prefillEmployeeId={taskPrefillEmp}
+                onPrefillConsumed={() => setTaskPrefillEmp(null)}
+                onGoToBilling={() => setActiveTab("billing")}
+              />
+            )}
             {activeTab === "settings"  && <Settings />}
           </Suspense>
         </main>
@@ -154,6 +176,7 @@ export default function AdminDashboard() {
           display: flex; flex-direction: column; gap: 6px;
           padding: 20px 14px;
           transition: width .22s ease, padding .22s ease;
+          overflow-y: auto;
         }
         .adm-brand { display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 2px 8px 16px; border-bottom: 1px solid #f1f1f5; min-height: 44px; }
         .adm-logo { height: 34px; width: auto; display: block; transition: height .2s ease; }
@@ -209,12 +232,10 @@ export default function AdminDashboard() {
         /* ── mobile ── */
         .adm-burger { display: none; background: transparent; border: none; color: #1f2430; cursor: pointer; padding: 6px; margin-right: 4px; align-items: center; }
         .adm-backdrop { display: none; position: fixed; inset: 0; background: rgba(24,22,28,.45); z-index: 40; opacity: 0; transition: opacity .22s ease; }
-        /* adm-drawercss */
         @media (max-width: 860px) {
-          /* adm-fixhdr */
-            .adm-header { position: fixed; top: 0; left: 0; right: 0; z-index: 45; }
-            .adm-content { padding-top: 64px; }
-            .adm-burger { display: inline-flex; }
+          .adm-header { position: fixed; top: 0; left: 0; right: 0; z-index: 45; }
+          .adm-content { padding-top: 64px; }
+          .adm-burger { display: inline-flex; }
           .adm-backdrop { display: block; pointer-events: none; }
           .adm-backdrop.on { opacity: 1; pointer-events: auto; }
           .adm-sidebar, .adm-layout.collapsed .adm-sidebar { position: fixed; top: 0; left: 0; bottom: 0; height: 100vh; width: 264px; padding: 20px 14px; z-index: 50; border-right: 1px solid #ebebf0; border-bottom: none; transform: translateX(-100%); transition: transform .26s cubic-bezier(.22,1,.36,1); overflow-y: auto; }

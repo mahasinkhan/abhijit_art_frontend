@@ -20,13 +20,17 @@ const DigitalMarketing = lazy(() => import("./pages/DigitalMarketing"));
 const MyBookings       = lazy(() => import("./pages/MyBookings"));
 const BookingDetails   = lazy(() => import("./pages/BookingDetails"));
 const AdminDashboard   = lazy(() => import("./pages/AdminDashboard"));
+const EmployeeDashboard = lazy(() => import("./pages/EmployeeDashboard"));
 
-/* Renders the app chrome (header/footer/chat) on every page except the dashboard and auth pages. */
+/* Renders the app chrome (header/footer/chat) on every page except the
+   dashboard, employee portal, and auth pages. */
 function Shell() {
   const location = useLocation();
   const bareRoutes = ["/login", "/register"];
   const bare =
-    location.pathname.startsWith("/admin") || bareRoutes.includes(location.pathname);
+    location.pathname.startsWith("/admin") ||
+    location.pathname.startsWith("/employee") ||
+    bareRoutes.includes(location.pathname);
 
   return (
     <>
@@ -45,6 +49,15 @@ function Shell() {
             <Route path="/my-bookings"       element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
             <Route path="/my-bookings/:id"   element={<ProtectedRoute><BookingDetails /></ProtectedRoute>} />
             <Route path="/admin"             element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+            {/* Employee portal — bare page, no Header/Footer/Chat */}
+            <Route
+              path="/employee"
+              element={
+                <ProtectedRoute employeeOnly>
+                  <EmployeeDashboard />
+                </ProtectedRoute>
+              }
+            />
           </Routes>
         </Suspense>
       </main>
