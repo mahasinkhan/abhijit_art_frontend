@@ -223,17 +223,6 @@ export default function AdminDashboard() {
           .adm-toggle { display: none; }
           .adm-uname { display: none; }
         }
-        @media (max-width: 860px) {
-          .adm-layout, .adm-layout.collapsed { flex-direction: column; }
-          .adm-sidebar, .adm-layout.collapsed .adm-sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid #ebebf0; padding: 14px; }
-          .adm-brand { border-bottom: none; padding-bottom: 0; }
-          .adm-eyebrow, .adm-layout.collapsed .adm-eyebrow { display: none; }
-          .adm-nav { flex-direction: row; gap: 6px; overflow-x: auto; }
-          .adm-navlabel, .adm-layout.collapsed .adm-navlabel { display: inline; }
-          .adm-navitem, .adm-layout.collapsed .adm-navitem { justify-content: flex-start; gap: 10px; padding: 10px 14px; white-space: nowrap; }
-          .adm-toggle { display: none; }
-          .adm-uname { display: none; }
-        }
 
         @media (prefers-reduced-motion: reduce) {
           .adm-sidebar, .adm-navitem, .adm-logout, .adm-toggle { transition: none; }
