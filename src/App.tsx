@@ -1,20 +1,22 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ChatWidget from "./components/ChatWidget";
-import Home from "./pages/Home";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Services from "./pages/Services";
-import About from "./pages/About";
-import SoftwareService from "./pages/SoftwareService";
-import DigitalMarketing from "./pages/DigitalMarketing";
-import MyBookings from "./pages/MyBookings";
-import BookingDetails from "./pages/BookingDetails";
-import AdminDashboard from "./pages/AdminDashboard";
-import Portfolio from "./pages/Portfolio";
+
+const Home             = lazy(() => import("./pages/Home"));
+const Login            = lazy(() => import("./pages/Login"));
+const Register         = lazy(() => import("./pages/Register"));
+const Services         = lazy(() => import("./pages/Services"));
+const About            = lazy(() => import("./pages/About"));
+const Portfolio        = lazy(() => import("./pages/Portfolio"));
+const SoftwareService  = lazy(() => import("./pages/SoftwareService"));
+const DigitalMarketing = lazy(() => import("./pages/DigitalMarketing"));
+const MyBookings       = lazy(() => import("./pages/MyBookings"));
+const BookingDetails   = lazy(() => import("./pages/BookingDetails"));
+const AdminDashboard   = lazy(() => import("./pages/AdminDashboard"));
 
 /* Renders the app chrome (header/footer/chat) on every page except the dashboard and auth pages. */
 function Shell() {
@@ -27,19 +29,21 @@ function Shell() {
     <>
       {!bare && <Header />}
       <main>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/services" element={<Services />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/portfolio" element={<Portfolio />} />
-          <Route path="/software-service" element={<SoftwareService />} />
-          <Route path="/digital-marketing" element={<DigitalMarketing />} />
-          <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
-          <Route path="/my-bookings/:id" element={<ProtectedRoute><BookingDetails /></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
-        </Routes>
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path="/"                  element={<Home />} />
+            <Route path="/login"             element={<Login />} />
+            <Route path="/register"          element={<Register />} />
+            <Route path="/services"          element={<Services />} />
+            <Route path="/about"             element={<About />} />
+            <Route path="/portfolio"         element={<Portfolio />} />
+            <Route path="/software-service"  element={<SoftwareService />} />
+            <Route path="/digital-marketing" element={<DigitalMarketing />} />
+            <Route path="/my-bookings"       element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+            <Route path="/my-bookings/:id"   element={<ProtectedRoute><BookingDetails /></ProtectedRoute>} />
+            <Route path="/admin"             element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+          </Routes>
+        </Suspense>
       </main>
       {!bare && <Footer />}
       {!bare && <ChatWidget />}
