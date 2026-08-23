@@ -53,6 +53,7 @@ export default function AdminDashboard() {
   const [feedKey, setFeedKey]     = useState(0);
   const [activeTab, setActiveTab] = useState<Tab>("bookings");
   const [collapsed, setCollapsed] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const handleLogout = () => { logout(); navigate("/login"); };
   const initial = (user?.name?.[0] || "A").toUpperCase();
@@ -60,7 +61,8 @@ export default function AdminDashboard() {
   return (
     <div className={`adm-layout${collapsed ? " collapsed" : ""}`}>
       {/* ── Sidebar ── */}
-      <aside className="adm-sidebar">
+      <div className={`adm-backdrop${drawerOpen ? " on" : ""}`} onClick={() => setDrawerOpen(false)} />
+      <aside className={`adm-sidebar${drawerOpen ? " open" : ""}`}>
         <div className="adm-brand">
           <img src="/images/abhijit_art_logo.png" alt="Abhijit Art" className="adm-logo" />
         </div>
@@ -72,7 +74,7 @@ export default function AdminDashboard() {
               key={id}
               title={label}
               className={`adm-navitem${activeTab === id ? " on" : ""}`}
-              onClick={() => setActiveTab(id)}
+              onClick={() => { setActiveTab(id); setDrawerOpen(false); }}
             >
               <span className="adm-navicon"><Icon /></span>
               <span className="adm-navlabel">{label}</span>
@@ -106,6 +108,9 @@ export default function AdminDashboard() {
       {/* ── Right column ── */}
       <div className="adm-content">
         <header className="adm-header">
+          <button className="adm-burger" onClick={() => setDrawerOpen(true)} aria-label="Open menu" aria-expanded={drawerOpen}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
           <h1 className="adm-htitle">{TITLES[activeTab]}</h1>
           <div className="adm-hright">
             <div className="adm-user">
@@ -202,6 +207,22 @@ export default function AdminDashboard() {
         .adm-backlink:hover { background: ${ACCENT}0e; color: ${ACCENT}; border-radius: 0; }
 
         /* ── mobile ── */
+        .adm-burger { display: none; background: transparent; border: none; color: #1f2430; cursor: pointer; padding: 6px; margin-right: 4px; align-items: center; }
+        .adm-backdrop { display: none; position: fixed; inset: 0; background: rgba(24,22,28,.45); z-index: 40; opacity: 0; transition: opacity .22s ease; }
+        /* adm-drawercss */
+        @media (max-width: 860px) {
+          .adm-burger { display: inline-flex; }
+          .adm-backdrop { display: block; pointer-events: none; }
+          .adm-backdrop.on { opacity: 1; pointer-events: auto; }
+          .adm-sidebar, .adm-layout.collapsed .adm-sidebar { position: fixed; top: 0; left: 0; bottom: 0; height: 100vh; width: 264px; padding: 20px 14px; z-index: 50; border-right: 1px solid #ebebf0; border-bottom: none; transform: translateX(-100%); transition: transform .26s cubic-bezier(.22,1,.36,1); overflow-y: auto; }
+          .adm-sidebar.open, .adm-layout.collapsed .adm-sidebar.open { transform: translateX(0); }
+          .adm-nav { flex-direction: column; gap: 4px; overflow-x: visible; }
+          .adm-navlabel, .adm-layout.collapsed .adm-navlabel { display: inline; }
+          .adm-eyebrow, .adm-layout.collapsed .adm-eyebrow { display: block; }
+          .adm-navitem, .adm-layout.collapsed .adm-navitem { justify-content: flex-start; gap: 13px; padding: 12px 14px; }
+          .adm-toggle { display: none; }
+          .adm-uname { display: none; }
+        }
         @media (max-width: 860px) {
           .adm-layout, .adm-layout.collapsed { flex-direction: column; }
           .adm-sidebar, .adm-layout.collapsed .adm-sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid #ebebf0; padding: 14px; }
