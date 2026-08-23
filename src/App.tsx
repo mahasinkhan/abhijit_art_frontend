@@ -5,6 +5,9 @@ import Header from "./components/Header";
 import Footer from "./components/Footer";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ChatWidget from "./components/ChatWidget";
+import ScrollToTop from "./components/ScrollToTop";
+import SmoothScroll from "./components/SmoothScroll";
+import ScrollProgress from "./components/ScrollProgress";
 
 const Home             = lazy(() => import("./pages/Home"));
 const Login            = lazy(() => import("./pages/Login"));
@@ -55,6 +58,9 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <SmoothScroll />
+        <ScrollToTop />
+        <ScrollProgress />
         <Shell />
       </BrowserRouter>
     </AuthProvider>
