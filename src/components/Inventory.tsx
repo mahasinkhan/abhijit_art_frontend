@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../api";
 import InventoryDashboard from "./InventoryDashboard";
@@ -26,6 +26,12 @@ import InventoryDashboard from "./InventoryDashboard";
    Mounts inside AdminDashboard as the "Inventory" tab. Self-contained:
    its own fetch, its own drawers, its own scoped `inv-` CSS. The period
    filter lives in the top toolbar here and is passed to the dashboard.
+
+   PERF: the initial paint should fire as FEW Neon queries as possible.
+   The default Overview tab is drawn by <InventoryDashboard/> with its own
+   single fetch, so nothing here runs until the user opens Stock Items or
+   Suppliers. Each tab loads once, then its data lives in this component's
+   (always-mounted) state, so switching back is instant with no refetch.
    ══════════════════════════════════════════════════════════════ */
 
 /* ── tokens (shared site palette) ── */
@@ -72,6 +78,8 @@ type Item = {
   active: boolean;
   supplierId: string | null;
   supplier?: { name: string } | null;
+  createdAt?: string;
+  updatedAt?: string;
   low?: boolean;
 };
 
@@ -119,7 +127,7 @@ const inr = (v: unknown) =>
 const dateFmt = (s: string) =>
   new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 const dateTimeFmt = (s: string) =>
-  new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /* ══════════════════ period filter (drives the Overview tab) ══════════════════ */
 type Gran = "day" | "week" | "month" | "year";
@@ -373,16 +381,35 @@ export default function Inventory() {
     }
   }, []);
 
-  useEffect(() => {
-    loadCategories();
-    loadSuppliers();
-  }, [loadCategories, loadSuppliers]);
+  /* Lazy-load per tab — the initial hit should fire as few Neon queries as
+     possible. The default Overview tab is drawn by <InventoryDashboard/> with
+     its own single fetch, so on first paint nothing here runs. Each tab loads
+     once; its data then lives in this (always-mounted) component's state, so
+     switching back is instant with no refetch. */
+  const itemsInit = useRef(false);
+  const suppInit = useRef(false);
 
-  /* debounce search / filter */
   useEffect(() => {
+    if (tab === "items" && !itemsInit.current) {
+      itemsInit.current = true;
+      loadItems();
+      loadCategories();
+      loadSuppliers(); // the item / move drawers need the supplier list
+    }
+    if (tab === "suppliers" && !suppInit.current) {
+      suppInit.current = true;
+      loadSuppliers();
+    }
+  }, [tab, loadItems, loadCategories, loadSuppliers]);
+
+  /* re-run the item search when a filter changes (debounced) — only while the
+     Stock Items tab is open and after its first load */
+  useEffect(() => {
+    if (tab !== "items" || !itemsInit.current) return;
     const t = setTimeout(loadItems, 250);
     return () => clearTimeout(t);
-  }, [loadItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, cat, lowOnly]);
 
   // after a write: refresh the visible list immediately, and quietly
   // re-pull the lookup lists in the background (they rarely change and
@@ -394,7 +421,7 @@ export default function Inventory() {
 
   /* ── CSV export (client-side, current filtered list) ── */
   const exportCsv = () => {
-    const head = ["SKU", "Name", "Category", "Unit", "Quantity", "Reorder", "Cost", "Value", "Location", "Supplier", "Status"];
+    const head = ["SKU", "Name", "Category", "Unit", "Quantity", "Reorder", "Cost", "Value", "Location", "Supplier", "Updated", "Status"];
     const rows = items.map((it) => [
       it.sku,
       it.name,
@@ -406,6 +433,7 @@ export default function Inventory() {
       Math.round(n(it.quantity) * n(it.costPrice)),
       it.location,
       it.supplier?.name || "",
+      it.updatedAt ? dateTimeFmt(it.updatedAt) : "",
       n(it.quantity) <= 0 ? "Out of stock" : it.low ? "Low" : "In stock",
     ]);
     const csv = [head, ...rows]
@@ -522,6 +550,7 @@ export default function Inventory() {
                       <th style={{ ...s.th, textAlign: "right" }}>Cost / Unit</th>
                       <th style={{ ...s.th, textAlign: "right" }}>Value</th>
                       <th style={s.th}>Supplier</th>
+                      <th style={s.th}>Updated</th>
                       <th style={{ ...s.th, textAlign: "right" }}>Actions</th>
                     </tr>
                   </thead>
@@ -558,6 +587,9 @@ export default function Inventory() {
                           </td>
                           <td style={s.td}>
                             {it.supplier?.name || <span style={s.dash}>—</span>}
+                          </td>
+                          <td style={{ ...s.td, whiteSpace: "nowrap", color: SLATE, fontSize: 12.5 }}>
+                            {it.updatedAt ? dateTimeFmt(it.updatedAt) : <span style={s.dash}>—</span>}
                           </td>
                           <td style={{ ...s.td, textAlign: "right" }}>
                             <div style={s.actions}>
@@ -1366,7 +1398,7 @@ const s: Record<string, React.CSSProperties> = {
   },
 
   tableCard: { background: CARD, border: `1px solid ${LINE}`, borderRadius: 0, overflow: "hidden", boxShadow: "0 6px 20px rgba(42,35,29,.05)", minWidth: 0, maxWidth: "100%" },
-  table: { width: "100%", borderCollapse: "collapse", minWidth: 820 },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: 940 },
   th: { textAlign: "left", padding: "14px 18px", fontSize: 11, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: SLATE, borderBottom: `1px solid ${LINE}`, whiteSpace: "nowrap", background: "#fdfbf6" },
   td: { padding: "14px 18px", fontSize: 14, color: INK, borderBottom: `1px solid #f2ebdd`, verticalAlign: "middle" },
 

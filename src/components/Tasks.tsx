@@ -19,6 +19,8 @@ interface Task {
   notes?: string;
   startedAt?: string;
   completedAt?: string;
+  deliveredAt?: string;
+  deliveredBy?: { id: string; name: string } | null;
   customerName?: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -42,18 +44,27 @@ interface Invoice {
 }
 interface ItemAssign { assignedToId: string; instruction: string; removed: boolean; }
 
-// ---- Constants ----
-const ACCENT = "#d9542f";
+// ---- Design tokens ----
+const ACCENT = "#d9542f";       // terracotta (primary)
+const ACCENT_DK = "#b8421f";
+const GOLD = "#c2974a";         // secondary
+const INK = "#2a231d";
+const MUTED = "#8a8378";
+const FAINT = "#b3ab9f";
+const LINE = "#e7e1d7";         // warm hairline
+const LINE_SOFT = "#f1ece3";
+const WASH = "#faf8f3";         // subtle warm surface
+
 const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string }> = {
-  pending:     { label: "Pending",     color: "#92400e", bg: "#fef3c7" },
-  in_progress: { label: "In Progress", color: "#1d4ed8", bg: "#dbeafe" },
-  completed:   { label: "Completed",   color: "#15803d", bg: "#dcfce7" },
-  cancelled:   { label: "Cancelled",   color: "#6b7280", bg: "#f3f4f6" },
+  pending:     { label: "Pending",     color: "#9a6a12", bg: "#fbf1dd" },
+  in_progress: { label: "In progress", color: "#1e5fa8", bg: "#e6eff9" },
+  completed:   { label: "Completed",   color: "#2f7a3f", bg: "#e5f2e8" },
+  cancelled:   { label: "Cancelled",   color: "#7c766c", bg: "#f0ede7" },
 };
 const PRIORITY_META: Record<TaskPriority, { label: string; color: string }> = {
-  low:    { label: "Low",    color: "#9ca3af" },
-  medium: { label: "Medium", color: "#c2974a" },
-  high:   { label: "High",   color: "#d9542f" },
+  low:    { label: "Low",    color: "#a8a29a" },
+  medium: { label: "Medium", color: GOLD },
+  high:   { label: "High",   color: ACCENT },
   urgent: { label: "Urgent", color: "#7c3aed" },
 };
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -81,18 +92,19 @@ function fmtDuration(ms: number) {
   const rh = h % 24;
   return rh ? `${d}d ${rh}h` : `${d}d`;
 }
-function deadlineInfo(t: Task): { text: string; tone: "ok" | "soon" | "over" | "done" } {
+function deadlineInfo(t: Task): { text: string; tone: "ok" | "soon" | "over" | "done" | "ready" } {
+  if (t.deliveredAt) {
+    if (t.deadline) {
+      const late = new Date(t.deliveredAt).getTime() - new Date(t.deadline).getTime();
+      if (late > 0) return { text: `Delivered ${fmtDuration(late)} late`, tone: "over" };
+    }
+    return { text: "Delivered on time", tone: "done" };
+  }
+  if (t.status === "completed") return { text: "Done · awaiting delivery", tone: "ready" };
+  if (t.status === "cancelled") return { text: "Cancelled", tone: "ok" };
   if (!t.deadline) return { text: "No delivery date", tone: "ok" };
   const diff = new Date(t.deadline).getTime() - Date.now();
   const days = Math.ceil(diff / 86400000);
-  if (t.status === "completed") {
-    if (t.completedAt) {
-      const late = new Date(t.completedAt).getTime() - new Date(t.deadline).getTime();
-      if (late > 0) return { text: `Delivered ${fmtDuration(late)} late`, tone: "over" };
-      return { text: "Delivered on time", tone: "done" };
-    }
-    return { text: "Completed", tone: "done" };
-  }
   if (diff < 0) return { text: `Overdue by ${fmtDuration(-diff)}`, tone: "over" };
   if (days === 0) return { text: "Due today", tone: "soon" };
   if (days <= 2) return { text: `Due in ${days} day${days > 1 ? "s" : ""}`, tone: "soon" };
@@ -345,157 +357,227 @@ export default function Tasks({
   return (
     <div className="tk">
       <style>{`
-        .tk { font-family:'DM Sans',system-ui,sans-serif; color:#1f2430; font-variant-numeric:tabular-nums; }
+        .tk { font-family:'DM Sans',system-ui,sans-serif; color:${INK}; font-variant-numeric:tabular-nums; }
         .tk * { box-sizing:border-box; }
-        .tk-stats { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:16px; }
-        .tk-stat { background:#fff; border:1px solid #e8e8ee; border-top:3px solid #cfd3db; padding:14px 16px; }
-        .tk-stat.pending{ border-top-color:#c2974a; } .tk-stat.inprog{ border-top-color:#1d4ed8; }
-        .tk-stat.done{ border-top-color:#15803d; } .tk-stat.over{ border-top-color:${ACCENT}; }
-        .tk-stat-n { font-size:1.7rem; font-weight:700; line-height:1; }
+
+        /* ---- Stats ---- */
+        .tk-stats { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:18px; }
+        .tk-stat { background:#fff; border:1px solid ${LINE}; border-radius:3px; padding:15px 16px; display:flex; flex-direction:column; gap:6px; }
+        .tk-stat-n { font-size:1.55rem; font-weight:700; line-height:1; letter-spacing:-.01em; }
+        .tk-stat-l { font-size:.66rem; text-transform:uppercase; letter-spacing:.08em; color:${MUTED}; display:flex; align-items:center; gap:6px; }
+        .tk-stat-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
         .tk-stat.over .tk-stat-n { color:${ACCENT}; }
-        .tk-stat-l { font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; color:#6b7280; margin-top:5px; }
+
+        /* ---- Toolbar ---- */
         .tk-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
-        .tk-search { padding:8px 12px; border:1px solid #d9dce3; font-size:.84rem; width:230px; font-family:inherit; }
-        .tk-sel { padding:8px 10px; border:1px solid #d9dce3; font-size:.82rem; background:#fff; font-family:inherit; }
-        .tk-search:focus, .tk-sel:focus { outline:2px solid ${ACCENT}; outline-offset:-1px; }
-        .tk-assign { margin-left:auto; background:${ACCENT}; color:#fff; border:none; padding:9px 18px; font-size:.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
-        .tk-assign:hover { background:#b8421f; }
-        .tk-split { display:grid; grid-template-columns:minmax(320px,420px) 1fr; gap:14px; align-items:start; }
-        .tk-list { background:#fff; border:1px solid #e8e8ee; max-height:calc(100vh - 260px); overflow-y:auto; }
-        .tk-row { display:grid; grid-template-columns:4px 1fr auto; gap:11px; align-items:center; padding:12px 14px 12px 0; border-bottom:1px solid #f0f0f4; cursor:pointer; }
+        .tk-search { padding:9px 12px; border:1px solid ${LINE}; border-radius:3px; font-size:.85rem; width:250px; font-family:inherit; color:${INK}; background:#fff; }
+        .tk-search::placeholder { color:${FAINT}; }
+        .tk-sel { padding:9px 10px; border:1px solid ${LINE}; border-radius:3px; font-size:.82rem; background:#fff; font-family:inherit; color:${INK}; }
+        .tk-search:focus, .tk-sel:focus { outline:none; border-color:${ACCENT}; }
+        .tk-assign { margin-left:auto; background:${ACCENT}; color:#fff; border:none; border-radius:3px; padding:10px 18px; font-size:.85rem; font-weight:700; cursor:pointer; font-family:inherit; }
+        .tk-assign:hover { background:${ACCENT_DK}; }
+
+        /* ---- Split ---- */
+        .tk-split { display:grid; grid-template-columns:minmax(300px,380px) 1fr; gap:16px; align-items:start; }
+        .tk-list { background:#fff; border:1px solid ${LINE}; border-radius:3px; max-height:calc(100vh - 250px); overflow-y:auto; }
+        .tk-count { padding:11px 16px; font-size:.7rem; text-transform:uppercase; letter-spacing:.07em; color:${MUTED}; border-bottom:1px solid ${LINE_SOFT}; position:sticky; top:0; background:#fff; z-index:1; }
+
+        .tk-row { display:grid; grid-template-columns:3px 1fr; gap:0; align-items:stretch; border-bottom:1px solid ${LINE_SOFT}; cursor:pointer; }
         .tk-row:last-child { border-bottom:none; }
-        .tk-row:hover { background:#faf9f7; }
+        .tk-row:hover { background:${WASH}; }
         .tk-row.sel { background:#fdf2ee; }
-        .tk-row-stripe { width:4px; height:100%; min-height:42px; align-self:stretch; }
-        .tk-row-mid { min-width:0; }
+        .tk-row-stripe { width:3px; }
+        .tk-row-body { padding:13px 14px; min-width:0; }
+        .tk-row-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
         .tk-row-title { font-weight:600; font-size:.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .tk-row-sub { font-size:.75rem; color:#6b7280; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .tk-row-money { font-size:.72rem; color:#9ca3af; margin-top:2px; }
-        .tk-row-money b { color:${ACCENT}; }
-        .tk-row-right { display:flex; flex-direction:column; align-items:flex-end; gap:5px; padding-right:14px; }
-        .tk-badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:.7rem; font-weight:700; white-space:nowrap; }
-        .tk-dl { font-size:.7rem; font-weight:600; }
-        .tk-dl.ok{ color:#6b7280; } .tk-dl.soon{ color:#b45309; } .tk-dl.over{ color:${ACCENT}; } .tk-dl.done{ color:#15803d; }
-        .tk-detail { background:#fff; border:1px solid #e8e8ee; padding:24px; min-height:340px; }
-        .tk-empty { display:flex; align-items:center; justify-content:center; min-height:340px; color:#9ca3af; font-size:.9rem; text-align:center; }
-        .tk-d-head { display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
-        .tk-d-title { font-size:1.15rem; font-weight:700; flex:1; min-width:200px; line-height:1.3; }
-        .tk-d-actions { display:flex; gap:6px; }
-        .tk-abtn { background:#fff; border:1px solid #d9dce3; padding:5px 12px; font-size:.76rem; cursor:pointer; font-family:inherit; color:#1f2430; }
-        .tk-abtn:hover { background:#f5f5f8; }
-        .tk-abtn.danger { color:${ACCENT}; border-color:#f5c4bb; }
+        .tk-row.sel .tk-row-title { color:${ACCENT_DK}; }
+        .tk-row-sub { font-size:.76rem; color:${MUTED}; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .tk-row-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; }
+        .tk-row-money { font-size:.78rem; font-weight:600; color:${INK}; }
+        .tk-badge { display:inline-block; padding:2px 9px; border-radius:3px; font-size:.68rem; font-weight:700; white-space:nowrap; }
+        .tk-dl { font-size:.72rem; font-weight:600; }
+        .tk-dl.ok{ color:${MUTED}; } .tk-dl.soon{ color:#b45309; } .tk-dl.over{ color:${ACCENT}; } .tk-dl.done{ color:#2f7a3f; } .tk-dl.ready{ color:#9a6a12; }
+
+        /* ---- Detail ---- */
+        .tk-detail { background:#fff; border:1px solid ${LINE}; border-radius:3px; min-height:360px; }
+        .tk-empty { display:flex; align-items:center; justify-content:center; min-height:360px; color:${FAINT}; font-size:.9rem; text-align:center; padding:40px; line-height:1.6; }
+        .tk-d-head { display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; padding:22px 24px 16px; border-bottom:1px solid ${LINE_SOFT}; }
+        .tk-d-headmain { flex:1; min-width:200px; }
+        .tk-d-title { font-size:1.15rem; font-weight:700; line-height:1.3; }
+        .tk-d-sub { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:7px; font-size:.8rem; color:${MUTED}; }
+        .tk-d-sub b { color:${INK}; font-weight:600; }
+        .tk-chip { display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:3px; font-size:.7rem; font-weight:700; }
+        .tk-chip-dot { width:6px; height:6px; border-radius:50%; }
+        .tk-d-actions { display:flex; gap:7px; }
+        .tk-abtn { background:#fff; border:1px solid ${LINE}; border-radius:3px; padding:6px 13px; font-size:.78rem; font-weight:600; cursor:pointer; font-family:inherit; color:${INK}; }
+        .tk-abtn:hover { background:${WASH}; border-color:#d8cfc0; }
+        .tk-abtn.danger { color:${ACCENT}; border-color:#f0d2c8; }
         .tk-abtn.danger:hover { background:#fef2ee; }
-        .tk-d-meta { display:flex; gap:16px; flex-wrap:wrap; font-size:.8rem; color:#6b7280; margin:8px 0 8px; }
-        .tk-d-meta b { color:#1f2430; font-weight:600; }
-        .tk-order { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid #eceaf0; margin:16px 0; }
-        .tk-order-col { padding:14px 16px; }
-        .tk-order-col + .tk-order-col { border-left:1px solid #eceaf0; }
-        .tk-oc-l { font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#9ca3af; margin-bottom:7px; }
-        .tk-oc-row { font-size:.84rem; margin-bottom:3px; }
-        .tk-oc-row b { font-weight:600; }
-        .tk-bill-pill { display:inline-block; background:#eef2ff; color:#1d4ed8; border:1px solid #c7d2fe; padding:2px 8px; border-radius:999px; font-size:.72rem; font-weight:700; margin-top:6px; }
-        .tk-bill { display:flex; gap:14px; margin-top:6px; }
-        .tk-bill div span { font-size:.62rem; text-transform:uppercase; letter-spacing:.04em; color:#9ca3af; display:block; }
-        .tk-bill div b { font-size:.9rem; font-weight:700; }
-        .tk-bill .due b { color:${ACCENT}; }
-        .tk-bill .paid b { color:#15803d; }
-        .tk-sec { margin-top:18px; }
-        .tk-sec-l { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; margin-bottom:8px; }
-        .tk-desc { font-size:.88rem; line-height:1.6; white-space:pre-wrap; background:#faf9f7; border-left:3px solid #c2974a; padding:12px 14px; }
-        .tk-links a { color:${ACCENT}; font-size:.82rem; display:block; margin-bottom:4px; word-break:break-all; }
+
+        .tk-d-body { padding:20px 24px 24px; }
+
+        /* status control */
+        .tk-sec { margin-top:22px; }
+        .tk-sec:first-child { margin-top:0; }
+        .tk-sec-l { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:${MUTED}; margin-bottom:10px; }
+        .tk-statusctl { display:inline-flex; border:1px solid ${LINE}; border-radius:3px; overflow:hidden; flex-wrap:wrap; }
+        .tk-sc { padding:8px 16px; border:none; border-right:1px solid ${LINE}; font-size:.78rem; font-weight:600; cursor:pointer; background:#fff; font-family:inherit; color:${MUTED}; }
+        .tk-sc:last-child { border-right:none; }
+        .tk-sc:hover:not(.on) { background:${WASH}; color:${INK}; }
+        .tk-sc.on { color:#fff; font-weight:700; }
+
+        /* order cards */
+        .tk-cards { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+        .tk-card { border:1px solid ${LINE}; border-radius:3px; padding:16px; background:${WASH}; }
+        .tk-card-l { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:${FAINT}; margin-bottom:11px; }
+        .tk-kv { display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-size:.85rem; padding:3px 0; }
+        .tk-kv .k { color:${MUTED}; }
+        .tk-kv .v { font-weight:600; text-align:right; }
+        .tk-kv .v.due { color:${ACCENT}; } .tk-kv .v.paid { color:#2f7a3f; }
+        .tk-cust-name { font-weight:700; font-size:.95rem; margin-bottom:6px; }
+        .tk-cust-line { font-size:.82rem; color:${INK}; margin-bottom:2px; }
+        .tk-cust-line.dim { color:${MUTED}; font-size:.78rem; }
+        .tk-invpill { display:inline-block; background:#fff; border:1px solid ${LINE}; color:${INK}; padding:3px 10px; border-radius:3px; font-size:.72rem; font-weight:700; margin:6px 0; }
+        .tk-dates { font-size:.76rem; color:${MUTED}; margin-top:6px; }
+        .tk-billsplit { border-top:1px solid ${LINE}; margin-top:10px; padding-top:10px; }
+
+        /* description / links / images / notes */
+        .tk-desc { font-size:.88rem; line-height:1.65; white-space:pre-wrap; background:${WASH}; border-left:3px solid ${GOLD}; border-radius:0 3px 3px 0; padding:13px 15px; }
+        .tk-links a { color:${ACCENT}; font-size:.82rem; display:block; margin-bottom:5px; word-break:break-all; text-decoration:none; }
+        .tk-links a:hover { text-decoration:underline; }
         .tk-imgs { display:flex; flex-wrap:wrap; gap:10px; }
-        .tk-img { width:110px; height:84px; object-fit:cover; border:1px solid #e8e8ee; cursor:pointer; }
-        .tk-notes { background:#f9fafb; border:1px solid #e8e8ee; padding:12px; font-size:.84rem; white-space:pre-wrap; }
-        .tk-tl { position:relative; padding-left:4px; }
-        .tk-tl-step { display:grid; grid-template-columns:20px 1fr; gap:12px; }
+        .tk-img { width:112px; height:84px; object-fit:cover; border:1px solid ${LINE}; border-radius:3px; cursor:pointer; }
+        .tk-img:hover { border-color:${ACCENT}; }
+        .tk-notes { background:${WASH}; border:1px solid ${LINE}; border-radius:3px; padding:13px 15px; font-size:.85rem; white-space:pre-wrap; line-height:1.6; }
+
+        /* timeline */
+        .tk-tl { padding-left:2px; }
+        .tk-tl-step { display:grid; grid-template-columns:16px 1fr; gap:14px; }
         .tk-tl-rail { display:flex; flex-direction:column; align-items:center; }
-        .tk-tl-dot { width:13px; height:13px; border-radius:50%; border:2px solid #cfd3db; background:#fff; flex-shrink:0; margin-top:2px; }
-        .tk-tl-dot.done { background:#15803d; border-color:#15803d; }
-        .tk-tl-dot.active { background:#1d4ed8; border-color:#1d4ed8; }
-        .tk-tl-dot.cancel { background:#9ca3af; border-color:#9ca3af; }
-        .tk-tl-line { width:2px; flex:1; background:#e5e7eb; min-height:18px; }
-        .tk-tl-line.done { background:#15803d; }
-        .tk-tl-body { padding-bottom:16px; }
+        .tk-tl-dot { width:12px; height:12px; border-radius:50%; border:2px solid ${LINE}; background:#fff; flex-shrink:0; margin-top:3px; }
+        .tk-tl-dot.done { background:#2f7a3f; border-color:#2f7a3f; }
+        .tk-tl-dot.active { background:#1e5fa8; border-color:#1e5fa8; }
+        .tk-tl-dot.cancel { background:${MUTED}; border-color:${MUTED}; }
+        .tk-tl-line { width:2px; flex:1; background:${LINE_SOFT}; min-height:20px; }
+        .tk-tl-line.done { background:#c7e0cd; }
+        .tk-tl-body { padding-bottom:18px; }
         .tk-tl-step:last-child .tk-tl-body { padding-bottom:0; }
-        .tk-tl-t { font-size:.85rem; font-weight:600; }
-        .tk-tl-when { font-size:.76rem; color:#6b7280; margin-top:1px; }
-        .tk-tl-dur { font-size:.72rem; color:#9ca3af; margin-top:1px; }
-        .tk-statusctl { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
-        .tk-sc { padding:6px 12px; border:1px solid #d9dce3; font-size:.76rem; font-weight:600; cursor:pointer; background:#fff; font-family:inherit; }
-        .tk-sc.on { color:#fff; border-color:transparent; }
-        /* modal */
+        .tk-tl-t { font-size:.86rem; font-weight:600; }
+        .tk-tl-when { font-size:.77rem; color:${MUTED}; margin-top:2px; }
+        .tk-tl-dur { font-size:.72rem; color:${FAINT}; margin-top:1px; }
+
+        /* ---- Modal ---- */
         .tk-ov { position:fixed; inset:0; background:rgba(31,36,48,.5); z-index:1000; display:flex; align-items:flex-start; justify-content:center; padding:24px 20px; overflow-y:auto; }
-        .tk-modal { background:#fff; width:100%; max-width:680px; padding:26px; position:relative; margin:auto; }
-        .tk-mtitle { font-size:1.05rem; font-weight:700; margin-bottom:4px; }
-        .tk-msub { font-size:.8rem; color:#9ca3af; margin-bottom:18px; }
-        .tk-close { position:absolute; top:14px; right:16px; background:none; border:none; font-size:1.3rem; cursor:pointer; color:#6b7280; }
-        .tk-lbl { display:block; font-size:.74rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; margin-bottom:5px; }
-        .tk-inp { width:100%; padding:9px 12px; border:1px solid #d4c8b0; font-size:.88rem; font-family:inherit; }
-        .tk-inp:focus { outline:2px solid ${ACCENT}; outline-offset:-1px; }
-        .tk-ta { min-height:96px; resize:vertical; }
+        .tk-modal { background:#fff; width:100%; max-width:680px; border-radius:4px; position:relative; margin:auto; overflow:hidden; }
+        .tk-mhead { padding:22px 26px 18px; border-bottom:1px solid ${LINE_SOFT}; }
+        .tk-mtitle { font-size:1.05rem; font-weight:700; }
+        .tk-msub { font-size:.8rem; color:${MUTED}; margin-top:4px; line-height:1.5; }
+        .tk-mbody { padding:22px 26px 26px; }
+        .tk-close { position:absolute; top:16px; right:18px; background:none; border:none; font-size:1.4rem; line-height:1; cursor:pointer; color:${MUTED}; }
+        .tk-close:hover { color:${INK}; }
+        .tk-lbl { display:block; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:${MUTED}; margin-bottom:6px; }
+        .tk-inp { width:100%; padding:9px 12px; border:1px solid ${LINE}; border-radius:3px; font-size:.88rem; font-family:inherit; color:${INK}; background:#fff; }
+        .tk-inp:focus { outline:none; border-color:${ACCENT}; }
+        .tk-ta { min-height:92px; resize:vertical; }
         .tk-2col { display:grid; grid-template-columns:1fr 1fr; gap:13px; }
-        .tk-seg { display:flex; border:1px solid #d4c8b0; }
-        .tk-seg button { flex:1; padding:8px; border:none; background:#fff; font-size:.78rem; cursor:pointer; font-family:inherit; }
+        .tk-seg { display:flex; border:1px solid ${LINE}; border-radius:3px; overflow:hidden; }
+        .tk-seg button { flex:1; padding:8px; border:none; border-right:1px solid ${LINE}; background:#fff; font-size:.78rem; cursor:pointer; font-family:inherit; color:${MUTED}; }
+        .tk-seg button:last-child { border-right:none; }
         .tk-seg button.on { background:${ACCENT}; color:#fff; font-weight:700; }
-        .tk-save { background:${ACCENT}; color:#fff; border:none; padding:11px; width:100%; font-size:.9rem; font-weight:700; cursor:pointer; font-family:inherit; margin-top:4px; }
-        .tk-save:disabled { opacity:.5; cursor:not-allowed; }
-        .tk-fieldset { border:1px solid #eceaf0; padding:16px; margin-bottom:2px; }
-        .tk-fs-l { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:${ACCENT}; margin-bottom:12px; }
-        .tk-grid { display:grid; gap:13px; }
+        .tk-save { background:${ACCENT}; color:#fff; border:none; border-radius:3px; padding:12px; width:100%; font-size:.9rem; font-weight:700; cursor:pointer; font-family:inherit; margin-top:4px; }
+        .tk-save:hover:not(:disabled) { background:${ACCENT_DK}; }
+        .tk-save:disabled { opacity:.45; cursor:not-allowed; }
+        .tk-grid { display:grid; gap:14px; }
+
+        /* fieldset with step number */
+        .tk-fieldset { border:1px solid ${LINE}; border-radius:3px; padding:16px; }
+        .tk-fs-l { display:flex; align-items:center; gap:9px; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:${INK}; margin-bottom:14px; }
+        .tk-fs-num { width:20px; height:20px; border-radius:3px; background:${ACCENT}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:.72rem; }
+
         /* bill picker */
         .tk-bp { position:relative; }
-        .tk-bp-dd { position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid #d9dce3; border-top:none; z-index:30; max-height:260px; overflow-y:auto; box-shadow:0 8px 20px rgba(20,20,25,.12); }
-        .tk-bp-item { padding:10px 12px; cursor:pointer; border-bottom:1px solid #f2f2f6; display:flex; justify-content:space-between; gap:10px; align-items:center; }
-        .tk-bp-item:hover { background:#faf9f7; }
-        .tk-bp-item .l b { font-size:.86rem; } .tk-bp-item .l span { font-size:.76rem; color:#6b7280; margin-left:8px; }
-        .tk-bp-item .r { font-size:.82rem; font-weight:700; white-space:nowrap; }
-        .tk-bp-none { padding:14px 12px; text-align:center; }
-        .tk-bp-none p { font-size:.82rem; color:#6b7280; margin:0 0 8px; }
-        .tk-bp-mkbtn { background:${ACCENT}; color:#fff; border:none; padding:7px 14px; font-size:.8rem; font-weight:700; cursor:pointer; font-family:inherit; }
-        .tk-bill-chip { border:1px solid #e4d9c8; background:#faf9f7; padding:14px 16px; }
-        .tk-bill-chip-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .tk-bp-dd { position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid ${LINE}; border-top:none; border-radius:0 0 3px 3px; z-index:30; max-height:260px; overflow-y:auto; box-shadow:0 10px 26px rgba(20,20,25,.1); }
+        .tk-bp-item { padding:11px 13px; cursor:pointer; border-bottom:1px solid ${LINE_SOFT}; display:flex; justify-content:space-between; gap:10px; align-items:center; }
+        .tk-bp-item:hover { background:${WASH}; }
+        .tk-bp-item .l b { font-size:.86rem; } .tk-bp-item .l span { font-size:.76rem; color:${MUTED}; margin-left:8px; }
+        .tk-bp-item .r { font-size:.83rem; font-weight:700; white-space:nowrap; }
+        .tk-bp-none { padding:16px 13px; text-align:center; }
+        .tk-bp-none p { font-size:.82rem; color:${MUTED}; margin:0 0 10px; line-height:1.5; }
+        .tk-bp-mkbtn { background:${ACCENT}; color:#fff; border:none; border-radius:3px; padding:8px 15px; font-size:.8rem; font-weight:700; cursor:pointer; font-family:inherit; }
+
+        .tk-bill-chip { border:1px solid ${LINE}; border-radius:3px; background:${WASH}; padding:15px 16px; }
+        .tk-bill-chip-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
         .tk-bill-chip-top b { font-size:.95rem; }
-        .tk-bill-chip .sub { font-size:.8rem; color:#6b7280; margin-top:3px; }
-        .tk-bill-figs { display:flex; gap:18px; margin-top:10px; }
-        .tk-bill-figs div span { font-size:.64rem; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; display:block; }
+        .tk-bill-chip .sub { font-size:.8rem; color:${MUTED}; margin-top:4px; }
+        .tk-bill-figs { display:flex; gap:22px; margin-top:12px; }
+        .tk-bill-figs div span { font-size:.62rem; text-transform:uppercase; letter-spacing:.05em; color:${FAINT}; display:block; margin-bottom:2px; }
         .tk-bill-figs div b { font-size:.95rem; }
         .tk-bill-figs .due b { color:${ACCENT}; }
-        .tk-change { background:#fff; border:1px solid #d9dce3; padding:5px 12px; font-size:.76rem; cursor:pointer; font-family:inherit; color:#1f2430; flex-shrink:0; }
-        .tk-change:hover { background:#f5f5f8; }
+        .tk-change { background:#fff; border:1px solid ${LINE}; border-radius:3px; padding:6px 13px; font-size:.76rem; font-weight:600; cursor:pointer; font-family:inherit; color:${INK}; flex-shrink:0; }
+        .tk-change:hover { background:${WASH}; }
+
         /* per-item assignment cards */
-        .tk-item { border:1px solid #eceaf0; padding:12px; margin-bottom:9px; position:relative; }
-        .tk-item-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:9px; }
+        .tk-item { border:1px solid ${LINE}; border-radius:3px; padding:13px; margin-bottom:9px; }
+        .tk-item:last-child { margin-bottom:0; }
+        .tk-item-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:10px; }
         .tk-item-head b { font-weight:600; font-size:.88rem; }
-        .tk-item-head .r { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+        .tk-item-head .r { display:flex; align-items:center; gap:9px; flex-shrink:0; }
         .tk-item-head .amt { font-weight:700; font-size:.85rem; white-space:nowrap; }
-        .tk-item-x { background:#fff; border:1px solid #e4d9c8; color:${ACCENT}; width:22px; height:22px; border-radius:50%; font-size:14px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-        .tk-item-x:hover { background:#fef2ee; }
-        .tk-item-2 { display:grid; grid-template-columns:minmax(150px,200px) 1fr; gap:8px; }
-        .tk-item-2 select, .tk-item-2 input { padding:8px 10px; border:1px solid #e0d6c4; font-size:.82rem; font-family:inherit; width:100%; }
-        .tk-item-2 select:focus, .tk-item-2 input:focus { outline:2px solid ${ACCENT}; outline-offset:-1px; }
-        .tk-item.skipped { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#f9fafb; color:#9ca3af; }
+        .tk-item-x { background:#fff; border:1px solid ${LINE}; color:${ACCENT}; width:22px; height:22px; border-radius:3px; font-size:15px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+        .tk-item-x:hover { background:#fef2ee; border-color:#f0d2c8; }
+        .tk-item-2 { display:grid; grid-template-columns:minmax(150px,190px) 1fr; gap:8px; }
+        .tk-item-2 select, .tk-item-2 input { padding:8px 10px; border:1px solid ${LINE}; border-radius:3px; font-size:.82rem; font-family:inherit; width:100%; color:${INK}; background:#fff; }
+        .tk-item-2 select:focus, .tk-item-2 input:focus { outline:none; border-color:${ACCENT}; }
+        .tk-item.skipped { display:flex; align-items:center; justify-content:space-between; gap:10px; background:${WASH}; color:${MUTED}; padding:11px 13px; }
         .tk-item.skipped .s { font-size:.82rem; text-decoration:line-through; }
         .tk-item.skipped button { background:none; border:none; color:${ACCENT}; font-size:.78rem; font-weight:700; cursor:pointer; font-family:inherit; }
-        .tk-createcount { font-size:.8rem; font-weight:600; color:#15803d; margin-top:4px; }
-        .tk-createcount.zero { color:#9ca3af; font-weight:500; }
-        .tk-thumb { position:relative; width:78px; height:66px; }
-        .tk-thumb img { width:100%; height:100%; object-fit:cover; }
-        .tk-thumb-x { position:absolute; top:2px; right:2px; background:${ACCENT}; color:#fff; border:none; border-radius:50%; width:18px; height:18px; font-size:11px; cursor:pointer; line-height:1; }
+        .tk-createcount { font-size:.8rem; font-weight:600; color:#2f7a3f; margin-top:12px; padding-top:12px; border-top:1px solid ${LINE_SOFT}; }
+        .tk-createcount.zero { color:${MUTED}; font-weight:500; }
+
+        .tk-thumb { position:relative; width:80px; height:66px; }
+        .tk-thumb img { width:100%; height:100%; object-fit:cover; border-radius:3px; }
+        .tk-thumb-x { position:absolute; top:2px; right:2px; background:${ACCENT}; color:#fff; border:none; border-radius:3px; width:18px; height:18px; font-size:11px; cursor:pointer; line-height:1; }
         .tk-thumb.rm img { opacity:.35; }
         .tk-thumb.rm::after { content:'✕'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1.3rem; color:${ACCENT}; font-weight:700; }
+        .tk-filenote { font-size:.74rem; color:${FAINT}; margin-top:6px; }
+
         .tk-lb { position:fixed; inset:0; background:rgba(0,0,0,.9); z-index:2000; display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
         .tk-lb img { max-width:92vw; max-height:92vh; object-fit:contain; }
+
+        .tk-hint { font-size:.74rem; color:${FAINT}; text-align:center; line-height:1.5; }
+
         @media (max-width:1000px){ .tk-split{ grid-template-columns:1fr; } .tk-list{ max-height:none; } }
-        @media (max-width:560px){ .tk-stats{ grid-template-columns:repeat(2,1fr);} .tk-search{width:100%;} .tk-2col{grid-template-columns:1fr;} .tk-item-2{grid-template-columns:1fr;} .tk-order{grid-template-columns:1fr;} .tk-order-col + .tk-order-col{ border-left:none; border-top:1px solid #eceaf0; } }
+        @media (max-width:560px){
+          .tk-stats{ grid-template-columns:repeat(2,1fr); }
+          .tk-search{ width:100%; }
+          .tk-2col{ grid-template-columns:1fr; }
+          .tk-item-2{ grid-template-columns:1fr; }
+          .tk-cards{ grid-template-columns:1fr; }
+        }
       `}</style>
 
       {/* Stats */}
       <div className="tk-stats">
-        <div className="tk-stat"><div className="tk-stat-n">{stats.total}</div><div className="tk-stat-l">Total</div></div>
-        <div className="tk-stat pending"><div className="tk-stat-n">{stats.pending}</div><div className="tk-stat-l">Pending</div></div>
-        <div className="tk-stat inprog"><div className="tk-stat-n">{stats.in_progress}</div><div className="tk-stat-l">In Progress</div></div>
-        <div className="tk-stat done"><div className="tk-stat-n">{stats.completed}</div><div className="tk-stat-l">Completed</div></div>
-        <div className="tk-stat over"><div className="tk-stat-n">{stats.overdue}</div><div className="tk-stat-l">Overdue</div></div>
+        <div className="tk-stat">
+          <div className="tk-stat-n">{stats.total}</div>
+          <div className="tk-stat-l"><span className="tk-stat-dot" style={{ background: FAINT }} />Total</div>
+        </div>
+        <div className="tk-stat">
+          <div className="tk-stat-n" style={{ color: STATUS_META.pending.color }}>{stats.pending}</div>
+          <div className="tk-stat-l"><span className="tk-stat-dot" style={{ background: STATUS_META.pending.color }} />Pending</div>
+        </div>
+        <div className="tk-stat">
+          <div className="tk-stat-n" style={{ color: STATUS_META.in_progress.color }}>{stats.in_progress}</div>
+          <div className="tk-stat-l"><span className="tk-stat-dot" style={{ background: STATUS_META.in_progress.color }} />In progress</div>
+        </div>
+        <div className="tk-stat">
+          <div className="tk-stat-n" style={{ color: STATUS_META.completed.color }}>{stats.completed}</div>
+          <div className="tk-stat-l"><span className="tk-stat-dot" style={{ background: STATUS_META.completed.color }} />Completed</div>
+        </div>
+        <div className="tk-stat over">
+          <div className="tk-stat-n">{stats.overdue}</div>
+          <div className="tk-stat-l"><span className="tk-stat-dot" style={{ background: ACCENT }} />Overdue</div>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -513,36 +595,41 @@ export default function Tasks({
           <option value="">All employees</option>
           {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
-        <button className="tk-assign" onClick={openCreate}>+ Assign Task</button>
+        <button className="tk-assign" onClick={openCreate}>+ Assign task</button>
       </div>
 
       {/* Split view */}
       <div className="tk-split">
         <div className="tk-list">
           {loading ? (
-            <div style={{ padding: 20, color: "#9ca3af", fontSize: ".88rem" }}>Loading…</div>
+            <div style={{ padding: 20, color: MUTED, fontSize: ".88rem" }}>Loading…</div>
           ) : displayed.length === 0 ? (
-            <div style={{ padding: "40px 20px", color: "#9ca3af", fontSize: ".88rem", textAlign: "center" }}>No tasks found.</div>
+            <div style={{ padding: "40px 20px", color: FAINT, fontSize: ".88rem", textAlign: "center" }}>No tasks found.</div>
           ) : (
-            displayed.map((t) => {
-              const sm = STATUS_META[t.status];
-              const pm = PRIORITY_META[t.priority];
-              const dl = deadlineInfo(t);
-              return (
-                <div key={t.id} className={`tk-row${selectedId === t.id ? " sel" : ""}`} onClick={() => setSelectedId(t.id)}>
-                  <div className="tk-row-stripe" style={{ background: pm.color }} />
-                  <div className="tk-row-mid">
-                    <div className="tk-row-title">{t.title}</div>
-                    <div className="tk-row-sub">{t.customerName ? `${t.customerName} · ` : ""}{t.assignedTo.name}{t.invoiceNo ? ` · ${t.invoiceNo}` : ""}</div>
-                    {(t.amount || 0) > 0 && <div className="tk-row-money">{rupees(t.amount)}</div>}
+            <>
+              <div className="tk-count">{displayed.length} {displayed.length === 1 ? "task" : "tasks"}</div>
+              {displayed.map((t) => {
+                const sm = STATUS_META[t.status];
+                const pm = PRIORITY_META[t.priority];
+                const dl = deadlineInfo(t);
+                return (
+                  <div key={t.id} className={`tk-row${selectedId === t.id ? " sel" : ""}`} onClick={() => setSelectedId(t.id)}>
+                    <div className="tk-row-stripe" style={{ background: pm.color }} />
+                    <div className="tk-row-body">
+                      <div className="tk-row-top">
+                        <span className="tk-row-title">{t.title}</span>
+                        <span className="tk-badge" style={{ background: sm.bg, color: sm.color }}>{sm.label}</span>
+                      </div>
+                      <div className="tk-row-sub">{t.customerName ? `${t.customerName} · ` : ""}{t.assignedTo.name}{t.invoiceNo ? ` · ${t.invoiceNo}` : ""}</div>
+                      <div className="tk-row-foot">
+                        <span className={`tk-dl ${dl.tone}`}>{dl.text}</span>
+                        {(t.amount || 0) > 0 && <span className="tk-row-money">{rupees(t.amount)}</span>}
+                      </div>
+                    </div>
                   </div>
-                  <div className="tk-row-right">
-                    <span className="tk-badge" style={{ background: sm.bg, color: sm.color }}>{sm.label}</span>
-                    <span className={`tk-dl ${dl.tone}`}>{dl.text}</span>
-                  </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </>
           )}
         </div>
 
@@ -558,7 +645,7 @@ export default function Tasks({
           />
         ) : (
           <div className="tk-detail tk-empty">
-            {tasks.length === 0 ? "No tasks yet — click \"+ Assign Task\" to create tasks from a bill." : "Select a task to see the bill, customer, billing and progress timeline."}
+            {tasks.length === 0 ? "No tasks yet — click \u201c+ Assign task\u201d to create tasks from a bill." : "Select a task to see the customer, billing and progress timeline."}
           </div>
         )}
       </div>
@@ -572,245 +659,245 @@ export default function Tasks({
             {editTask ? (
               /* ---------- EDIT single task ---------- */
               <>
-                <div className="tk-mtitle">Edit Task</div>
-                <div className="tk-msub">Update this task, reassign it, or change its instructions.</div>
-                <div className="tk-grid">
-                  {billSel && (
-                    <div className="tk-fieldset">
-                      <div className="tk-fs-l">Bill</div>
+                <div className="tk-mhead">
+                  <div className="tk-mtitle">Edit task</div>
+                  <div className="tk-msub">Update this task, reassign it, or change its instructions.</div>
+                </div>
+                <div className="tk-mbody">
+                  <div className="tk-grid">
+                    {billSel && (
                       <div className="tk-bill-chip">
                         <div className="tk-bill-chip-top"><b>{billSel.invoiceNo}</b></div>
                         <div className="sub">{billSel.clientName}{billSel.clientPhone ? ` · ${billSel.clientPhone}` : ""}</div>
                       </div>
+                    )}
+                    <div>
+                      <label className="tk-lbl">Title *</label>
+                      <input className="tk-inp" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
                     </div>
-                  )}
-                  <div className="tk-fieldset">
-                    <div className="tk-fs-l">Task</div>
-                    <div className="tk-grid">
+                    <div>
+                      <label className="tk-lbl">Description / instructions</label>
+                      <textarea className="tk-inp tk-ta" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+                    </div>
+                    <div className="tk-2col">
                       <div>
-                        <label className="tk-lbl">Title *</label>
-                        <input className="tk-inp" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="tk-lbl">Description / Instructions</label>
-                        <textarea className="tk-inp tk-ta" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-                      </div>
-                      <div className="tk-2col">
-                        <div>
-                          <label className="tk-lbl">Order Date</label>
-                          <input type="date" className="tk-inp" value={form.orderDate} onChange={(e) => setForm((f) => ({ ...f, orderDate: e.target.value }))} />
-                        </div>
-                        <div>
-                          <label className="tk-lbl">Delivery Estimate Date</label>
-                          <input type="date" className="tk-inp" value={form.deadline} onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))} />
-                        </div>
-                      </div>
-                      <div className="tk-2col">
-                        <div>
-                          <label className="tk-lbl">Assign To *</label>
-                          <select className="tk-inp" value={form.assignedToId} onChange={(e) => setForm((f) => ({ ...f, assignedToId: e.target.value }))}>
-                            <option value="">— Select employee —</option>
-                            {employees.map((e) => <option key={e.id} value={e.id}>{e.name} ({e._count.tasksAssigned})</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="tk-lbl">Priority</label>
-                          <div className="tk-seg">
-                            {(["low", "medium", "high", "urgent"] as TaskPriority[]).map((p) => (
-                              <button key={p} className={form.priority === p ? "on" : ""} onClick={() => setForm((f) => ({ ...f, priority: p }))}>{PRIORITY_META[p].label}</button>
-                            ))}
-                          </div>
-                        </div>
+                        <label className="tk-lbl">Order date</label>
+                        <input type="date" className="tk-inp" value={form.orderDate} onChange={(e) => setForm((f) => ({ ...f, orderDate: e.target.value }))} />
                       </div>
                       <div>
-                        <label className="tk-lbl">Reference Links (comma-separated)</label>
-                        <input className="tk-inp" value={form.links} onChange={(e) => setForm((f) => ({ ...f, links: e.target.value }))} />
+                        <label className="tk-lbl">Delivery estimate</label>
+                        <input type="date" className="tk-inp" value={form.deadline} onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))} />
                       </div>
-                      {editTask.images.length > 0 && (
-                        <div>
-                          <label className="tk-lbl">Existing Images (click to remove)</label>
-                          <div className="tk-imgs">
-                            {editTask.images.map((img) => (
-                              <div key={img} className={`tk-thumb${removeImages.includes(img) ? " rm" : ""}`} onClick={() => toggleRemoveExisting(img)} style={{ cursor: "pointer" }}>
-                                <img src={`${API_BASE}${img}`} alt="" />
-                              </div>
-                            ))}
-                          </div>
+                    </div>
+                    <div className="tk-2col">
+                      <div>
+                        <label className="tk-lbl">Assign to *</label>
+                        <select className="tk-inp" value={form.assignedToId} onChange={(e) => setForm((f) => ({ ...f, assignedToId: e.target.value }))}>
+                          <option value="">— Select employee —</option>
+                          {employees.map((e) => <option key={e.id} value={e.id}>{e.name} ({e._count.tasksAssigned})</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="tk-lbl">Priority</label>
+                        <div className="tk-seg">
+                          {(["low", "medium", "high", "urgent"] as TaskPriority[]).map((p) => (
+                            <button key={p} className={form.priority === p ? "on" : ""} onClick={() => setForm((f) => ({ ...f, priority: p }))}>{PRIORITY_META[p].label}</button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="tk-lbl">Reference links (comma-separated)</label>
+                      <input className="tk-inp" value={form.links} onChange={(e) => setForm((f) => ({ ...f, links: e.target.value }))} />
+                    </div>
+                    {editTask.images.length > 0 && (
+                      <div>
+                        <label className="tk-lbl">Existing images (click to remove)</label>
+                        <div className="tk-imgs">
+                          {editTask.images.map((img) => (
+                            <div key={img} className={`tk-thumb${removeImages.includes(img) ? " rm" : ""}`} onClick={() => toggleRemoveExisting(img)} style={{ cursor: "pointer" }}>
+                              <img src={`${API_BASE}${img}`} alt="" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <label className="tk-lbl">Upload images</label>
+                      <input type="file" multiple accept="image/*" onChange={handleImageSelect} style={{ fontSize: ".82rem" }} />
+                      {formImagePreviews.length > 0 && (
+                        <div className="tk-imgs" style={{ marginTop: 10 }}>
+                          {formImagePreviews.map((src, i) => (
+                            <div key={i} className="tk-thumb"><img src={src} alt="" /><button className="tk-thumb-x" onClick={() => removeNewImage(i)}>×</button></div>
+                          ))}
                         </div>
                       )}
-                      <div>
-                        <label className="tk-lbl">Upload Images</label>
-                        <input type="file" multiple accept="image/*" onChange={handleImageSelect} style={{ fontSize: ".82rem" }} />
-                        {formImagePreviews.length > 0 && (
-                          <div className="tk-imgs" style={{ marginTop: 10 }}>
-                            {formImagePreviews.map((src, i) => (
-                              <div key={i} className="tk-thumb"><img src={src} alt="" /><button className="tk-thumb-x" onClick={() => removeNewImage(i)}>×</button></div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
                     </div>
+                    <button className="tk-save" disabled={saving || !canSaveEdit} onClick={saveEdit}>{saving ? "Saving…" : "Save changes"}</button>
                   </div>
-                  <button className="tk-save" disabled={saving || !canSaveEdit} onClick={saveEdit}>{saving ? "Saving…" : "Save Changes"}</button>
                 </div>
               </>
             ) : (
               /* ---------- CREATE: one bill → many employees ---------- */
               <>
-                <div className="tk-mtitle">New Task Order</div>
-                <div className="tk-msub">Pick a bill, then assign each item to an employee. One task is created per assigned item.</div>
-                <div className="tk-grid">
-                  {/* Step 1: Bill */}
-                  <div className="tk-fieldset">
-                    <div className="tk-fs-l">1 · Bill</div>
-                    {billSel ? (
-                      <div className="tk-bill-chip">
-                        <div className="tk-bill-chip-top">
-                          <div style={{ minWidth: 0 }}>
-                            <b>{billSel.invoiceNo}</b>
-                            <div className="sub">{billSel.clientName || "—"}{billSel.clientPhone ? ` · ${billSel.clientPhone}` : ""}</div>
-                          </div>
-                          <button className="tk-change" onClick={() => { setBillSel(null); setItemAssign([]); }}>Change</button>
-                        </div>
-                        <div className="tk-bill-figs">
-                          <div><span>Amount</span><b>{rupees(billTotal)}</b></div>
-                          <div><span>Advance</span><b>{rupees(billPaid)}</b></div>
-                          <div className="due"><span>Due</span><b>{rupees(billDue)}</b></div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="tk-bp">
-                        <label className="tk-lbl">Find the bill *</label>
-                        <input
-                          className="tk-inp"
-                          value={billQuery}
-                          onChange={(e) => { setBillQuery(e.target.value); setBillDdOpen(true); }}
-                          onFocus={() => setBillDdOpen(true)}
-                          onBlur={() => setTimeout(() => setBillDdOpen(false), 180)}
-                          placeholder="Search by invoice no, customer name or phone…"
-                          autoComplete="off"
-                        />
-                        {billDdOpen && (
-                          <div className="tk-bp-dd">
-                            {billMatches.map((inv) => (
-                              <div key={inv.id} className="tk-bp-item" onMouseDown={() => selectBill(inv)}>
-                                <div className="l"><b>{inv.invoiceNo}</b><span>{inv.clientName}</span></div>
-                                <div className="r">{rupees(money(inv.total))}</div>
-                              </div>
-                            ))}
-                            {billMatches.length === 0 && (
-                              <div className="tk-bp-none">
-                                <p>No matching bill found.<br />Make the bill first, then come back to assign it.</p>
-                                {onGoToBilling && <button className="tk-bp-mkbtn" onMouseDown={onGoToBilling}>Go to Billing →</button>}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Step 2: per-item assignment */}
-                  {billSel && (
+                <div className="tk-mhead">
+                  <div className="tk-mtitle">New task order</div>
+                  <div className="tk-msub">Pick a bill, then assign each item to an employee. One task is created per assigned item.</div>
+                </div>
+                <div className="tk-mbody">
+                  <div className="tk-grid">
+                    {/* Step 1: Bill */}
                     <div className="tk-fieldset">
-                      <div className="tk-fs-l">2 · Assign Each Item</div>
-                      {(billSel.items || []).length === 0 ? (
-                        <div style={{ fontSize: ".82rem", color: "#9ca3af" }}>This bill has no line items.</div>
-                      ) : (
-                        (billSel.items || []).map((it, i) => {
-                          const a = itemAssign[i];
-                          if (!a) return null;
-                          const qty = Number(it.qty) || 0, rate = Number(it.rate) || 0;
-                          if (a.removed) {
-                            return (
-                              <div key={i} className="tk-item skipped">
-                                <span className="s">{qty} × {it.desc || "Item"}</span>
-                                <button onClick={() => updateItem(i, { removed: false })}>Restore</button>
-                              </div>
-                            );
-                          }
-                          return (
-                            <div key={i} className="tk-item">
-                              <div className="tk-item-head">
-                                <b>{qty} × {it.desc || "Item"}</b>
-                                <div className="r">
-                                  <span className="amt">{rupees(qty * rate)}</span>
-                                  <button className="tk-item-x" title="Skip this item" onClick={() => updateItem(i, { removed: true })}>×</button>
-                                </div>
-                              </div>
-                              <div className="tk-item-2">
-                                <select value={a.assignedToId} onChange={(e) => updateItem(i, { assignedToId: e.target.value })}>
-                                  <option value="">— Assign to —</option>
-                                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                                </select>
-                                <input value={a.instruction} onChange={(e) => updateItem(i, { instruction: e.target.value })} placeholder="Instruction for this item (optional)" />
-                              </div>
+                      <div className="tk-fs-l"><span className="tk-fs-num">1</span>Bill</div>
+                      {billSel ? (
+                        <div className="tk-bill-chip">
+                          <div className="tk-bill-chip-top">
+                            <div style={{ minWidth: 0 }}>
+                              <b>{billSel.invoiceNo}</b>
+                              <div className="sub">{billSel.clientName || "—"}{billSel.clientPhone ? ` · ${billSel.clientPhone}` : ""}</div>
                             </div>
-                          );
-                        })
-                      )}
-                      <div className={`tk-createcount${jobsToCreate.length === 0 ? " zero" : ""}`}>
-                        {jobsToCreate.length === 0
-                          ? "Assign at least one item to an employee."
-                          : `${jobsToCreate.length} task${jobsToCreate.length > 1 ? "s" : ""} will be created — one per assigned item.`}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 3: shared details */}
-                  {billSel && (
-                    <div className="tk-fieldset">
-                      <div className="tk-fs-l">3 · Shared Details</div>
-                      <div className="tk-grid">
-                        <div className="tk-2col">
-                          <div>
-                            <label className="tk-lbl">Order Date</label>
-                            <input type="date" className="tk-inp" value={form.orderDate} onChange={(e) => setForm((f) => ({ ...f, orderDate: e.target.value }))} />
+                            <button className="tk-change" onClick={() => { setBillSel(null); setItemAssign([]); }}>Change</button>
                           </div>
-                          <div>
-                            <label className="tk-lbl">Delivery Estimate Date</label>
-                            <input type="date" className="tk-inp" value={form.deadline} onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))} />
+                          <div className="tk-bill-figs">
+                            <div><span>Amount</span><b>{rupees(billTotal)}</b></div>
+                            <div><span>Advance</span><b>{rupees(billPaid)}</b></div>
+                            <div className="due"><span>Due</span><b>{rupees(billDue)}</b></div>
                           </div>
                         </div>
-                        <div>
-                          <label className="tk-lbl">Priority (applies to all)</label>
-                          <div className="tk-seg">
-                            {(["low", "medium", "high", "urgent"] as TaskPriority[]).map((p) => (
-                              <button key={p} className={form.priority === p ? "on" : ""} onClick={() => setForm((f) => ({ ...f, priority: p }))}>{PRIORITY_META[p].label}</button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="tk-lbl">General Notes (added to every task)</label>
-                          <input className="tk-inp" value={form.generalNotes} onChange={(e) => setForm((f) => ({ ...f, generalNotes: e.target.value }))} placeholder="Anything that applies to the whole order…" />
-                        </div>
-                        <div>
-                          <label className="tk-lbl">Reference Links (comma-separated)</label>
-                          <input className="tk-inp" value={form.links} onChange={(e) => setForm((f) => ({ ...f, links: e.target.value }))} placeholder="https://drive.google.com/…" />
-                        </div>
-                        <div>
-                          <label className="tk-lbl">Upload Images (added to every task)</label>
-                          <input type="file" multiple accept="image/*" onChange={handleImageSelect} style={{ fontSize: ".82rem" }} />
-                          {formImagePreviews.length > 0 && (
-                            <div className="tk-imgs" style={{ marginTop: 10 }}>
-                              {formImagePreviews.map((src, i) => (
-                                <div key={i} className="tk-thumb"><img src={src} alt="" /><button className="tk-thumb-x" onClick={() => removeNewImage(i)}>×</button></div>
+                      ) : (
+                        <div className="tk-bp">
+                          <label className="tk-lbl">Find the bill *</label>
+                          <input
+                            className="tk-inp"
+                            value={billQuery}
+                            onChange={(e) => { setBillQuery(e.target.value); setBillDdOpen(true); }}
+                            onFocus={() => setBillDdOpen(true)}
+                            onBlur={() => setTimeout(() => setBillDdOpen(false), 180)}
+                            placeholder="Search by invoice no, customer name or phone…"
+                            autoComplete="off"
+                          />
+                          {billDdOpen && (
+                            <div className="tk-bp-dd">
+                              {billMatches.map((inv) => (
+                                <div key={inv.id} className="tk-bp-item" onMouseDown={() => selectBill(inv)}>
+                                  <div className="l"><b>{inv.invoiceNo}</b><span>{inv.clientName}</span></div>
+                                  <div className="r">{rupees(money(inv.total))}</div>
+                                </div>
                               ))}
+                              {billMatches.length === 0 && (
+                                <div className="tk-bp-none">
+                                  <p>No matching bill found.<br />Make the bill first, then come back to assign it.</p>
+                                  {onGoToBilling && <button className="tk-bp-mkbtn" onMouseDown={onGoToBilling}>Go to Billing →</button>}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
-                      </div>
+                      )}
                     </div>
-                  )}
 
-                  <button className="tk-save" disabled={saving || !canSaveCreate} onClick={saveCreate}>
-                    {saving ? "Creating…" : jobsToCreate.length > 1 ? `Assign ${jobsToCreate.length} Tasks` : "Assign Task"}
-                  </button>
-                  {!canSaveCreate && (
-                    <div style={{ fontSize: ".74rem", color: "#9ca3af", textAlign: "center" }}>
-                      {!billSel ? "Select a bill first — make one in the Billing tab if it doesn't exist." : "Assign at least one item to an employee."}
-                    </div>
-                  )}
+                    {/* Step 2: per-item assignment */}
+                    {billSel && (
+                      <div className="tk-fieldset">
+                        <div className="tk-fs-l"><span className="tk-fs-num">2</span>Assign each item</div>
+                        {(billSel.items || []).length === 0 ? (
+                          <div style={{ fontSize: ".82rem", color: FAINT }}>This bill has no line items.</div>
+                        ) : (
+                          (billSel.items || []).map((it, i) => {
+                            const a = itemAssign[i];
+                            if (!a) return null;
+                            const qty = Number(it.qty) || 0, rate = Number(it.rate) || 0;
+                            if (a.removed) {
+                              return (
+                                <div key={i} className="tk-item skipped">
+                                  <span className="s">{qty} × {it.desc || "Item"}</span>
+                                  <button onClick={() => updateItem(i, { removed: false })}>Restore</button>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div key={i} className="tk-item">
+                                <div className="tk-item-head">
+                                  <b>{qty} × {it.desc || "Item"}</b>
+                                  <div className="r">
+                                    <span className="amt">{rupees(qty * rate)}</span>
+                                    <button className="tk-item-x" title="Skip this item" onClick={() => updateItem(i, { removed: true })}>×</button>
+                                  </div>
+                                </div>
+                                <div className="tk-item-2">
+                                  <select value={a.assignedToId} onChange={(e) => updateItem(i, { assignedToId: e.target.value })}>
+                                    <option value="">— Assign to —</option>
+                                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                                  </select>
+                                  <input value={a.instruction} onChange={(e) => updateItem(i, { instruction: e.target.value })} placeholder="Instruction for this item (optional)" />
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                        <div className={`tk-createcount${jobsToCreate.length === 0 ? " zero" : ""}`}>
+                          {jobsToCreate.length === 0
+                            ? "Assign at least one item to an employee."
+                            : `${jobsToCreate.length} task${jobsToCreate.length > 1 ? "s" : ""} will be created — one per assigned item.`}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 3: shared details */}
+                    {billSel && (
+                      <div className="tk-fieldset">
+                        <div className="tk-fs-l"><span className="tk-fs-num">3</span>Shared details</div>
+                        <div className="tk-grid">
+                          <div className="tk-2col">
+                            <div>
+                              <label className="tk-lbl">Order date</label>
+                              <input type="date" className="tk-inp" value={form.orderDate} onChange={(e) => setForm((f) => ({ ...f, orderDate: e.target.value }))} />
+                            </div>
+                            <div>
+                              <label className="tk-lbl">Delivery estimate</label>
+                              <input type="date" className="tk-inp" value={form.deadline} onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tk-lbl">Priority (applies to all)</label>
+                            <div className="tk-seg">
+                              {(["low", "medium", "high", "urgent"] as TaskPriority[]).map((p) => (
+                                <button key={p} className={form.priority === p ? "on" : ""} onClick={() => setForm((f) => ({ ...f, priority: p }))}>{PRIORITY_META[p].label}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="tk-lbl">General notes (added to every task)</label>
+                            <input className="tk-inp" value={form.generalNotes} onChange={(e) => setForm((f) => ({ ...f, generalNotes: e.target.value }))} placeholder="Anything that applies to the whole order…" />
+                          </div>
+                          <div>
+                            <label className="tk-lbl">Reference links (comma-separated)</label>
+                            <input className="tk-inp" value={form.links} onChange={(e) => setForm((f) => ({ ...f, links: e.target.value }))} placeholder="https://drive.google.com/…" />
+                          </div>
+                          <div>
+                            <label className="tk-lbl">Upload images (added to every task)</label>
+                            <input type="file" multiple accept="image/*" onChange={handleImageSelect} style={{ fontSize: ".82rem" }} />
+                            {formImagePreviews.length > 0 && (
+                              <div className="tk-imgs" style={{ marginTop: 10 }}>
+                                {formImagePreviews.map((src, i) => (
+                                  <div key={i} className="tk-thumb"><img src={src} alt="" /><button className="tk-thumb-x" onClick={() => removeNewImage(i)}>×</button></div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <button className="tk-save" disabled={saving || !canSaveCreate} onClick={saveCreate}>
+                      {saving ? "Creating…" : jobsToCreate.length > 1 ? `Assign ${jobsToCreate.length} tasks` : "Assign task"}
+                    </button>
+                    {!canSaveCreate && (
+                      <div className="tk-hint">
+                        {!billSel ? "Select a bill first — make one in the Billing tab if it doesn't exist." : "Assign at least one item to an employee."}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </>
             )}
@@ -840,6 +927,7 @@ function TaskDetail({
   const started = task.startedAt;
   const completed = task.completedAt;
   const cancelled = task.status === "cancelled";
+  const delivered = !!task.deliveredAt;
   const respDur = started ? new Date(started).getTime() - new Date(assigned).getTime() : null;
   const workDur = started ? (completed ? new Date(completed).getTime() : Date.now()) - new Date(started).getTime() : null;
   const itemValue = task.amount || 0;
@@ -851,114 +939,137 @@ function TaskDetail({
   return (
     <div className="tk-detail">
       <div className="tk-d-head">
-        <div className="tk-d-title">{task.title}</div>
+        <div className="tk-d-headmain">
+          <div className="tk-d-title">{task.title}</div>
+          <div className="tk-d-sub">
+            <span>Assigned to <b>{task.assignedTo.name}</b></span>
+            <span className="tk-chip" style={{ background: `${pm.color}18`, color: pm.color }}>
+              <span className="tk-chip-dot" style={{ background: pm.color }} />{pm.label}
+            </span>
+            {delivered && (
+              <span className="tk-chip" style={{ background: "#e5f2e8", color: "#2f7a3f" }}>
+                <span className="tk-chip-dot" style={{ background: "#2f7a3f" }} />Delivered{task.deliveredBy ? ` · ${task.deliveredBy.name}` : ""}
+              </span>
+            )}
+          </div>
+        </div>
         <div className="tk-d-actions">
           <button className="tk-abtn" onClick={onEdit}>Edit</button>
           <button className="tk-abtn danger" onClick={onDelete}>Delete</button>
         </div>
       </div>
 
-      <div className="tk-d-meta">
-        <span>Assigned to <b>{task.assignedTo.name}</b></span>
-        <span style={{ color: pm.color }}>● <b style={{ color: pm.color }}>{pm.label}</b> priority</span>
-      </div>
-
-      {hasOrder && (
-        <div className="tk-order">
-          <div className="tk-order-col">
-            <div className="tk-oc-l">Customer</div>
-            <div className="tk-oc-row"><b>{task.customerName || "—"}</b></div>
-            {task.customerPhone && <div className="tk-oc-row">📞 {task.customerPhone}</div>}
-            {task.customerEmail && <div className="tk-oc-row" style={{ color: "#6b7280", fontSize: ".8rem" }}>{task.customerEmail}</div>}
-            {task.invoiceNo && <div className="tk-bill-pill">🧾 {task.invoiceNo}</div>}
-            <div className="tk-oc-row" style={{ color: "#6b7280", fontSize: ".8rem", marginTop: 6 }}>
-              Order: {fmtDate(task.orderDate)} · Delivery: {fmtDate(task.deadline)}
-            </div>
-            <div className={`tk-dl ${dl.tone}`} style={{ marginTop: 2 }}>{dl.text}</div>
+      <div className="tk-d-body">
+        {/* Status control */}
+        <div className="tk-sec">
+          <div className="tk-sec-l">Status</div>
+          <div className="tk-statusctl">
+            {(["pending", "in_progress", "completed", "cancelled"] as TaskStatus[]).map((s) => (
+              <button key={s} className={`tk-sc${task.status === s ? " on" : ""}`}
+                style={task.status === s ? { background: STATUS_META[s].color } : {}}
+                onClick={() => task.status !== s && onStatus(s)}>
+                {STATUS_META[s].label}
+              </button>
+            ))}
           </div>
-          <div className="tk-order-col">
-            <div className="tk-oc-l">Billing</div>
-            <div className="tk-oc-row">This item: <b>{rupees(itemValue)}</b></div>
-            {bill && (
-              <>
-                <div className="tk-oc-l" style={{ marginTop: 10, marginBottom: 4 }}>Full bill {task.invoiceNo}</div>
-                <div className="tk-bill">
-                  <div><span>Total</span><b>{rupees(billTotal)}</b></div>
-                  <div className="paid"><span>Advance</span><b>{rupees(billPaid)}</b></div>
-                  <div className="due"><span>Due</span><b>{rupees(billDue)}</b></div>
+        </div>
+
+        {/* Customer + Billing */}
+        {hasOrder && (
+          <div className="tk-sec">
+            <div className="tk-cards">
+              <div className="tk-card">
+                <div className="tk-card-l">Customer</div>
+                <div className="tk-cust-name">{task.customerName || "—"}</div>
+                {task.customerPhone && <div className="tk-cust-line">{task.customerPhone}</div>}
+                {task.customerEmail && <div className="tk-cust-line dim">{task.customerEmail}</div>}
+                {task.invoiceNo && <div className="tk-invpill">{task.invoiceNo}</div>}
+                <div className="tk-dates">Order: {fmtDate(task.orderDate)} · Delivery: {fmtDate(task.deadline)}</div>
+                <div className={`tk-dl ${dl.tone}`} style={{ marginTop: 3 }}>{dl.text}</div>
+              </div>
+              <div className="tk-card">
+                <div className="tk-card-l">Billing</div>
+                <div className="tk-kv"><span className="k">This item</span><span className="v">{rupees(itemValue)}</span></div>
+                {bill && (
+                  <div className="tk-billsplit">
+                    <div className="tk-card-l" style={{ marginBottom: 8 }}>Full bill {task.invoiceNo}</div>
+                    <div className="tk-kv"><span className="k">Total</span><span className="v">{rupees(billTotal)}</span></div>
+                    <div className="tk-kv"><span className="k">Advance paid</span><span className="v paid">{rupees(billPaid)}</span></div>
+                    <div className="tk-kv"><span className="k">Balance due</span><span className="v due">{rupees(billDue)}</span></div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Timeline */}
+        <div className="tk-sec">
+          <div className="tk-sec-l">Progress timeline</div>
+          <div className="tk-tl">
+            <div className="tk-tl-step">
+              <div className="tk-tl-rail"><div className="tk-tl-dot done" /><div className={`tk-tl-line${started || completed ? " done" : ""}`} /></div>
+              <div className="tk-tl-body">
+                <div className="tk-tl-t">Assigned</div>
+                <div className="tk-tl-when">{fmtDateTime(assigned)} · by {task.createdBy.name}</div>
+              </div>
+            </div>
+            <div className="tk-tl-step">
+              <div className="tk-tl-rail"><div className={`tk-tl-dot ${started ? "done" : cancelled ? "cancel" : ""}`} /><div className={`tk-tl-line${completed ? " done" : ""}`} /></div>
+              <div className="tk-tl-body">
+                <div className="tk-tl-t" style={{ color: started ? INK : FAINT }}>Started</div>
+                {started ? (<>
+                  <div className="tk-tl-when">{fmtDateTime(started)}</div>
+                  {respDur !== null && <div className="tk-tl-dur">Picked up {fmtDuration(respDur)} after assignment</div>}
+                </>) : <div className="tk-tl-when">Not started yet</div>}
+              </div>
+            </div>
+            <div className="tk-tl-step">
+              <div className="tk-tl-rail"><div className={`tk-tl-dot ${completed ? "done" : task.status === "in_progress" ? "active" : cancelled ? "cancel" : ""}`} />{!cancelled && <div className={`tk-tl-line${delivered ? " done" : ""}`} />}</div>
+              <div className="tk-tl-body">
+                <div className="tk-tl-t" style={{ color: completed ? INK : FAINT }}>{cancelled ? "Cancelled" : "Completed"}</div>
+                {completed ? (<>
+                  <div className="tk-tl-when">{fmtDateTime(completed)}</div>
+                  {workDur !== null && <div className="tk-tl-dur">Took {fmtDuration(workDur)} to finish</div>}
+                </>) : cancelled ? <div className="tk-tl-when">This task was cancelled</div>
+                  : task.status === "in_progress" && workDur !== null ? <div className="tk-tl-when">In progress · {fmtDuration(workDur)} elapsed</div>
+                  : <div className="tk-tl-when">Not completed yet</div>}
+              </div>
+            </div>
+            {!cancelled && (
+              <div className="tk-tl-step">
+                <div className="tk-tl-rail"><div className={`tk-tl-dot ${delivered ? "done" : ""}`} /></div>
+                <div className="tk-tl-body">
+                  <div className="tk-tl-t" style={{ color: delivered ? INK : FAINT }}>Delivered</div>
+                  {delivered ? (
+                    <div className="tk-tl-when">{fmtDateTime(task.deliveredAt)}{task.deliveredBy ? ` · by ${task.deliveredBy.name}` : ""}</div>
+                  ) : completed ? <div className="tk-tl-when">Not delivered yet</div>
+                    : <div className="tk-tl-when" style={{ color: FAINT }}>Awaiting completion</div>}
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
-      )}
 
-      <div className="tk-sec">
-        <div className="tk-sec-l">Status</div>
-        <div className="tk-statusctl">
-          {(["pending", "in_progress", "completed", "cancelled"] as TaskStatus[]).map((s) => (
-            <button key={s} className={`tk-sc${task.status === s ? " on" : ""}`}
-              style={task.status === s ? { background: STATUS_META[s].color } : {}}
-              onClick={() => task.status !== s && onStatus(s)}>
-              {STATUS_META[s].label}
-            </button>
-          ))}
-        </div>
+        {task.description && (
+          <div className="tk-sec"><div className="tk-sec-l">Item &amp; instructions</div><div className="tk-desc">{task.description}</div></div>
+        )}
+        {task.links.length > 0 && (
+          <div className="tk-sec tk-links"><div className="tk-sec-l">Reference links</div>
+            {task.links.map((l, i) => <a key={i} href={l} target="_blank" rel="noreferrer">{l}</a>)}
+          </div>
+        )}
+        {task.images.length > 0 && (
+          <div className="tk-sec"><div className="tk-sec-l">Reference images</div>
+            <div className="tk-imgs">{task.images.map((img, i) => (
+              <img key={i} src={`${API_BASE}${img}`} alt={`ref-${i + 1}`} className="tk-img" onClick={() => onImage(`${API_BASE}${img}`)} />
+            ))}</div>
+          </div>
+        )}
+        {task.notes && (
+          <div className="tk-sec"><div className="tk-sec-l">Employee notes</div><div className="tk-notes">{task.notes}</div></div>
+        )}
       </div>
-
-      <div className="tk-sec">
-        <div className="tk-sec-l">Progress Timeline</div>
-        <div className="tk-tl">
-          <div className="tk-tl-step">
-            <div className="tk-tl-rail"><div className="tk-tl-dot done" /><div className={`tk-tl-line${started || completed ? " done" : ""}`} /></div>
-            <div className="tk-tl-body">
-              <div className="tk-tl-t">Assigned</div>
-              <div className="tk-tl-when">{fmtDateTime(assigned)} · by {task.createdBy.name}</div>
-            </div>
-          </div>
-          <div className="tk-tl-step">
-            <div className="tk-tl-rail"><div className={`tk-tl-dot ${started ? "done" : cancelled ? "cancel" : ""}`} /><div className={`tk-tl-line${completed ? " done" : ""}`} /></div>
-            <div className="tk-tl-body">
-              <div className="tk-tl-t" style={{ color: started ? "#1f2430" : "#9ca3af" }}>Started</div>
-              {started ? (<>
-                <div className="tk-tl-when">{fmtDateTime(started)}</div>
-                {respDur !== null && <div className="tk-tl-dur">Picked up {fmtDuration(respDur)} after assignment</div>}
-              </>) : <div className="tk-tl-when">Not started yet</div>}
-            </div>
-          </div>
-          <div className="tk-tl-step">
-            <div className="tk-tl-rail"><div className={`tk-tl-dot ${completed ? "done" : task.status === "in_progress" ? "active" : cancelled ? "cancel" : ""}`} /></div>
-            <div className="tk-tl-body">
-              <div className="tk-tl-t" style={{ color: completed ? "#1f2430" : "#9ca3af" }}>{cancelled ? "Cancelled" : "Completed"}</div>
-              {completed ? (<>
-                <div className="tk-tl-when">{fmtDateTime(completed)}</div>
-                {workDur !== null && <div className="tk-tl-dur">Took {fmtDuration(workDur)} to finish</div>}
-              </>) : cancelled ? <div className="tk-tl-when">This task was cancelled</div>
-                : task.status === "in_progress" && workDur !== null ? <div className="tk-tl-when">In progress · {fmtDuration(workDur)} elapsed</div>
-                : <div className="tk-tl-when">Not completed yet</div>}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {task.description && (
-        <div className="tk-sec"><div className="tk-sec-l">Item & Instructions</div><div className="tk-desc">{task.description}</div></div>
-      )}
-      {task.links.length > 0 && (
-        <div className="tk-sec tk-links"><div className="tk-sec-l">Reference Links</div>
-          {task.links.map((l, i) => <a key={i} href={l} target="_blank" rel="noreferrer">{l}</a>)}
-        </div>
-      )}
-      {task.images.length > 0 && (
-        <div className="tk-sec"><div className="tk-sec-l">Reference Images</div>
-          <div className="tk-imgs">{task.images.map((img, i) => (
-            <img key={i} src={`${API_BASE}${img}`} alt={`ref-${i + 1}`} className="tk-img" onClick={() => onImage(`${API_BASE}${img}`)} />
-          ))}</div>
-        </div>
-      )}
-      {task.notes && (
-        <div className="tk-sec"><div className="tk-sec-l">Employee Notes</div><div className="tk-notes">{task.notes}</div></div>
-      )}
     </div>
   );
 }
