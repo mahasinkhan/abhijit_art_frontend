@@ -14,8 +14,9 @@ const PostFeed         = lazy(() => import("../components/PostFeed"));
 const Settings         = lazy(() => import("../components/Settings"));
 const Tasks            = lazy(() => import("../components/Tasks"));
 const Employees        = lazy(() => import("../components/Employees"));
+const Khata            = lazy(() => import("../components/Khata"));
 
-type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "activity" | "posts" | "employees" | "tasks" | "settings";
+type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
 
 const ACCENT = "#d9542f";
 
@@ -31,6 +32,7 @@ const IconSettings  = () => (<svg {...ico}><circle cx="12" cy="12" r="3" /><path
 const IconCustomers = () => (<svg {...ico}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
 const IconInventory = () => (<svg {...ico}><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.3 7 12 12l8.7-5M12 22V12" /></svg>);
 const IconEmployees = () => (<svg {...ico}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>);
+const IconKhata     = () => (<svg {...ico}><path d="M4 6h16M4 10h16M4 14h8M4 18h6"/></svg>);
 const IconTasks     = () => (<svg {...ico}><rect x="9" y="3" width="13" height="13" rx="1"/><path d="M5 7H2a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-3"/><path d="m5 12 2 2 4-4"/></svg>);
 
 const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
@@ -42,6 +44,7 @@ const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "reminders", label: "Reminders", Icon: IconReminders },
   { id: "activity",  label: "Activity",  Icon: IconActivity  },
   { id: "posts",     label: "Posts",     Icon: IconPosts     },
+  { id: "khata",     label: "Khata",     Icon: IconKhata     },
   { id: "employees", label: "Employees", Icon: IconEmployees },
   { id: "tasks",     label: "Tasks",     Icon: IconTasks     },
   { id: "settings",  label: "Settings",  Icon: IconSettings  },
@@ -50,7 +53,7 @@ const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
 const TITLES: Record<Tab, string> = {
   bookings: "Bookings", customers: "Customers", inventory: "Inventory",
   billing: "Billing", invoices: "Invoices", reminders: "Payment reminders",
-  activity: "Activity", posts: "Posts", employees: "Employees", tasks: "Tasks",
+  activity: "Activity", posts: "Posts", khata: "Daily Khata", employees: "Employees", tasks: "Tasks",
   settings: "Settings",
 };
 
@@ -146,6 +149,7 @@ export default function AdminDashboard() {
                 <PostFeed isAdmin={true} refreshKey={feedKey} />
               </div>
             )}
+            {activeTab === "khata"     && <Khata />}
             {activeTab === "employees" && (
               <Employees
                 onAssignTask={(id) => { setTaskPrefillEmp(id); setActiveTab("tasks"); }}
