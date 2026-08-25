@@ -32,7 +32,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const BIZ_KEY = "aa_invoice_business_v4";
 const loadBiz = (): Party => {
   try { const s = localStorage.getItem(BIZ_KEY); if (s) return JSON.parse(s); } catch {}
-  return { name: "Abhijit Art", address: "Rabindra Sadan, Shakti Mandir Club, SS Sen Road\nBerhampore, West Bengal - 742101", phone: "7405179066", email: "abhijitart85@gmail.com", gstin: "19AQFPD8346K1ZH", pan: "AQFPD8346K" };
+  return { name: "Abhijit Art", address: "Rabindra Sadan, Shakti Mandir Club, SS Sen Road\nBerhampore, West Bengal - 742101", phone: "7478482106 (Office) | 9932913826 (Abhijit)", email: "abhijitart85@gmail.com", gstin: "19AQFPD8346K1ZH", pan: "AQFPD8346K" };
 };
 
 const AUTOSAVE_KEY = "aa_invoice_autosave";
@@ -61,6 +61,7 @@ function Icon({ name, size = 16 }: { name: string; size?: number }) {
     user: (<><circle cx="12" cy="8" r="4" {...p} /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" {...p} /></>),
     banknote: (<><rect x="2" y="6" width="20" height="12" rx="2" {...p} /><circle cx="12" cy="12" r="2.5" {...p} /><path d="M6 12h.01M18 12h.01" {...p} /></>),
     card: (<><rect x="2.5" y="5" width="19" height="14" rx="2" {...p} /><path d="M2.5 9.5h19" {...p} /></>),
+    save: (<><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" {...p} /><path d="M17 21v-8H7v8M7 3v5h8" {...p} /></>),
     whatsapp: (<><path d="M3.8 20.2 5 16.4A8.4 8.4 0 1 1 8.2 19l-4.4 1.2z" {...p} /><path d="M9.2 8.6c-.15 0-.4.05-.6.3-.2.25-.75.73-.75 1.77s.77 2.05.88 2.2c.1.14 1.5 2.4 3.68 3.28 1.83.72 2.2.58 2.6.55.4-.04 1.24-.5 1.42-1 .18-.5.18-.9.12-1l-.55-.27s-1.05-.52-1.22-.58c-.16-.06-.28-.1-.4.1l-.55.7c-.1.12-.2.13-.37.05-.16-.08-.9-.33-1.66-1.05-.6-.55-1.02-1.22-1.14-1.42-.1-.2-.01-.3.07-.4l.28-.35c.1-.12.13-.2.2-.34.06-.13.03-.25 0-.35-.05-.1-.4-1.13-.6-1.55-.14-.3-.28-.3-.4-.3H9.2z" fill="currentColor" stroke="none" /></>),
   };
   return (<svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ flexShrink: 0 }}>{map[name]}</svg>);
@@ -298,6 +299,7 @@ export default function InvoiceMaker() {
   const [autosave, setAutosave] = useState<"on" | "off" | "">(loadAutosave);
   const [askSave, setAskSave] = useState(false);
   const [savedTick, setSavedTick] = useState(false);
+  const [savingNow, setSavingNow] = useState(false);
   const pendingSave = useRef<Record<string, unknown> | null>(null);
   const [mailOpen, setMailOpen] = useState(false);
   const [mailTo, setMailTo] = useState("");
@@ -433,7 +435,7 @@ export default function InvoiceMaker() {
   const invoicePayload = () => ({ invNo, date, biz, client, items: items.filter((it) => it.desc.trim() || num(it.rate) > 0), discType, discVal, taxPct, notes, warranty, paidAmount: advancePaid, paymentMethod: payMethod });
 
   const persistInvoice = (payload: Record<string, unknown>) => {
-    api.post("/api/invoices", payload).then(() => { setSavedTick(true); setTimeout(() => setSavedTick(false), 2600); }).catch(() => {});
+    return api.post("/api/invoices", payload).then(() => { setSavedTick(true); setTimeout(() => setSavedTick(false), 2600); }).catch(() => {});
   };
 
   const maybeSaveInvoice = () => {
@@ -494,6 +496,14 @@ export default function InvoiceMaker() {
   };
 
   const hasLines = items.some((it) => it.desc.trim() || num(it.rate) > 0);
+
+  // ── Manual save — always saves right now, regardless of the autosave setting ──
+  const saveInvoiceNow = () => {
+    if (!hasLines || savingNow) return;
+    bumpSeq();
+    setSavingNow(true);
+    persistInvoice(invoicePayload()).finally(() => setSavingNow(false));
+  };
 
   // ── 2-up A4 print ──
   const print2up = () => {
@@ -556,12 +566,12 @@ export default function InvoiceMaker() {
           <button className="iv-ghost" style={st.ghostBtn} onClick={resetInvoice}><Icon name="reset" size={15} /> New invoice</button>
           <button className="iv-ghost" style={st.ghostBtn} onClick={() => withCustomer(openMail)} disabled={!hasLines}><Icon name="mail" size={15} /> Send by email</button>
           <button className="iv-wa" style={st.ghostBtn} onClick={() => withCustomer(openWhatsApp)} disabled={!hasLines}><span style={{ color: WA, display: "inline-flex" }}><Icon name="whatsapp" size={16} /></span> Send on WhatsApp</button>
-          <button className="iv-ghost iv-printbtn" style={st.ghostBtn} onClick={() => withCustomer(() => window.print())} disabled={!hasLines}><Icon name="receipt" size={15} /> Print</button>
+          <button className="iv-save" style={st.saveBtn} onClick={() => withCustomer(saveInvoiceNow)} disabled={!hasLines || savingNow}><Icon name="save" size={15} /> {savingNow ? "Saving…" : "Save invoice"}</button>
           <button className="iv-cta" style={st.cta} onClick={() => withCustomer(download)} disabled={!hasLines}><Icon name="download" size={16} /> Download PDF</button>
         </div>
       </div>
 
-      {!hasLines && (<div style={st.needItems}>Add a line item below to enable <b>Send by email</b>, <b>Send on WhatsApp</b> and <b>Download PDF</b>.</div>)}
+      {!hasLines && (<div style={st.needItems}>Add a line item below to enable <b>Send by email</b>, <b>Send on WhatsApp</b>, <b>Save invoice</b> and <b>Download PDF</b>.</div>)}
 
       <div className="iv-layout" style={st.layout}>
         {/* ── Left column: forms ── */}
@@ -578,8 +588,8 @@ export default function InvoiceMaker() {
             <Field label="Address" hint="Press Enter for a new line"><textarea className="iv-in" style={st.inputArea} rows={2} value={biz.address} onChange={(e) => setBiz({ ...biz, address: e.target.value })} /></Field>
             <Field label="Email"><input className="iv-in" style={st.input} value={biz.email} onChange={(e) => setBiz({ ...biz, email: e.target.value })} /></Field>
             <div style={st.row}>
-              <Field label="GSTIN" half><input className="iv-in" style={st.input} value={biz.gstin} onChange={(e) => setBiz({ ...biz, gstin: e.target.value })} /></Field>
-              <Field label="PAN" half><input className="iv-in" style={st.input} value={biz.pan} onChange={(e) => setBiz({ ...biz, pan: e.target.value })} /></Field>
+              <Field label="GSTIN" half><input className="iv-in" style={st.input} value={biz.gstin} onChange={(e) => setBiz({ ...biz, gstin: e.target.value.toUpperCase() })} /></Field>
+              <Field label="PAN" half><input className="iv-in" style={st.input} value={biz.pan} onChange={(e) => setBiz({ ...biz, pan: e.target.value.toUpperCase() })} /></Field>
             </div>
           </section>
 
@@ -622,7 +632,7 @@ export default function InvoiceMaker() {
             <Field label="Address" hint="Press Enter for a new line"><textarea className="iv-in" style={st.inputArea} rows={2} value={client.address} onChange={(e) => setClient({ ...client, address: e.target.value })} /></Field>
             <div style={st.row}>
               <Field label="Email" half><input className="iv-in" style={st.input} value={client.email} onChange={(e) => setClient({ ...client, email: e.target.value })} /></Field>
-              <Field label="GSTIN (optional)" half><input className="iv-in" style={st.input} value={client.gstin} onChange={(e) => setClient({ ...client, gstin: e.target.value })} /></Field>
+              <Field label="GSTIN (optional)" half><input className="iv-in" style={st.input} value={client.gstin} onChange={(e) => setClient({ ...client, gstin: e.target.value.toUpperCase() })} /></Field>
             </div>
           </section>
 
@@ -877,7 +887,7 @@ export default function InvoiceMaker() {
         <div style={{ ...st.backdrop, zIndex: 1100 }}>
           <div style={{ ...st.modal, maxWidth: 440 }}>
             <div style={st.modalHead}><h3 style={st.modalTitle}>Save invoices automatically?</h3></div>
-            <div style={st.modalBody}><p style={st.askText}>Keep every invoice you download or email in the <b>Invoices</b> tab. You'll only be asked this once.</p></div>
+            <div style={st.modalBody}><p style={st.askText}>Keep every invoice you download or email in the <b>Invoices</b> tab. You'll only be asked this once. You can still hit <b>Save invoice</b> any time to save manually.</p></div>
             <div style={st.modalFoot}><button className="iv-ghost" style={st.ghostBtn} onClick={() => decideAutosave("off")}>Don't save</button><button className="iv-cta" style={st.cta} onClick={() => decideAutosave("on")}><Icon name="receipt" size={15} /> Yes, save automatically</button></div>
           </div>
         </div>
@@ -892,18 +902,20 @@ export default function InvoiceMaker() {
         .iv-in[type="number"]{-moz-appearance:textfield;appearance:textfield;}
         .iv-in[type="number"]::-webkit-outer-spin-button,.iv-in[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
         .iv-in{transition:border-color .18s,box-shadow .18s;} .iv-in:focus{border-color:${TERRA};box-shadow:0 0 0 3px ${TERRA}22;outline:none;}
-        .iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug,.iv-wa,.iv-wacta{transition:all .2s ease;}
+        .iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug,.iv-wa,.iv-wacta,.iv-save{transition:all .2s ease;}
         .iv-cta:hover:not(:disabled){background:${TERRA_DK};box-shadow:0 12px 26px ${TERRA}40;transform:translateY(-1px);}
         .iv-cta:disabled,.iv-ghost:disabled,.iv-wa:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
         .iv-ghost:hover:not(:disabled){background:#fffcf9;border-color:${TERRA}55;color:${TERRA};}
         .iv-wa:hover:not(:disabled){background:#edfaf1;border-color:${WA}66;color:${WA_DK};}
         .iv-wacta:hover:not(:disabled){background:${WA_DK};box-shadow:0 12px 26px ${WA}45;transform:translateY(-1px);}
         .iv-wacta:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
+        .iv-save:hover:not(:disabled){background:${TERRA};color:#fff;box-shadow:0 10px 22px ${TERRA}30;transform:translateY(-1px);}
+        .iv-save:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
         .iv-add:hover{border-color:${TERRA}66;color:${TERRA};background:#fffcf9;}
         .iv-del:hover:not(:disabled){color:${TERRA};background:#fdecea;} .iv-del:disabled{opacity:.35;cursor:not-allowed;}
         .iv-link:hover{color:${TERRA};} .iv-seg:hover{color:${TERRA};} .iv-sug:hover{background:#fffcf9;}
         @media(max-width:1100px){.iv-layout{grid-template-columns:minmax(0,1fr) !important;}.iv-preview{position:static !important;}}
-        @media(prefers-reduced-motion:reduce){.iv-in,.iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug,.iv-wa,.iv-wacta{transition:none !important;}}
+        @media(prefers-reduced-motion:reduce){.iv-in,.iv-cta,.iv-ghost,.iv-add,.iv-del,.iv-link,.iv-seg,.iv-sug,.iv-wa,.iv-wacta,.iv-save{transition:none !important;}}
       `}</style>
       </div>
   );
@@ -925,6 +937,7 @@ const st: Record<string, React.CSSProperties> = {
   cta: { display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 20px", borderRadius: 0, border: "none", background: "#d9542f", color: "#fff", fontFamily: "'DM Sans',system-ui,sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer", boxShadow: "0 10px 22px #d9542f30" },
   ghostBtn: { display: "inline-flex", alignItems: "center", gap: 7, padding: "11px 18px", borderRadius: 0, border: "1px solid #f0e6dc", background: "#ffffff", color: "#1f2430", fontFamily: "'DM Sans',system-ui,sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" },
   waCta: { display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 20px", borderRadius: 0, border: "none", background: "#1fa855", color: "#fff", fontFamily: "'DM Sans',system-ui,sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer", boxShadow: "0 10px 22px #1fa85530" },
+  saveBtn: { display: "inline-flex", alignItems: "center", gap: 7, padding: "11px 18px", borderRadius: 0, border: "1px solid #d9542f", background: "#ffffff", color: "#d9542f", fontFamily: "'DM Sans',system-ui,sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" },
   layout: { display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16, alignItems: "start" },
   card: { borderRadius: 0, padding: "20px 22px", minWidth: 0, background: "radial-gradient(120% 140% at 0% 0%, rgba(217,84,47,.075) 0%, rgba(217,84,47,.022) 42%, rgba(217,84,47,0) 72%), linear-gradient(180deg, #fffcf9 0%, #ffffff 60%)", border: "1px solid #f0e6dc", boxShadow: "0 1px 2px rgba(17,20,30,.04), 0 10px 26px -18px rgba(217,84,47,.28)" },
   cardHead: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 4 },

@@ -64,8 +64,6 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("bookings");
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // when admin clicks "Assign Task" on an employee card, jump to Tasks and
-  // prefill the assignee in the new-task form
   const [taskPrefillEmp, setTaskPrefillEmp] = useState<string | null>(null);
 
   const handleLogout = () => { logout(); navigate("/login"); };
@@ -76,34 +74,39 @@ export default function AdminDashboard() {
       {/* ── Sidebar ── */}
       <div className={`adm-backdrop${drawerOpen ? " on" : ""}`} onClick={() => setDrawerOpen(false)} />
       <aside className={`adm-sidebar${drawerOpen ? " open" : ""}`}>
-        <div className="adm-brand">
-          <img src="/images/abhijit_art_logo.png" alt="Abhijit Art" className="adm-logo" />
+
+        {/* scrollable inner content */}
+        <div className="adm-sidebar-inner">
+          <div className="adm-brand">
+            <img src="/images/abhijit_art_logo.png" alt="Abhijit Art" className="adm-logo" />
+          </div>
+
+          <p className="adm-eyebrow">Menu</p>
+          <nav className="adm-nav">
+            {NAV.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                title={label}
+                className={`adm-navitem${activeTab === id ? " on" : ""}`}
+                onClick={() => { setActiveTab(id); setDrawerOpen(false); }}
+              >
+                <span className="adm-navicon"><Icon /></span>
+                <span className="adm-navlabel">{label}</span>
+              </button>
+            ))}
+          </nav>
+
+          <a href="/" className="adm-navitem adm-backlink" title="Back to Website">
+            <span className="adm-navicon">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
+              </svg>
+            </span>
+            <span className="adm-navlabel">Back to Website</span>
+          </a>
         </div>
 
-        <p className="adm-eyebrow">Menu</p>
-        <nav className="adm-nav">
-          {NAV.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              title={label}
-              className={`adm-navitem${activeTab === id ? " on" : ""}`}
-              onClick={() => { setActiveTab(id); setDrawerOpen(false); }}
-            >
-              <span className="adm-navicon"><Icon /></span>
-              <span className="adm-navlabel">{label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <a href="/" className="adm-navitem adm-backlink" title="Back to Website">
-          <span className="adm-navicon">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
-            </svg>
-          </span>
-          <span className="adm-navlabel">Back to Website</span>
-        </a>
-
+        {/* toggle button — outside inner so it's not clipped */}
         <button
           className="adm-toggle"
           onClick={() => setCollapsed((c) => !c)}
@@ -177,11 +180,18 @@ export default function AdminDashboard() {
           position: sticky; top: 0; height: 100vh; flex-shrink: 0;
           width: 248px; box-sizing: border-box;
           background: #ffffff; border-right: 1px solid #ebebf0;
-          display: flex; flex-direction: column; gap: 6px;
+          display: flex; flex-direction: column;
           padding: 20px 14px;
           transition: width .22s ease, padding .22s ease;
-          overflow-y: auto;
+          overflow: visible;
         }
+
+        /* scrollable inner wrapper — keeps toggle visible outside sidebar edge */
+        .adm-sidebar-inner {
+          display: flex; flex-direction: column; gap: 6px;
+          flex: 1; overflow-y: auto; min-height: 0;
+        }
+
         .adm-brand { display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 2px 8px 16px; border-bottom: 1px solid #f1f1f5; min-height: 44px; }
         .adm-logo { height: 34px; width: auto; display: block; transition: height .2s ease; }
         .adm-eyebrow { margin: 12px 12px 6px; font-size: 10.5px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; color: #aeb2bd; }
@@ -202,11 +212,12 @@ export default function AdminDashboard() {
         .adm-toggle {
           position: absolute; right: -13px; top: 50%; transform: translateY(-50%);
           width: 26px; height: 26px; border-radius: 50%;
-          background: #fff; border: 1px solid #e0e0e8; color: #5b626f;
+          background: #fff; border: 1.5px solid #d0d0da; color: #5b626f;
           display: flex; align-items: center; justify-content: center; cursor: pointer;
-          box-shadow: 0 2px 8px rgba(20,20,25,.10); z-index: 20; transition: color .16s, border-color .16s;
+          box-shadow: 0 2px 8px rgba(20,20,25,.12); z-index: 20;
+          transition: color .16s, border-color .16s, box-shadow .16s;
         }
-        .adm-toggle:hover { color: ${ACCENT}; border-color: ${ACCENT}55; }
+        .adm-toggle:hover { color: ${ACCENT}; border-color: ${ACCENT}88; box-shadow: 0 2px 10px rgba(217,84,47,.18); }
 
         .adm-layout.collapsed .adm-sidebar { width: 76px; padding-left: 10px; padding-right: 10px; }
         .adm-layout.collapsed .adm-navlabel,
@@ -242,7 +253,8 @@ export default function AdminDashboard() {
           .adm-burger { display: inline-flex; }
           .adm-backdrop { display: block; pointer-events: none; }
           .adm-backdrop.on { opacity: 1; pointer-events: auto; }
-          .adm-sidebar, .adm-layout.collapsed .adm-sidebar { position: fixed; top: 0; left: 0; bottom: 0; height: 100vh; width: 264px; padding: 20px 14px; z-index: 50; border-right: 1px solid #ebebf0; border-bottom: none; transform: translateX(-100%); transition: transform .26s cubic-bezier(.22,1,.36,1); overflow-y: auto; }
+          .adm-sidebar, .adm-layout.collapsed .adm-sidebar { position: fixed; top: 0; left: 0; bottom: 0; height: 100vh; width: 264px; padding: 20px 14px; z-index: 50; border-right: 1px solid #ebebf0; border-bottom: none; transform: translateX(-100%); transition: transform .26s cubic-bezier(.22,1,.36,1); overflow: hidden; }
+          .adm-sidebar-inner { overflow-y: auto; }
           .adm-sidebar.open, .adm-layout.collapsed .adm-sidebar.open { transform: translateX(0); }
           .adm-nav { flex-direction: column; gap: 4px; overflow-x: visible; }
           .adm-navlabel, .adm-layout.collapsed .adm-navlabel { display: inline; }

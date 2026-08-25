@@ -49,12 +49,17 @@ function fmtTimeSec(d: string) {
   const dt = new Date(d); if (isNaN(dt.getTime())) return "";
   return dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
+// A synthetic/dummy email shouldn't be shown to the user in the chip
+const isRealEmail = (e: string) =>
+  !!e && e.includes("@") && !/^walkin_/i.test(e) && !/@noemail\./i.test(e);
 
 const EMPTY_ITEM = (): KhataItem => ({ desc: "", qty: 1, rate: 0 });
 
 export default function Khata() {
   const [view, setView]           = useState<"daily" | "ledger">("daily");
   const [date, setDate]           = useState(todayStr());
+  // ledger date filter — "" means All Time
+  const [ledgerDate, setLedgerDate] = useState<string>("");
   const [entries, setEntries]     = useState<KhataEntry[]>([]);
   const [ledger, setLedger]       = useState<LedgerRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRec[]>([]);
@@ -71,6 +76,7 @@ export default function Khata() {
   const [custQuery, setCustQuery]     = useState("");
   const [custSel, setCustSel]         = useState<CustomerRec | null>(null);
   const [custDdOpen, setCustDdOpen]   = useState(false);
+  const [custPhone, setCustPhone]     = useState(""); // editable phone that prints on the invoice
 
   // add-customer popup
   const [showAddCust, setShowAddCust] = useState(false);
@@ -99,9 +105,13 @@ export default function Khata() {
 
   const loadLedger = useCallback(async () => {
     setLoading(true);
-    try { const { data } = await api.get("/api/khata/ledger"); setLedger(data); }
+    try {
+      const qs = ledgerDate ? `?date=${ledgerDate}` : "";
+      const { data } = await api.get(`/api/khata/ledger${qs}`);
+      setLedger(data);
+    }
     catch { /* ignore */ } finally { setLoading(false); }
-  }, []);
+  }, [ledgerDate]);
 
   const loadCustomers = useCallback(async () => {
     try { const { data } = await api.get("/api/users"); setCustomers(data || []); }
@@ -131,7 +141,7 @@ export default function Khata() {
   // ── Modal helpers ──
   function openCreate() {
     setEditEntry(null);
-    setCustSel(null); setCustQuery(""); setCustDdOpen(false);
+    setCustSel(null); setCustQuery(""); setCustDdOpen(false); setCustPhone("");
     setItems([EMPTY_ITEM()]); setDesc(""); setAdvance(""); setPayMethod("cash"); setEntryDate(todayStr());
     setShowModal(true);
   }
@@ -141,6 +151,7 @@ export default function Khata() {
                   customers.find((c) => c.phone === e.customerPhone) || null;
     setCustSel(match || { id: e.customerId || "", name: e.customerName, phone: e.customerPhone, email: e.customerEmail });
     setCustQuery(""); setCustDdOpen(false);
+    setCustPhone(e.customerPhone || match?.phone || "");
     setItems(e.items.length ? e.items : [EMPTY_ITEM()]);
     setDesc(e.description || "");
     setAdvance(e.advancePaid ? String(e.advancePaid) : "");
@@ -156,6 +167,7 @@ export default function Khata() {
 
   function selectCustomer(c: CustomerRec) {
     setCustSel(c); setCustDdOpen(false); setCustQuery("");
+    setCustPhone(c.phone || "");
   }
   function openAddCustomer(name: string) {
     setNewCust({ name: name.trim(), phone: "", email: "", address: "" });
@@ -173,7 +185,7 @@ export default function Khata() {
       });
       const rec: CustomerRec = { id: data.id, name: data.name, phone: data.phone || "", email: data.email || "" };
       setCustomers((p) => [rec, ...p]);
-      setCustSel(rec); setShowAddCust(false);
+      setCustSel(rec); setCustPhone(rec.phone || newCust.phone.trim()); setShowAddCust(false);
     } catch (err: any) {
       setAddCustErr(err.response?.data?.message || err.response?.data?.error || "Failed to add customer.");
     } finally { setAddingCust(false); }
@@ -188,7 +200,7 @@ export default function Khata() {
       const payload = {
         customerId:    custSel.id || null,
         customerName:  custSel.name,
-        customerPhone: custSel.phone,
+        customerPhone: custPhone.trim(),
         customerEmail: custSel.email,
         items:         items.filter((it) => it.desc.trim()),
         description:   desc,
@@ -248,8 +260,10 @@ export default function Khata() {
   async function drillCustomer(row: LedgerRow) {
     setLedgerCust(row); setLoadingCust(true);
     try {
-      const params = row.customerId ? `customerId=${row.customerId}` : ``;
-      const { data } = await api.get(`/api/khata?${params}`);
+      const params = new URLSearchParams();
+      if (row.customerId) params.set("customerId", row.customerId);
+      if (ledgerDate) params.set("date", ledgerDate);
+      const { data } = await api.get(`/api/khata?${params.toString()}`);
       setCustEntries(data.filter((e: KhataEntry) =>
         row.customerId ? e.customerId === row.customerId : e.customerName === row.customerName
       ));
@@ -260,6 +274,11 @@ export default function Khata() {
   const totalToday = entries.reduce((s, e) => s + Number(e.amount), 0);
   const totalAdv   = entries.reduce((s, e) => s + Number(e.advancePaid), 0);
   const totalDue   = Math.max(0, totalToday - totalAdv);
+
+  // ── Summary (ledger) ──
+  const ledgerTotal = ledger.reduce((s, r) => s + r.totalAmount, 0);
+  const ledgerAdv   = ledger.reduce((s, r) => s + r.totalAdvance, 0);
+  const ledgerDue   = ledger.reduce((s, r) => s + r.totalDue, 0);
 
   return (
     <div className="kh">
@@ -272,6 +291,9 @@ export default function Khata() {
         .kh-tab.on { background:${ACCENT}; color:#fff; }
         .kh-date { padding:8px 12px; border:1px solid #d9dce3; font-size:.84rem; font-family:inherit; }
         .kh-date:focus { outline:2px solid ${ACCENT}; outline-offset:-1px; }
+        .kh-alltime { padding:8px 14px; border:1px solid #d9dce3; background:#fff; font-size:.8rem; font-weight:600; cursor:pointer; font-family:inherit; color:#6b7280; }
+        .kh-alltime.on { background:#1f2430; color:#fff; border-color:#1f2430; }
+        .kh-alltime:hover:not(.on) { background:#f5f5f8; }
         .kh-add { margin-left:auto; background:${ACCENT}; color:#fff; border:none; padding:9px 18px; font-size:.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
         .kh-add:hover { background:#b8421f; }
         .kh-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
@@ -313,7 +335,7 @@ export default function Khata() {
         .kh-abtn.danger { color:${ACCENT}; border-color:#f5c4bb; }
         .kh-abtn.danger:hover { background:#fef2ee; }
         /* ledger */
-        .kh-combine-btn { width:100%; padding:11px 16px; border:none; background:${ACCENT}; color:#fff; font-family:inherit; font-size:.84rem; font-weight:700; cursor:pointer; transition:background .15s; }
+        .kh-combine-btn { width:100%; padding:11px 16px; border:none; background:${ACCENT}; color:#fff; font-family:inherit; font-size:.84rem; font-weight:700; cursor:pointer; transition:background .15s; margin-bottom:14px; }
         .kh-combine-btn:hover:not(:disabled) { background:#c2461f; }
         .kh-combine-btn:disabled { opacity:.55; cursor:not-allowed; }
         .kh-ledger { background:#fff; border:1px solid #e8e8ee; }
@@ -370,6 +392,7 @@ export default function Khata() {
         .kh-close { position:absolute; top:14px; right:16px; background:none; border:none; font-size:1.3rem; cursor:pointer; color:#6b7280; }
         .kh-mtitle { font-size:1.05rem; font-weight:700; margin-bottom:16px; }
         .kh-lbl { display:block; font-size:.74rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; margin-bottom:5px; }
+        .kh-lbl .hint { font-weight:400; text-transform:none; letter-spacing:0; color:#9ca3af; }
         .kh-inp { width:100%; padding:9px 12px; border:1px solid #d4c8b0; font-size:.88rem; font-family:inherit; }
         .kh-inp:focus { outline:2px solid ${ACCENT}; outline-offset:-1px; }
         .kh-grid { display:grid; gap:13px; }
@@ -415,6 +438,27 @@ export default function Khata() {
         </div>
         {view === "daily" && (
           <input type="date" className="kh-date" value={date} onChange={(e) => setDate(e.target.value)} />
+        )}
+        {view === "ledger" && (
+          <>
+            <button
+              className={`kh-alltime${ledgerDate === "" ? " on" : ""}`}
+              onClick={() => setLedgerDate("")}
+            >
+              All Time
+            </button>
+            <input
+              type="date"
+              className="kh-date"
+              value={ledgerDate}
+              onChange={(e) => setLedgerDate(e.target.value)}
+            />
+            {ledgerDate && (
+              <span style={{ fontSize: ".78rem", color: "#6b7280", fontWeight: 600 }}>
+                Showing {fmtDate(ledgerDate + "T00:00:00")}
+              </span>
+            )}
+          </>
         )}
         <button className="kh-add" onClick={openCreate}>+ New Entry</button>
       </div>
@@ -491,8 +535,29 @@ export default function Khata() {
       {/* Ledger view */}
       {view === "ledger" && (
         <>
+          <div className="kh-stats">
+            <div className="kh-stat total">
+              <div className="kh-stat-n">{rupees(ledgerTotal)}</div>
+              <div className="kh-stat-l">Total Billed · {ledger.reduce((s, r) => s + r.totalOrders, 0)} orders</div>
+            </div>
+            <div className="kh-stat adv">
+              <div className="kh-stat-n">{rupees(ledgerAdv)}</div>
+              <div className="kh-stat-l">Advance Received</div>
+            </div>
+            <div className="kh-stat due">
+              <div className="kh-stat-n">{rupees(ledgerDue)}</div>
+              <div className="kh-stat-l">Balance Due</div>
+            </div>
+          </div>
+
           {loading ? <div className="kh-empty">Loading…</div>
-          : ledger.length === 0 ? <div className="kh-empty">No ledger entries yet.</div>
+          : ledger.length === 0 ? (
+            <div className="kh-empty">
+              {ledgerDate
+                ? `No ledger entries for ${fmtDate(ledgerDate + "T00:00:00")}.`
+                : "No ledger entries yet."}
+            </div>
+          )
           : (
             <div className="kh-lcard">
               <div className="kh-ltbl-wrap">
@@ -539,6 +604,7 @@ export default function Khata() {
               <div>
                 <h2 className="kh-mdl-name">{ledgerCust.customerName}</h2>
                 {ledgerCust.customerPhone && <div className="kh-mdl-phone">{ledgerCust.customerPhone}</div>}
+                {ledgerDate && <div className="kh-mdl-phone">📅 {fmtDate(ledgerDate + "T00:00:00")}</div>}
               </div>
               <button className="kh-mdl-close" onClick={() => setLedgerCust(null)}>×</button>
             </div>
@@ -606,10 +672,17 @@ export default function Khata() {
               <div className="kh-fieldset">
                 <div className="kh-fs-l">Customer</div>
                 {custSel ? (
-                  <div className="kh-chip">
-                    <div><b>{custSel.name}</b><div className="sub">{custSel.phone || "no phone"}</div></div>
-                    <button className="kh-chip-chg" onClick={() => setCustSel(null)}>Change</button>
-                  </div>
+                  <>
+                    <div className="kh-chip">
+                      <div><b>{custSel.name}</b><div className="sub">{isRealEmail(custSel.email) ? custSel.email : "Walk-in customer"}</div></div>
+                      <button className="kh-chip-chg" onClick={() => { setCustSel(null); setCustPhone(""); }}>Change</button>
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      <label className="kh-lbl">Phone <span className="hint">· prints on the invoice</span></label>
+                      <input className="kh-inp" value={custPhone} inputMode="tel" autoComplete="off"
+                        onChange={(e) => setCustPhone(e.target.value)} placeholder="e.g. 9876543210" />
+                    </div>
+                  </>
                 ) : (
                   <div className="kh-cp">
                     <label className="kh-lbl">Search or type name *</label>

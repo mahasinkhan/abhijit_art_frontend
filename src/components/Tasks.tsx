@@ -45,15 +45,15 @@ interface Invoice {
 interface ItemAssign { assignedToId: string; instruction: string; removed: boolean; }
 
 // ---- Design tokens ----
-const ACCENT = "#d9542f";       // terracotta (primary)
+const ACCENT = "#d9542f";
 const ACCENT_DK = "#b8421f";
-const GOLD = "#c2974a";         // secondary
+const GOLD = "#c2974a";
 const INK = "#2a231d";
 const MUTED = "#8a8378";
 const FAINT = "#b3ab9f";
-const LINE = "#e7e1d7";         // warm hairline
+const LINE = "#e7e1d7";
 const LINE_SOFT = "#f1ece3";
-const WASH = "#faf8f3";         // subtle warm surface
+const WASH = "#faf8f3";
 
 const STATUS_META: Record<TaskStatus, { label: string; color: string; bg: string }> = {
   pending:     { label: "Pending",     color: "#9a6a12", bg: "#fbf1dd" },
@@ -132,8 +132,8 @@ export default function Tasks({
   const [saving, setSaving] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const mbodyRef = useRef<HTMLDivElement | null>(null);
 
-  // shared form (create) + single-task fields (edit)
   const [form, setForm] = useState({
     title: "", assignedToId: "", priority: "medium" as TaskPriority,
     deadline: "", orderDate: "", links: "", generalNotes: "", description: "",
@@ -142,7 +142,6 @@ export default function Tasks({
   const [formImagePreviews, setFormImagePreviews] = useState<string[]>([]);
   const [removeImages, setRemoveImages] = useState<string[]>([]);
 
-  // bill picker + per-item assignment (create mode)
   const [billSel, setBillSel] = useState<Invoice | null>(null);
   const [billQuery, setBillQuery] = useState("");
   const [billDdOpen, setBillDdOpen] = useState(false);
@@ -176,7 +175,26 @@ export default function Tasks({
     return () => { socket.disconnect(); };
   }, []);
 
-  // ---- Prefill from Employees "Assign task" ----
+  // ---- Modal open: lock page scroll + force mouse-wheel to scroll the modal body ----
+  useEffect(() => {
+    if (!showModal) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onWheel = (e: WheelEvent) => {
+      const body = mbodyRef.current;
+      if (!body) return;
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest(".tk-bp-dd")) return; // let the bill dropdown scroll itself
+      e.preventDefault();
+      body.scrollTop += e.deltaY;
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("wheel", onWheel);
+    };
+  }, [showModal]);
+
   useEffect(() => {
     if (prefillEmployeeId) { openCreate(); onPrefillConsumed?.(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -467,13 +485,47 @@ export default function Tasks({
         .tk-tl-dur { font-size:.72rem; color:${FAINT}; margin-top:1px; }
 
         /* ---- Modal ---- */
-        .tk-ov { position:fixed; inset:0; background:rgba(31,36,48,.5); z-index:1000; display:flex; align-items:flex-start; justify-content:center; padding:24px 20px; overflow-y:auto; }
-        .tk-modal { background:#fff; width:100%; max-width:680px; border-radius:4px; position:relative; margin:auto; overflow:hidden; }
-        .tk-mhead { padding:22px 26px 18px; border-bottom:1px solid ${LINE_SOFT}; }
+        .tk-ov {
+          position:fixed; inset:0;
+          background:rgba(31,36,48,.5);
+          z-index:1000;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding:24px 20px;
+          overflow:hidden;
+        }
+        .tk-modal {
+          background:#fff;
+          width:100%;
+          max-width:680px;
+          border-radius:4px;
+          position:relative;
+          display:flex;
+          flex-direction:column;
+          max-height:calc(100vh - 48px);
+          overflow:hidden;
+        }
+        .tk-mhead {
+          padding:22px 26px 18px;
+          border-bottom:1px solid ${LINE_SOFT};
+          flex-shrink:0;
+        }
         .tk-mtitle { font-size:1.05rem; font-weight:700; }
         .tk-msub { font-size:.8rem; color:${MUTED}; margin-top:4px; line-height:1.5; }
-        .tk-mbody { padding:22px 26px 26px; }
-        .tk-close { position:absolute; top:16px; right:18px; background:none; border:none; font-size:1.4rem; line-height:1; cursor:pointer; color:${MUTED}; }
+        .tk-mbody {
+          padding:22px 26px 26px;
+          overflow-y:auto;
+          flex:1 1 auto;
+          min-height:0;
+          max-height:calc(100vh - 170px);
+          overscroll-behavior:contain;
+        }
+        .tk-mbody::-webkit-scrollbar { width:5px; }
+        .tk-mbody::-webkit-scrollbar-track { background:transparent; }
+        .tk-mbody::-webkit-scrollbar-thumb { background:${LINE}; border-radius:10px; }
+        .tk-mbody::-webkit-scrollbar-thumb:hover { background:${FAINT}; }
+        .tk-close { position:absolute; top:16px; right:18px; background:none; border:none; font-size:1.4rem; line-height:1; cursor:pointer; color:${MUTED}; z-index:1; }
         .tk-close:hover { color:${INK}; }
         .tk-lbl { display:block; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:${MUTED}; margin-bottom:6px; }
         .tk-inp { width:100%; padding:9px 12px; border:1px solid ${LINE}; border-radius:3px; font-size:.88rem; font-family:inherit; color:${INK}; background:#fff; }
@@ -539,7 +591,6 @@ export default function Tasks({
         .tk-thumb-x { position:absolute; top:2px; right:2px; background:${ACCENT}; color:#fff; border:none; border-radius:3px; width:18px; height:18px; font-size:11px; cursor:pointer; line-height:1; }
         .tk-thumb.rm img { opacity:.35; }
         .tk-thumb.rm::after { content:'✕'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1.3rem; color:${ACCENT}; font-weight:700; }
-        .tk-filenote { font-size:.74rem; color:${FAINT}; margin-top:6px; }
 
         .tk-lb { position:fixed; inset:0; background:rgba(0,0,0,.9); z-index:2000; display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
         .tk-lb img { max-width:92vw; max-height:92vh; object-fit:contain; }
@@ -657,13 +708,12 @@ export default function Tasks({
             <button className="tk-close" onClick={() => setShowModal(false)}>×</button>
 
             {editTask ? (
-              /* ---------- EDIT single task ---------- */
               <>
                 <div className="tk-mhead">
                   <div className="tk-mtitle">Edit task</div>
                   <div className="tk-msub">Update this task, reassign it, or change its instructions.</div>
                 </div>
-                <div className="tk-mbody">
+                <div className="tk-mbody" ref={mbodyRef}>
                   <div className="tk-grid">
                     {billSel && (
                       <div className="tk-bill-chip">
@@ -738,13 +788,12 @@ export default function Tasks({
                 </div>
               </>
             ) : (
-              /* ---------- CREATE: one bill → many employees ---------- */
               <>
                 <div className="tk-mhead">
                   <div className="tk-mtitle">New task order</div>
                   <div className="tk-msub">Pick a bill, then assign each item to an employee. One task is created per assigned item.</div>
                 </div>
-                <div className="tk-mbody">
+                <div className="tk-mbody" ref={mbodyRef}>
                   <div className="tk-grid">
                     {/* Step 1: Bill */}
                     <div className="tk-fieldset">
@@ -960,7 +1009,6 @@ function TaskDetail({
       </div>
 
       <div className="tk-d-body">
-        {/* Status control */}
         <div className="tk-sec">
           <div className="tk-sec-l">Status</div>
           <div className="tk-statusctl">
@@ -974,7 +1022,6 @@ function TaskDetail({
           </div>
         </div>
 
-        {/* Customer + Billing */}
         {hasOrder && (
           <div className="tk-sec">
             <div className="tk-cards">
@@ -1003,7 +1050,6 @@ function TaskDetail({
           </div>
         )}
 
-        {/* Timeline */}
         <div className="tk-sec">
           <div className="tk-sec-l">Progress timeline</div>
           <div className="tk-tl">

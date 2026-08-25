@@ -788,22 +788,24 @@ export default function Invoices() {
                   <th style={{ ...st.th, textAlign: "right", width: 130 }}>Total Billed</th>
                   <th style={{ ...st.th, textAlign: "right", width: 130 }}>Paid</th>
                   <th style={{ ...st.th, textAlign: "right", width: 130 }}>Balance Due</th>
-                  <th style={{ ...st.th, textAlign: "center", width: 130 }}>Summary</th>
                   <th style={{ ...st.th, width: 40 }} />
                 </tr></thead>
                 <tbody>
                   {customerRows.map((r, i) => (
                     <tr key={r.key} className="ivh-tr ivh-custrow" onClick={() => { setDrawerQ(""); setPaidOpen(false); setDrillCust(r.key); }} style={{ cursor: "pointer" }}>
                       <td style={{ ...st.td, color: FAINT, textAlign: "center" }}>{i + 1}</td>
-                      <td style={st.td}>
-                        <div style={{ fontWeight: 700, color: INK, fontSize: 14 }}>{r.name}</div>
-                        {r.phone && <div style={{ fontSize: 12, color: FAINT, marginTop: 2 }}>{r.phone}</div>}
+                                            <td style={st.td}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, color: INK, fontSize: 14 }}>{r.name}</div>
+                            {r.phone && <div style={{ fontSize: 12, color: FAINT, marginTop: 2 }}>{r.phone}</div>}
+                          </div>
+                        </div>
                       </td>
                       <td style={{ ...st.td, textAlign: "center", fontWeight: 700 }}>{r.invoices.length}</td>
                       <td style={{ ...st.td, textAlign: "right", fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums" }}>{rupee(r.billed)}</td>
                       <td style={{ ...st.td, textAlign: "right", fontWeight: 700, color: GREEN, fontVariantNumeric: "tabular-nums" }}>{rupee(r.paid)}</td>
                       <td style={{ ...st.td, textAlign: "right", fontWeight: 800, color: r.due > 0 ? TERRA : GREEN, fontVariantNumeric: "tabular-nums" }}>{r.due > 0 ? rupee(r.due) : "✓ Cleared"}</td>
-                      <td style={{ ...st.td, textAlign: "center" }}><button style={st.rowStmtBtn} onClick={(e) => { e.stopPropagation(); openStatement(r.key); }}><Icon name="csv" size={14} /> View Summary</button></td>
                       <td style={{ ...st.td, textAlign: "center", color: FAINT, fontSize: 18 }}>›</td>
                     </tr>
                   ))}
