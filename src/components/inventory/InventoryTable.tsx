@@ -1,6 +1,8 @@
 // src/components/inventory/InventoryTable.tsx
 import { useState } from "react";
+import api from "../../api";
 import Icon from "./Icon";
+import PinField from "./PinField";
 import {
   InventoryItem, KPIs, CatSummary,
   INK, MUTE, LINE, IVORY, CARD, TERRA, GOLD, GOLD_LT, GREEN, RED, SANS,
@@ -14,6 +16,8 @@ interface Props {
   loading:    boolean;
   selCat:     string;
   lowOnly:    boolean;
+  onSelCat:      (cat: string) => void;
+  onLowToggle:   () => void;
   onClearCat:    () => void;
   onClearLow:    () => void;
   onAddItem:     () => void;
@@ -21,13 +25,34 @@ interface Props {
   onHistDrawer:  (it: InventoryItem) => void;
   onEditDrawer:  (it: InventoryItem) => void;
   onExportCSV:   () => void;
+  onDeleted?:    () => void;
 }
 
 export default function InventoryTable({
   items, kpis, catSummary, loading, selCat, lowOnly,
-  onClearCat, onClearLow, onAddItem, onMoveDrawer, onHistDrawer, onEditDrawer, onExportCSV,
+  onSelCat, onLowToggle, onClearCat, onClearLow, onAddItem, onMoveDrawer, onHistDrawer, onEditDrawer, onExportCSV, onDeleted,
 }: Props) {
   const [search, setSearch] = useState("");
+
+  // ── Delete confirm modal state ─────────────────────────────────────────────
+  const [delItem, setDelItem] = useState<InventoryItem | null>(null);
+  const [delPin,  setDelPin]  = useState("");
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr,  setDelErr]  = useState("");
+
+  async function confirmDelete() {
+    if (!delItem || !delPin) { setDelErr("PIN required"); return; }
+    setDelBusy(true); setDelErr("");
+    try {
+      await api.delete(`/api/inventory/items/${delItem.id}`, { data: { pin: delPin } });
+      setDelItem(null); setDelPin("");
+      onDeleted?.();
+    } catch (ex: any) {
+      setDelErr(ex.response?.data?.error || ex.response?.data?.message || "Failed to delete");
+    } finally {
+      setDelBusy(false);
+    }
+  }
 
   const tableItems = (() => {
     let list = items;
@@ -71,20 +96,31 @@ export default function InventoryTable({
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          {selCat && (
-            <div style={st.pill}>
-              <div style={{ width:8, height:8, borderRadius:"50%", background:catColor(catSummary.findIndex(c=>c.name===selCat)), flexShrink:0 }} />
-              <span style={{ fontSize:12, fontWeight:700 }}>{selCat}</span>
-              <button style={st.pillX} onClick={onClearCat}>×</button>
-            </div>
-          )}
-          {lowOnly && (
-            <div style={{ ...st.pill, background:"#fff1ee", borderColor:`${TERRA}66`, color:TERRA }}>
-              <Icon name="warning" size={12} color={TERRA} />
-              <span style={{ fontSize:12, fontWeight:700 }}>Low stock</span>
-              <button style={{ ...st.pillX, color:TERRA }} onClick={onClearLow}>×</button>
-            </div>
-          )}
+
+          {/* Category dropdown (replaces sidebar) */}
+          <select
+            style={st.catSelect}
+            value={selCat}
+            onChange={e => onSelCat(e.target.value)}
+          >
+            <option value="">All categories</option>
+            {catSummary.map(c => (
+              <option key={c.name} value={c.name}>{c.name} ({c.count})</option>
+            ))}
+          </select>
+
+          {/* Low stock toggle */}
+          <button
+            style={{ ...st.lowToggle, ...(lowOnly ? st.lowToggleOn : {}) }}
+            onClick={onLowToggle}
+            title="Show only low stock"
+          >
+            <Icon name="warning" size={13} color={lowOnly ? TERRA : MUTE} />
+            <span>Low stock</span>
+            {(kpis?.lowStockCount ?? 0) > 0 && (
+              <span style={st.lowCount}>{kpis?.lowStockCount}</span>
+            )}
+          </button>
         </div>
         <div style={{ display:"flex", gap:8, flexShrink:0 }}>
           <button className="inv-ghost" style={sharedSt.ghostBtn} onClick={onExportCSV}>
@@ -155,9 +191,10 @@ export default function InventoryTable({
                     <td style={{ ...st.td, color:MUTE, fontSize:11, whiteSpace:"nowrap" }}>{dtfmt(it.updatedAt)}</td>
                     <td style={{ ...st.td, textAlign:"right" }}>
                       <div style={{ display:"flex", gap:5, justifyContent:"flex-end" }}>
-                        <button className="inv-icon" style={st.iconBtn} title="Move stock" onClick={()=>onMoveDrawer(it)}><Icon name="move"    size={14}/></button>
-                        <button className="inv-icon" style={st.iconBtn} title="History"    onClick={()=>onHistDrawer(it)}><Icon name="history" size={14}/></button>
-                        <button className="inv-icon" style={st.iconBtn} title="Edit"       onClick={()=>onEditDrawer(it)}><Icon name="edit"    size={14}/></button>
+                        <button className="inv-icon" style={st.iconBtn}    title="Move stock" onClick={()=>onMoveDrawer(it)}><Icon name="move"    size={14}/></button>
+                        <button className="inv-icon" style={st.iconBtn}    title="History"    onClick={()=>onHistDrawer(it)}><Icon name="history" size={14}/></button>
+                        <button className="inv-icon" style={st.iconBtn}    title="Edit"       onClick={()=>onEditDrawer(it)}><Icon name="edit"    size={14}/></button>
+                        <button className="inv-del"  style={st.delBtn}     title="Delete"     onClick={()=>{ setDelItem(it); setDelPin(""); setDelErr(""); }}><Icon name="trash"   size={14}/></button>
                       </div>
                     </td>
                   </tr>
@@ -167,6 +204,46 @@ export default function InventoryTable({
           </table>
         )}
       </div>
+
+      {/* ── Delete confirm modal ──────────────────────────────────────── */}
+      {delItem && (
+        <div style={st.overlay} onClick={() => !delBusy && setDelItem(null)}>
+          <div style={st.delBox} onClick={e => e.stopPropagation()}>
+            <div style={st.delHd}>
+              <span style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <Icon name="trash" size={16} color={RED} /> Delete item
+              </span>
+              <button style={st.delX} onClick={() => !delBusy && setDelItem(null)}>✕</button>
+            </div>
+            <div style={st.delBody}>
+              <p style={{ margin:0, fontSize:13.5, color:INK, lineHeight:1.5 }}>
+                Delete <strong>{delItem.name}</strong> <span style={{ color:MUTE }}>({delItem.sku})</span>?
+                This removes the item and its entire stock history. This cannot be undone.
+              </p>
+              <div style={st.delWarn}>
+                ⚠️ Current stock: <strong>{dec(delItem.quantity)} {delItem.unit}</strong>
+                {delItem.supplier?.name && <> · Supplier: <strong>{delItem.supplier.name}</strong></>}
+              </div>
+              <PinField value={delPin} onChange={setDelPin} />
+              {delErr && <p style={{ color:RED, fontSize:12.5, margin:0 }}>{delErr}</p>}
+            </div>
+            <div style={st.delFt}>
+              <button style={st.delGhost} onClick={() => setDelItem(null)} disabled={delBusy}>Cancel</button>
+              <button
+                style={{ ...st.delDanger, opacity: (delBusy || !delPin) ? .6 : 1 }}
+                onClick={confirmDelete}
+                disabled={delBusy || !delPin}
+              >
+                {delBusy ? "Deleting…" : "Delete item"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .inv-del:hover { background:#fff1ee !important; color:${RED} !important; border-color:${RED}55 !important; }
+      `}</style>
     </div>
   );
 }
@@ -176,8 +253,12 @@ const st: Record<string, React.CSSProperties> = {
   kpiStrip:   { display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1, background:LINE, borderBottom:`1px solid ${LINE}`, flexShrink:0 },
   kpiCard:    { background:CARD, padding:"22px 24px" },
   toolbar:    { display:"flex", alignItems:"center", gap:10, padding:"13px 20px", borderBottom:`1px solid ${LINE}`, background:CARD, flexShrink:0, flexWrap:"wrap" },
-  searchWrap: { display:"flex", alignItems:"center", gap:8, border:`1px solid ${LINE}`, background:CARD, padding:"9px 12px", flex:1, maxWidth:380, minWidth:160 },
+  searchWrap: { display:"flex", alignItems:"center", gap:8, border:`1px solid ${LINE}`, background:CARD, padding:"9px 12px", flex:1, maxWidth:340, minWidth:160 },
   searchIn:   { flex:1, border:"none", outline:"none", fontSize:13.5, fontFamily:SANS, color:INK, background:"transparent" },
+  catSelect:  { padding:"9px 12px", border:`1px solid ${LINE}`, background:CARD, fontSize:13, fontFamily:SANS, color:INK, cursor:"pointer", outline:"none", fontWeight:600, minWidth:150 },
+  lowToggle:  { display:"inline-flex", alignItems:"center", gap:7, padding:"9px 13px", border:`1px solid ${LINE}`, background:CARD, fontSize:12.5, fontFamily:SANS, fontWeight:600, color:MUTE, cursor:"pointer", transition:"all .15s" },
+  lowToggleOn:{ background:"#fff1ee", borderColor:`${TERRA}66`, color:TERRA },
+  lowCount:   { fontSize:11, fontWeight:700, background:TERRA, color:"#fff", padding:"1px 7px", borderRadius:10, fontVariantNumeric:"tabular-nums" },
   pill:       { display:"inline-flex", alignItems:"center", gap:7, padding:"5px 11px", background:GOLD_LT, border:`1px solid ${GOLD}66`, fontSize:12, fontWeight:700, color:"#7a5a10" },
   pillX:      { background:"none", border:"none", cursor:"pointer", lineHeight:1, padding:0, fontSize:14, fontFamily:SANS, color:"inherit" },
   tableOuter: { flex:1, overflowX:"auto" },
@@ -186,5 +267,17 @@ const st: Record<string, React.CSSProperties> = {
   td:         { padding:"13px 16px", borderBottom:`1px solid ${LINE}`, verticalAlign:"middle" },
   catPill:    { display:"inline-block", padding:"3px 9px", fontSize:11, fontWeight:700, borderRadius:2, background:GOLD_LT, color:"#7a5a10" },
   iconBtn:    { width:32, height:32, display:"grid", placeItems:"center", border:`1px solid ${LINE}`, background:CARD, color:MUTE, cursor:"pointer", borderRadius:0, transition:"all .18s" },
+  delBtn:     { width:32, height:32, display:"grid", placeItems:"center", border:`1px solid ${LINE}`, background:CARD, color:MUTE, cursor:"pointer", borderRadius:0, transition:"all .18s" },
   empty:      { padding:"60px 0", textAlign:"center", color:MUTE, fontFamily:SANS },
+
+  // delete modal
+  overlay:    { position:"fixed", inset:0, background:"rgba(42,35,29,.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:2000, backdropFilter:"blur(2px)" },
+  delBox:     { background:CARD, width:"min(440px,94vw)", boxShadow:"0 8px 40px rgba(0,0,0,.18)", display:"flex", flexDirection:"column", fontFamily:SANS, color:INK },
+  delHd:      { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 20px", borderBottom:`1px solid ${LINE}`, background:IVORY, fontSize:14, fontWeight:700 },
+  delX:       { background:"none", border:"none", fontSize:17, cursor:"pointer", color:MUTE, lineHeight:1 },
+  delBody:    { padding:"18px 20px", display:"flex", flexDirection:"column", gap:14 },
+  delWarn:    { fontSize:12.5, color:"#7a5a00", background:"#fff8e6", border:"1px solid #f0c040", padding:"8px 12px" },
+  delFt:      { display:"flex", gap:10, justifyContent:"flex-end", padding:"14px 20px", borderTop:`1px solid ${LINE}`, background:IVORY },
+  delGhost:   { padding:"9px 20px", background:"transparent", border:`1px solid ${LINE}`, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:SANS, color:INK },
+  delDanger:  { padding:"9px 22px", background:RED, border:"none", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS, color:"#fff" },
 };

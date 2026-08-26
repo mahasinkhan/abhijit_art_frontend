@@ -14,7 +14,7 @@ const PostFeed         = lazy(() => import("../components/PostFeed"));
 const Settings         = lazy(() => import("../components/Settings"));
 const Tasks            = lazy(() => import("../components/tasks"));
 const Employees        = lazy(() => import("../components/employees"));
-const Khata            = lazy(() => import("../components/Khata"));
+const QuickOrders      = lazy(() => import("../components/quick-order"));
 
 type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
 
@@ -44,7 +44,7 @@ const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "reminders", label: "Reminders", Icon: IconReminders },
   { id: "activity",  label: "Activity",  Icon: IconActivity  },
   { id: "posts",     label: "Posts",     Icon: IconPosts     },
-  { id: "khata",     label: "Khata",     Icon: IconKhata     },
+  { id: "khata",     label: "Quick Orders", Icon: IconKhata },
   { id: "employees", label: "Employees", Icon: IconEmployees },
   { id: "tasks",     label: "Tasks",     Icon: IconTasks     },
   { id: "settings",  label: "Settings",  Icon: IconSettings  },
@@ -59,7 +59,7 @@ const TITLES: Record<Tab, string> = {
   reminders: "Payment reminders",
   activity:  "Activity",
   posts:     "Posts",
-  khata:     "Daily Khata",
+  khata:     "Quick Orders",
   employees: "Employees",
   tasks:     "Tasks",
   settings:  "Settings",
@@ -70,7 +70,6 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [feedKey,        setFeedKey]        = useState(0);
   const [activeTab,      setActiveTab]      = useState<Tab>("bookings");
-  const [collapsed,      setCollapsed]      = useState(false);
   const [drawerOpen,     setDrawerOpen]     = useState(false);
   const [taskPrefillEmp, setTaskPrefillEmp] = useState<string | null>(null);
 
@@ -78,7 +77,7 @@ export default function AdminDashboard() {
   const initial = (user?.name?.[0] || "A").toUpperCase();
 
   return (
-    <div className={`adm-layout${collapsed ? " collapsed" : ""}`}>
+    <div className="adm-layout">
 
       <div
         className={`adm-backdrop${drawerOpen ? " on" : ""}`}
@@ -114,18 +113,6 @@ export default function AdminDashboard() {
             <span className="adm-navlabel">Back to Website</span>
           </a>
         </div>
-        <button
-          className="adm-toggle"
-          onClick={() => setCollapsed(c => !c)}
-          title={collapsed ? "Expand" : "Collapse"}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-               style={{ transform: collapsed ? "rotate(180deg)" : "none", transition: "transform .2s ease" }}>
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
       </aside>
 
       <div className="adm-content">
@@ -164,7 +151,7 @@ export default function AdminDashboard() {
                 <PostFeed isAdmin={true} refreshKey={feedKey} />
               </div>
             )}
-            {activeTab === "khata"     && <Khata />}
+            {activeTab === "khata"     && <QuickOrders />}
             {activeTab === "employees" && (
               <Employees
                 onAssignTask={id => { setTaskPrefillEmp(id); setActiveTab("tasks"); }}
@@ -205,8 +192,6 @@ export default function AdminDashboard() {
           background: #ffffff; border-right: 1px solid #ebebf0;
           display: flex; flex-direction: column;
           padding: 20px 14px;
-          transition: width .22s ease, padding .22s ease;
-          overflow: visible;
         }
         .adm-sidebar-inner {
           display: flex; flex-direction: column; gap: 6px;
@@ -217,7 +202,7 @@ export default function AdminDashboard() {
           gap: 10px; padding: 2px 8px 16px;
           border-bottom: 1px solid #f1f1f5; min-height: 44px;
         }
-        .adm-logo { height: 34px; width: auto; display: block; transition: height .2s ease; }
+        .adm-logo { height: 34px; width: auto; display: block; }
         .adm-eyebrow {
           margin: 12px 12px 6px; font-size: 10.5px; font-weight: 800;
           letter-spacing: 1.4px; text-transform: uppercase; color: #aeb2bd;
@@ -238,24 +223,6 @@ export default function AdminDashboard() {
           content: ""; position: absolute; left: 0; top: 9px; bottom: 9px;
           width: 3px; border-radius: 0; background: ${ACCENT};
         }
-        .adm-toggle {
-          position: absolute; right: -13px; top: 50%; transform: translateY(-50%);
-          width: 26px; height: 26px; border-radius: 50%;
-          background: #fff; border: 1.5px solid #d0d0da; color: #5b626f;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; box-shadow: 0 2px 8px rgba(20,20,25,.12); z-index: 20;
-          transition: color .16s, border-color .16s, box-shadow .16s;
-        }
-        .adm-toggle:hover {
-          color: ${ACCENT}; border-color: ${ACCENT}88;
-          box-shadow: 0 2px 10px rgba(217,84,47,.18);
-        }
-        .adm-layout.collapsed .adm-sidebar         { width: 76px; padding-left: 10px; padding-right: 10px; }
-        .adm-layout.collapsed .adm-navlabel,
-        .adm-layout.collapsed .adm-eyebrow         { display: none; }
-        .adm-layout.collapsed .adm-navitem          { justify-content: center; gap: 0; padding: 12px 0; }
-        .adm-layout.collapsed .adm-brand            { justify-content: center; padding-left: 0; padding-right: 0; }
-        .adm-layout.collapsed .adm-logo             { height: 30px; }
         .adm-header {
           position: sticky; top: 0; z-index: 10;
           background: #fff; border-bottom: 1px solid #ebebf0;
@@ -300,8 +267,7 @@ export default function AdminDashboard() {
           .adm-burger   { display: inline-flex; }
           .adm-backdrop { display: block; pointer-events: none; }
           .adm-backdrop.on { opacity: 1; pointer-events: auto; }
-          .adm-sidebar,
-          .adm-layout.collapsed .adm-sidebar {
+          .adm-sidebar {
             position: fixed; top: 0; left: 0; bottom: 0; height: 100vh;
             width: 264px; padding: 20px 14px; z-index: 50;
             border-right: 1px solid #ebebf0; border-bottom: none;
@@ -310,20 +276,12 @@ export default function AdminDashboard() {
             overflow: hidden;
           }
           .adm-sidebar-inner { overflow-y: auto; }
-          .adm-sidebar.open,
-          .adm-layout.collapsed .adm-sidebar.open { transform: translateX(0); }
+          .adm-sidebar.open { transform: translateX(0); }
           .adm-nav { flex-direction: column; gap: 4px; overflow-x: visible; }
-          .adm-navlabel,
-          .adm-layout.collapsed .adm-navlabel { display: inline; }
-          .adm-eyebrow,
-          .adm-layout.collapsed .adm-eyebrow  { display: block; }
-          .adm-navitem,
-          .adm-layout.collapsed .adm-navitem  { justify-content: flex-start; gap: 13px; padding: 12px 14px; }
-          .adm-toggle { display: none; }
           .adm-uname  { display: none; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .adm-sidebar, .adm-navitem, .adm-logout, .adm-toggle { transition: none; }
+          .adm-sidebar, .adm-navitem, .adm-logout { transition: none; }
         }
       `}</style>
     </div>

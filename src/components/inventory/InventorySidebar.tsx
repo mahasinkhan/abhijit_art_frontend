@@ -1,5 +1,5 @@
 // src/components/inventory/InventorySidebar.tsx
-// ── Light warm sidebar — no dark colors ────────────────────────────────────
+// ── Light warm sidebar — compact, no dead space ────────────────────────────
 import { useState } from "react";
 import Icon from "./Icon";
 import { CatSummary, KPIs, Supplier, SANS, GOLD, TERRA, TERRA_DK, INK, BODY, MUTE, LINE, CARD, IVORY, catColor, rfmt } from "./types";
@@ -21,7 +21,7 @@ interface Props {
   onSelCat:        (cat: string) => void;
   onLowToggle:     () => void;
   onAddItem:       () => void;
-  onAddItemWithCat:(cat: string) => void;  // opens ItemDrawer pre-filled with category
+  onAddItemWithCat:(cat: string) => void;
   onOpenSupp:      (s: Supplier | "new") => void;
   onSuppTab:       () => void;
 }
@@ -41,18 +41,19 @@ export default function InventorySidebar({
 
   const switchToSupp = () => { setSideTab("suppliers"); onSuppTab(); };
 
+  const totalCount = catSummary.reduce((s,c)=>s+c.count, 0);
+  const totalValue = catSummary.reduce((s,c)=>s+(c.value||0), 0);
+
   return (
     <aside style={st.sidebar}>
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div style={st.header}>
-        {/* Brand */}
         <div style={st.brand}>
           <Icon name="box" size={16} color={TERRA} />
           <span style={st.brandText}>Inventory</span>
         </div>
 
-        {/* Search */}
         <div style={st.searchBox}>
           <Icon name="search" size={13} color={SB_MUTE} />
           <input
@@ -63,7 +64,6 @@ export default function InventorySidebar({
           />
         </div>
 
-        {/* Tab toggle */}
         <div style={st.tabs}>
           <button
             style={{ ...st.tab, ...(sideTab === "stock"     ? st.tabOn : {}) }}
@@ -80,21 +80,24 @@ export default function InventorySidebar({
       {sideTab === "stock" ? (
         <nav style={st.nav}>
 
-          {/* All items */}
+          {/* All items — with total value */}
           <button
             style={{ ...st.catRow, ...(!selCat && !lowOnly ? st.catRowOn : {}) }}
             onClick={() => { onSelCat(""); if (lowOnly) onLowToggle(); }}
           >
             <div style={{ ...st.dot, background: "#c8ccd6" }} />
-            <span style={{ ...st.catLabel, color: !selCat && !lowOnly ? TERRA : SB_TEXT }}>
-              All items
-            </span>
-            <span style={st.badge}>{catSummary.reduce((s,c)=>s+c.count,0)}</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ ...st.catLabel, color: !selCat && !lowOnly ? TERRA : SB_TEXT, fontWeight: !selCat && !lowOnly ? 700 : 600 }}>
+                All items
+              </div>
+              <div style={st.subVal}>{rfmt(totalValue)}</div>
+            </div>
+            <span style={st.badge}>{totalCount}</span>
           </button>
 
           {/* Low stock */}
           <button
-            style={{ ...st.catRow, ...(lowOnly ? { background:"#fff8f5", borderColor:TERRA } : {}) }}
+            style={{ ...st.catRow, ...(lowOnly ? st.catRowOn : {}) }}
             onClick={onLowToggle}
           >
             <div style={{ ...st.dot, background: TERRA }} />
@@ -105,24 +108,21 @@ export default function InventorySidebar({
               ...st.badge,
               color: (kpis?.lowStockCount ?? 0) > 0 ? TERRA : SB_MUTE,
               background: (kpis?.lowStockCount ?? 0) > 0 ? "#fff2ee" : "transparent",
-              padding: "1px 6px", borderRadius: 10,
+              padding: "1px 7px", borderRadius: 10,
             }}>
               {kpis?.lowStockCount ?? 0}
             </span>
           </button>
 
-          {/* Divider */}
-          <div style={st.divider} />
-
           {/* Categories header with + button */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"4px 14px 6px" }}>
+          <div style={st.sectionHead}>
             <div style={st.sectionLabel}>Categories</div>
             <button
               style={st.addCatBtn}
               title="Add category"
               onClick={() => setAddingCat(v => !v)}
             >
-              {addingCat ? "✕" : "+ Add"}
+              {addingCat ? "✕ Close" : "+ Add"}
             </button>
           </div>
 
@@ -144,7 +144,7 @@ export default function InventorySidebar({
                 }}
               />
               <button
-                style={st.addCatSave}
+                style={{ ...st.addCatSave, opacity: newCatName.trim() ? 1 : .5 }}
                 disabled={!newCatName.trim()}
                 onClick={() => {
                   if (newCatName.trim()) {
@@ -156,13 +156,14 @@ export default function InventorySidebar({
             </div>
           )}
 
-          {/* Per category */}
+          {/* Per category — compact rows */}
           {filteredCats.length === 0 && (
-            <div style={{ padding:"12px 16px", fontSize:12, color:SB_MUTE }}>No categories yet.</div>
+            <div style={st.emptyNote}>{sideSearch ? "No match." : "No categories yet."}</div>
           )}
           {filteredCats.map((cat, i) => {
             const color = catColor(i);
             const isOn  = selCat === cat.name && !lowOnly;
+            const hasLow = cat.low > 0;
             return (
               <button
                 key={cat.name}
@@ -174,17 +175,9 @@ export default function InventorySidebar({
                   <div style={{ ...st.catLabel, color: isOn ? TERRA : SB_TEXT, fontWeight: isOn ? 700 : 600 }}>
                     {cat.name}
                   </div>
-                  <div style={{ fontSize:10.5, color:SB_MUTE, marginTop:1, fontVariantNumeric:"tabular-nums" }}>
-                    {rfmt(cat.value)}
-                  </div>
-                  {/* Health bar */}
-                  <div style={{ height:2, background:"#ede8dc", marginTop:4, borderRadius:1 }}>
-                    <div style={{
-                      height:2, borderRadius:1,
-                      background: cat.low > 0 ? TERRA : color,
-                      width:`${cat.low > 0 ? Math.min(100,(cat.low/cat.count)*100) : 100}%`,
-                      transition:"width .35s ease",
-                    }}/>
+                  <div style={{ ...st.subVal, display:"flex", alignItems:"center", gap:6 }}>
+                    <span>{rfmt(cat.value)}</span>
+                    {hasLow && <span style={st.lowTag}>● {cat.low} low</span>}
                   </div>
                 </div>
                 <span style={st.badge}>{cat.count}</span>
@@ -200,9 +193,8 @@ export default function InventorySidebar({
             <Icon name="plus" size={14} color={TERRA} />
             <span style={{ ...st.catLabel, color: TERRA, fontWeight: 700 }}>Add supplier</span>
           </button>
-          <div style={st.divider} />
           {suppliers.length === 0
-            ? <div style={{ padding:"20px 16px", fontSize:12, color:SB_MUTE }}>No suppliers yet.</div>
+            ? <div style={st.emptyNote}>No suppliers yet.</div>
             : suppliers.map(s => (
               <button key={s.id} style={st.catRow} onClick={() => onOpenSupp(s)}>
                 <Icon name="users" size={14} color={SB_MUTE} />
@@ -227,7 +219,7 @@ export default function InventorySidebar({
 }
 
 const st: Record<string, React.CSSProperties> = {
-  sidebar:     { width:228, flexShrink:0, background:SB_BG, display:"flex", flexDirection:"column", borderRight:`1px solid ${SB_BORDER}`, position:"sticky", top:0, height:"calc(100vh - 64px)", overflowY:"auto" },
+  sidebar:     { width:228, flexShrink:0, background:SB_BG, display:"flex", flexDirection:"column", borderRight:`1px solid ${SB_BORDER}`, position:"sticky", top:0, height:"calc(100vh - 64px)", overflow:"hidden" },
   header:      { padding:"16px 12px 10px", flexShrink:0, borderBottom:`1px solid ${SB_BORDER}`, background:IVORY },
   brand:       { display:"flex", alignItems:"center", gap:8, marginBottom:12 },
   brandText:   { fontSize:14, fontWeight:800, color:INK, letterSpacing:.2 },
@@ -236,21 +228,30 @@ const st: Record<string, React.CSSProperties> = {
   tabs:        { display:"flex", background:"#f0ece4", padding:3, gap:2 },
   tab:         { flex:1, padding:"7px 0", border:"none", background:"transparent", color:SB_MUTE, fontFamily:SANS, fontWeight:700, fontSize:12, cursor:"pointer", transition:"all .18s", borderRadius:0 },
   tabOn:       { background:CARD, color:TERRA, boxShadow:"0 1px 4px rgba(0,0,0,.08)" },
-  nav:         { flex:1, overflowY:"auto", padding:"8px 0" },
-  divider:     { height:1, background:SB_BORDER, margin:"8px 12px" },
+
+  // nav no longer flex:1 stretching — content-height, scrolls only if long
+  nav:         { flex:1, overflowY:"auto", padding:"6px 0", minHeight:0 },
+
+  sectionHead: { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 14px 6px", marginTop:4, borderTop:`1px solid ${SB_BORDER}` },
   sectionLabel:{ fontSize:10, fontWeight:800, color:SB_MUTE, letterSpacing:1, textTransform:"uppercase" },
   addCatBtn:   { fontSize:11, fontWeight:700, color:TERRA, background:"transparent", border:"none", cursor:"pointer", padding:"2px 4px", fontFamily:SANS },
-  addCatBox:   { display:"flex", gap:6, padding:"6px 12px 8px", alignItems:"center" },
+  addCatBox:   { display:"flex", gap:6, padding:"2px 12px 8px", alignItems:"center" },
   addCatIn:    { flex:1, padding:"7px 10px", border:`1px solid ${LINE}`, fontSize:12.5, fontFamily:SANS, color:INK, background:CARD, outline:"none", caretColor:TERRA },
   addCatSave:  { padding:"7px 12px", background:TERRA, border:"none", color:"#fff", fontFamily:SANS, fontWeight:700, fontSize:12, cursor:"pointer" },
-  catRow:      { display:"flex", alignItems:"center", gap:9, width:"100%", padding:"9px 14px",
+
+  // compact row — value inline, no health bar taking vertical space
+  catRow:      { display:"flex", alignItems:"center", gap:9, width:"100%", padding:"8px 14px",
                  borderWidth:"0 0 0 3px", borderStyle:"solid", borderColor:"transparent",
                  background:"transparent", cursor:"pointer", fontFamily:SANS,
                  transition:"background .15s", textAlign:"left" },
   catRowOn:    { background:"#fff2ee", borderColor:TERRA },
   dot:         { width:8, height:8, borderRadius:"50%", flexShrink:0 } as React.CSSProperties,
   catLabel:    { flex:1, fontSize:12.5, fontWeight:600, color:SB_TEXT, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", minWidth:0 } as React.CSSProperties,
+  subVal:      { fontSize:10.5, color:SB_MUTE, marginTop:1, fontVariantNumeric:"tabular-nums" } as React.CSSProperties,
+  lowTag:      { color:TERRA, fontWeight:700, fontSize:10 },
   badge:       { fontSize:11, fontWeight:700, color:SB_MUTE, fontVariantNumeric:"tabular-nums", flexShrink:0 } as React.CSSProperties,
+  emptyNote:   { padding:"14px 16px", fontSize:12, color:SB_MUTE, fontFamily:SANS },
+
   footer:      { padding:12, borderTop:`1px solid ${SB_BORDER}`, flexShrink:0, background:IVORY },
   addBtn:      { width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"11px 0", background:TERRA, border:"none", color:"#fff", fontFamily:SANS, fontWeight:700, fontSize:13, cursor:"pointer", transition:"background .2s" },
 };

@@ -1,5 +1,5 @@
 // src/components/inventory/SupplierList.tsx
-// ── Suppliers tab: list with outstanding balance + quick actions ───────────
+// ── Suppliers tab: table layout matching Stock Items ───────────────────────
 
 import { useState } from "react";
 import api from "../../api";
@@ -7,7 +7,7 @@ import Icon from "./Icon";
 import SupplierStatement from "./SupplierStatement";
 import {
   Supplier, INK, BODY, MUTE, LINE, IVORY, CARD,
-  TERRA, TERRA_DK, GREEN, AMBER, RED, SANS,
+  TERRA, TERRA_DK, GOLD, GOLD_LT, GREEN, AMBER, RED, SANS,
   dec, rupee, rfmt, dtfmt, sharedSt,
 } from "./types";
 
@@ -25,8 +25,8 @@ interface Props {
   onRefresh: () => void;
 }
 
+// ── Print statement (unchanged) ──────────────────────────────────────────────
 function downloadStatement(sup: SupplierWithBalance, purchased: number, paid: number, outstanding: number) {
-  // Fetch full statement then build printable HTML
   api.get(`/api/inventory/suppliers/${sup.id}/statement`).then(r => {
     const d = r.data;
     const entries: any[] = Array.isArray(d?.entries) ? d.entries : [];
@@ -47,8 +47,15 @@ function downloadStatement(sup: SupplierWithBalance, purchased: number, paid: nu
       <style>
         *{box-sizing:border-box;margin:0;padding:0}
         body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1a1d27;background:#fff;padding:32px}
-        h1{font-size:22px;font-weight:900;color:#1a1d27;margin-bottom:4px}
-        .sub{color:#8a8f9a;font-size:13px;margin-bottom:24px}
+        .doc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:28px;padding-bottom:20px;border-bottom:2px solid #ede8dc}
+        .logo-box{flex-shrink:0}
+        .logo-box img{height:56px;width:auto;display:block}
+        .head-center{flex:1;text-align:center}
+        .doc-title{font-size:20px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#1a1d27}
+        .doc-sup{font-size:16px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#d9542f;margin-top:8px}
+        .doc-contact{font-size:12px;color:#8a8f9a;margin-top:5px;line-height:1.6}
+        .doc-gen{font-size:11px;color:#aab;margin-top:6px}
+        .head-spacer{width:56px;flex-shrink:0}
         .cards{display:flex;gap:16px;margin-bottom:28px}
         .card{flex:1;padding:16px 18px;border:1px solid #ede8dc}
         .card-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#8a8f9a;margin-bottom:6px}
@@ -66,8 +73,21 @@ function downloadStatement(sup: SupplierWithBalance, purchased: number, paid: nu
         @media print{body{padding:16px}@page{margin:12mm}}
       </style>
     </head><body>
-      <h1>Supplier Statement</h1>
-      <div class="sub">${esc(sup.name)}${sup.phone?` &nbsp;·&nbsp; 📞 ${esc(sup.phone)}`:""} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</div>
+      <div class="doc-head">
+        <div class="logo-box">
+          <img src="${window.location.origin}/images/abhijit_art_logo.png" alt="Abhijit Art"
+               onerror="this.style.display='none'" />
+        </div>
+        <div class="head-center">
+          <div class="doc-title">Supplier Statement</div>
+          <div class="doc-sup">${esc(sup.name)}</div>
+          <div class="doc-contact">
+            ${sup.phone ? `📞 ${esc(sup.phone)}` : ""}${sup.phone && sup.email ? " &nbsp;·&nbsp; " : ""}${sup.email ? `✉ ${esc(sup.email)}` : ""}
+          </div>
+          <div class="doc-gen">Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</div>
+        </div>
+        <div class="head-spacer"></div>
+      </div>
       <div class="cards">
         <div class="card"><div class="card-label">Total Purchased</div><div class="card-val" style="color:#1a1d27">₹${purchased.toLocaleString("en-IN",{minimumFractionDigits:2})}</div></div>
         <div class="card"><div class="card-label">Total Paid</div><div class="card-val" style="color:#15803d">₹${paid.toLocaleString("en-IN",{minimumFractionDigits:2})}</div></div>
@@ -78,10 +98,7 @@ function downloadStatement(sup: SupplierWithBalance, purchased: number, paid: nu
       </div>
       <table>
         <thead><tr>
-          <th>Date</th>
-          <th>Type</th>
-          <th>Reference</th>
-          <th>Note</th>
+          <th>Date</th><th>Type</th><th>Reference</th><th>Note</th>
           <th class="r">Amount Purchased (₹)</th>
           <th class="r">Amount Paid (₹)</th>
           <th class="r">Balance Due (₹)</th>
@@ -101,22 +118,9 @@ function downloadStatement(sup: SupplierWithBalance, purchased: number, paid: nu
   }).catch(() => alert("Couldn't load statement data."));
 }
 
-interface SupplierWithBalance extends Supplier {
-  totalPurchased: string;
-  totalPaid:      string;
-  lastPurchaseAt?: string;
-}
-
-interface Props {
-  suppliers: SupplierWithBalance[];
-  loading:   boolean;
-  onAdd:     () => void;
-  onEdit:    (s: Supplier) => void;
-  onRefresh: () => void;
-}
-
 export default function SupplierList({ suppliers, loading, onAdd, onEdit, onRefresh }: Props) {
   const [openId, setOpenId] = useState<string|null>(null);
+  const [search, setSearch] = useState("");
 
   // ── Open statement view ────────────────────────────────────────────────────
   if (openId) {
@@ -130,146 +134,147 @@ export default function SupplierList({ suppliers, loading, onAdd, onEdit, onRefr
 
   const totalOutstanding = suppliers.reduce((s,sup) => s + Math.max(dec(sup.totalPurchased)-dec(sup.totalPaid),0), 0);
   const totalPurchased   = suppliers.reduce((s,sup) => s + dec(sup.totalPurchased), 0);
+  const totalPaid        = suppliers.reduce((s,sup) => s + dec(sup.totalPaid), 0);
+
+  const shown = search.trim()
+    ? suppliers.filter(s =>
+        s.name.toLowerCase().includes(search.toLowerCase()) ||
+        (s.phone||"").includes(search) ||
+        (s.email||"").toLowerCase().includes(search.toLowerCase()))
+    : suppliers;
 
   return (
     <div style={st.wrap}>
 
-      {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <div style={st.topBar}>
-        <div>
-          <h2 style={st.title}>Suppliers</h2>
-          <p style={st.sub}>Manage vendors, track purchases and outstanding payments</p>
+      {/* ── KPI strip (matches Stock Items) ─────────────────────────────── */}
+      <div style={st.kpiStrip}>
+        {[
+          { label:"Total suppliers",   val: loading?"…":String(suppliers.length),   sub:"Active vendors",       accent: GOLD },
+          { label:"Total purchased",   val: loading?"…":rupee(totalPurchased),       sub:"All-time",             accent: INK },
+          { label:"Total paid",        val: loading?"…":rupee(totalPaid),            sub:"Settled so far",       accent: GREEN },
+          { label:"Total outstanding", val: loading?"…":rupee(totalOutstanding),     sub:"Still owed",           accent: totalOutstanding>0?TERRA:GREEN },
+        ].map(k => (
+          <div key={k.label} style={st.kpiCard}>
+            <div style={st.kpiLabel}>{k.label}</div>
+            <div style={{ fontSize:26, fontWeight:900, color:k.accent, fontVariantNumeric:"tabular-nums", lineHeight:1 }}>{k.val}</div>
+            <div style={{ fontSize:11, color:MUTE, marginTop:6 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      <div style={st.toolbar}>
+        <div style={st.searchWrap}>
+          <Icon name="search" size={15} color={MUTE} />
+          <input
+            className="inv-search"
+            style={st.searchIn}
+            placeholder="Search supplier name, phone or email…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         </div>
         <button className="inv-cta" style={sharedSt.ctaBtn} onClick={onAdd}>
           <Icon name="plus" size={14} color="#fff"/> Add supplier
         </button>
       </div>
 
-      {/* ── Summary strip ───────────────────────────────────────────────── */}
-      {suppliers.length > 0 && (
-        <div style={st.summaryStrip}>
-          {[
-            { label:"Total suppliers", val:String(suppliers.length), color:INK },
-            { label:"Total purchased", val:rupee(totalPurchased), color:INK },
-            { label:"Total outstanding", val:rupee(totalOutstanding), color:totalOutstanding>0?TERRA:GREEN },
-          ].map(k => (
-            <div key={k.label} style={st.sumItem}>
-              <div style={st.sumLabel}>{k.label}</div>
-              <div style={{ fontSize:20, fontWeight:900, color:k.color, fontVariantNumeric:"tabular-nums" }}>{k.val}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Supplier cards ──────────────────────────────────────────────── */}
-      {loading ? (
-        <div style={{ padding:"60px 0", textAlign:"center", color:MUTE }}>Loading…</div>
-      ) : suppliers.length === 0 ? (
-        <div style={st.emptyState}>
-          <div style={{ fontSize:32, marginBottom:12 }}>🏭</div>
-          <div style={{ fontWeight:700, color:INK, fontSize:16, marginBottom:6 }}>No suppliers yet</div>
-          <div style={{ color:MUTE, fontSize:13, marginBottom:18 }}>Add your first supplier to start tracking purchases and payments.</div>
-          <button className="inv-cta" style={sharedSt.ctaBtn} onClick={onAdd}>
-            <Icon name="plus" size={14} color="#fff"/> Add supplier
-          </button>
-        </div>
-      ) : (
-        <div style={st.cardGrid}>
-          {suppliers.map(sup => {
-            const purchased   = dec(sup.totalPurchased);
-            const paid        = dec(sup.totalPaid);
-            const outstanding = Math.max(purchased - paid, 0);
-            const pctPaid     = purchased > 0 ? Math.min((paid/purchased)*100, 100) : 100;
-            const isSettled   = outstanding <= 0;
-
-            return (
-              <div key={sup.id} style={st.card}>
-                {/* Card header */}
-                <div style={st.cardHead}>
-                  <div style={st.avatar}>{sup.name.slice(0,2).toUpperCase()}</div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={st.suppName}>{sup.name}</div>
-                    {sup.phone && <div style={st.suppMeta}>📞 {sup.phone}</div>}
-                    {sup.email && <div style={st.suppMeta}>✉ {sup.email}</div>}
-                  </div>
-                  <button style={st.editBtn} onClick={()=>onEdit(sup)} title="Edit supplier">
-                    <Icon name="edit" size={14} color={MUTE}/>
-                  </button>
-                </div>
-
-                {/* Balance bar */}
-                <div style={st.balanceSection}>
-                  <div style={st.balRow}>
-                    <span style={{ fontSize:12, color:MUTE }}>Purchased</span>
-                    <span style={{ fontSize:13, fontWeight:700, fontVariantNumeric:"tabular-nums" }}>{rupee(purchased)}</span>
-                  </div>
-                  <div style={st.balRow}>
-                    <span style={{ fontSize:12, color:MUTE }}>Paid</span>
-                    <span style={{ fontSize:13, fontWeight:700, color:GREEN, fontVariantNumeric:"tabular-nums" }}>{rupee(paid)}</span>
-                  </div>
-                  {/* Progress bar */}
-                  <div style={{ height:5, background:LINE, borderRadius:3, margin:"8px 0" }}>
-                    <div style={{ height:5, borderRadius:3, background:isSettled?GREEN:TERRA, width:`${pctPaid}%`, transition:"width .4s ease" }}/>
-                  </div>
-                  {/* Outstanding */}
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <span style={{ fontSize:12, color:MUTE }}>Outstanding</span>
-                    <span style={{ fontSize:15, fontWeight:900, color:isSettled?GREEN:TERRA, fontVariantNumeric:"tabular-nums" }}>
-                      {isSettled ? "Settled ✓" : rupee(outstanding)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Last purchase */}
-                {sup.lastPurchaseAt && (
-                  <div style={st.lastPurchase}>
-                    Last purchase: {dtfmt(sup.lastPurchaseAt).split(",")[0]}
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div style={{ display:"flex", gap:8, marginTop:12 }}>
-                  <button
-                    className="inv-cta"
-                    style={{ ...sharedSt.ctaBtn, flex:1, justifyContent:"center", fontSize:12.5 }}
-                    onClick={() => setOpenId(sup.id)}
-                  >
-                    View statement
-                  </button>
-                  <button
-                    className="inv-ghost"
-                    style={{ ...sharedSt.ghostBtn, flex:1, justifyContent:"center", fontSize:12.5 }}
-                    onClick={() => downloadStatement(sup, purchased, paid, outstanding)}
-                  >
-                    ↓ Download
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* ── Table ───────────────────────────────────────────────────────── */}
+      <div style={st.tableOuter}>
+        {loading ? (
+          <div style={st.empty}>Loading…</div>
+        ) : shown.length === 0 ? (
+          <div style={st.empty}>
+            {suppliers.length === 0 ? "No suppliers yet — click Add supplier to get started." : "No suppliers match your search."}
+          </div>
+        ) : (
+          <table style={st.table}>
+            <thead>
+              <tr>
+                {["Supplier","Contact","Purchased","Paid","Outstanding","Last Purchase",""].map(h => (
+                  <th key={h} style={st.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((sup, idx) => {
+                const purchased   = dec(sup.totalPurchased);
+                const paid        = dec(sup.totalPaid);
+                const outstanding = Math.max(purchased - paid, 0);
+                const isSettled   = outstanding <= 0 && purchased > 0;
+                return (
+                  <tr key={sup.id} className="inv-row" style={{ background: idx%2===0 ? CARD : IVORY }}>
+                    {/* Supplier */}
+                    <td style={st.td}>
+                      <div style={{ display:"flex", alignItems:"center", gap:11 }}>
+                        <div style={st.avatar}>{sup.name.slice(0,2).toUpperCase()}</div>
+                        <div>
+                          <div style={{ fontWeight:700, fontSize:13.5, color:INK }}>{sup.name}</div>
+                          {sup.gstin && <div style={{ fontSize:10.5, color:MUTE, marginTop:1, fontFamily:"monospace" }}>{sup.gstin}</div>}
+                        </div>
+                      </div>
+                    </td>
+                    {/* Contact */}
+                    <td style={{ ...st.td, fontSize:12.5, color:BODY }}>
+                      {sup.phone && <div>{sup.phone}</div>}
+                      {sup.email && <div style={{ color:MUTE, fontSize:11.5, marginTop:1 }}>{sup.email}</div>}
+                      {!sup.phone && !sup.email && <span style={{ color:MUTE }}>—</span>}
+                    </td>
+                    {/* Purchased */}
+                    <td style={{ ...st.td, fontVariantNumeric:"tabular-nums", fontWeight:700 }}>{rupee(purchased)}</td>
+                    {/* Paid */}
+                    <td style={{ ...st.td, fontVariantNumeric:"tabular-nums", fontWeight:700, color:paid>0?GREEN:MUTE }}>{rupee(paid)}</td>
+                    {/* Outstanding */}
+                    <td style={{ ...st.td, fontVariantNumeric:"tabular-nums" }}>
+                      {isSettled ? (
+                        <span style={{ color:GREEN, fontWeight:700, fontSize:12.5 }}>Settled ✓</span>
+                      ) : (
+                        <span style={{ color:outstanding>0?TERRA:MUTE, fontWeight:800 }}>{rupee(outstanding)}</span>
+                      )}
+                    </td>
+                    {/* Last purchase */}
+                    <td style={{ ...st.td, color:MUTE, fontSize:11.5, whiteSpace:"nowrap" }}>
+                      {sup.lastPurchaseAt ? dtfmt(sup.lastPurchaseAt).split(",")[0] : "—"}
+                    </td>
+                    {/* Actions */}
+                    <td style={{ ...st.td, textAlign:"right" }}>
+                      <div style={{ display:"flex", gap:5, justifyContent:"flex-end" }}>
+                        <button className="inv-cta" style={st.viewBtn} onClick={() => setOpenId(sup.id)}>
+                          View
+                        </button>
+                        <button className="inv-icon" style={st.iconBtn} title="Download statement" onClick={() => downloadStatement(sup, purchased, paid, outstanding)}>
+                          <Icon name="download" size={14}/>
+                        </button>
+                        <button className="inv-icon" style={st.iconBtn} title="Edit supplier" onClick={() => onEdit(sup)}>
+                          <Icon name="edit" size={14}/>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
 
 const st: Record<string, React.CSSProperties> = {
-  wrap:          { padding:"24px 24px 60px", display:"flex", flexDirection:"column", gap:20, fontFamily:SANS },
-  topBar:        { display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16, flexWrap:"wrap" },
-  title:         { fontSize:22, fontWeight:900, color:INK, margin:0, letterSpacing:-.3 },
-  sub:           { fontSize:13, color:MUTE, margin:"4px 0 0" },
-  summaryStrip:  { display:"flex", gap:1, background:LINE, border:`1px solid ${LINE}` },
-  sumItem:       { flex:1, background:CARD, padding:"16px 20px" },
-  sumLabel:      { fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, marginBottom:6 },
-  cardGrid:      { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:16 },
-  card:          { background:CARD, border:`1px solid ${LINE}`, padding:"18px 20px", display:"flex", flexDirection:"column" },
-  cardHead:      { display:"flex", alignItems:"flex-start", gap:12, marginBottom:14 },
-  avatar:        { width:40, height:40, borderRadius:"50%", background:`${TERRA}18`, color:TERRA, fontWeight:800, fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
-  suppName:      { fontSize:15, fontWeight:800, color:INK, lineHeight:1.2 },
-  suppMeta:      { fontSize:11.5, color:MUTE, marginTop:3 },
-  editBtn:       { background:"none", border:`1px solid ${LINE}`, cursor:"pointer", width:30, height:30, display:"grid", placeItems:"center" },
-  balanceSection:{ borderTop:`1px solid ${LINE}`, paddingTop:14 },
-  balRow:        { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 },
-  lastPurchase:  { fontSize:11, color:MUTE, marginTop:8, paddingTop:8, borderTop:`1px solid ${LINE}` },
-  emptyState:    { padding:"60px 0", textAlign:"center", color:MUTE } as React.CSSProperties,
+  wrap:       { flex:1, minWidth:0, display:"flex", flexDirection:"column", overflowY:"auto" },
+  kpiStrip:   { display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1, background:LINE, borderBottom:`1px solid ${LINE}`, flexShrink:0 },
+  kpiCard:    { background:CARD, padding:"22px 24px" },
+  kpiLabel:   { fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, marginBottom:8 },
+  toolbar:    { display:"flex", alignItems:"center", gap:10, padding:"13px 20px", borderBottom:`1px solid ${LINE}`, background:CARD, flexShrink:0, flexWrap:"wrap" },
+  searchWrap: { display:"flex", alignItems:"center", gap:8, border:`1px solid ${LINE}`, background:CARD, padding:"9px 12px", flex:1, maxWidth:380, minWidth:160 },
+  searchIn:   { flex:1, border:"none", outline:"none", fontSize:13.5, fontFamily:SANS, color:INK, background:"transparent" },
+  tableOuter: { flex:1, overflowX:"auto" },
+  table:      { width:"100%", borderCollapse:"collapse", fontSize:13.5 },
+  th:         { padding:"11px 16px", textAlign:"left", fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, borderBottom:`2px solid ${LINE}`, background:IVORY, whiteSpace:"nowrap" },
+  td:         { padding:"13px 16px", borderBottom:`1px solid ${LINE}`, verticalAlign:"middle" },
+  avatar:     { width:36, height:36, borderRadius:"50%", background:`${TERRA}18`, color:TERRA, fontWeight:800, fontSize:13, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
+  viewBtn:    { padding:"7px 14px", background:TERRA, border:"none", color:"#fff", fontFamily:SANS, fontWeight:700, fontSize:12, cursor:"pointer" },
+  iconBtn:    { width:32, height:32, display:"grid", placeItems:"center", border:`1px solid ${LINE}`, background:CARD, color:MUTE, cursor:"pointer", borderRadius:0, transition:"all .18s" },
+  empty:      { padding:"60px 0", textAlign:"center", color:MUTE, fontFamily:SANS },
 };

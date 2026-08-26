@@ -1,10 +1,9 @@
 // src/components/inventory/index.tsx
 // ── Thin shell: data fetching, top-level state, layout ────────────────────
-// All UI is in the sub-components. This file stays under ~120 lines.
+// Sidebar removed — category filter lives in the InventoryTable toolbar.
 
 import { useEffect, useMemo, useState } from "react";
 import api from "../../api";
-import InventorySidebar   from "./InventorySidebar";
 import InventoryTable     from "./InventoryTable";
 import InventoryOverview  from "./InventoryOverview";
 import SupplierList       from "./SupplierList";
@@ -34,19 +33,24 @@ export default function Inventory() {
   const [histDrawer, setHistDrawer] = useState<InventoryItem | null>(null);
   const [suppDrawer, setSuppDrawer] = useState<Supplier | "new" | null>(null);
 
-  // ── Derived ───────────────────────────────────────────────────────────────
+  // ── Derived (needed by KPIs, category dropdown, colors) ────────────────────
   const catSummary = useMemo(() => buildCatSummary(items), [items]);
 
-  // ── Load ──────────────────────────────────────────────────────────────────
+  // ── Load items + KPIs on mount ────────────────────────────────────────────
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       api.get("/api/inventory/items"),
       api.get("/api/inventory/dashboard"),
     ]).then(([iR, dR]) => {
-      setItems(Array.isArray(iR.data) ? iR.data : []);
-      setKpis(dR.data?.kpis ?? null);
-    }).catch(() => {}).finally(() => setLoading(false));
+      if (iR.status === "fulfilled") setItems(Array.isArray(iR.value.data) ? iR.value.data : []);
+      if (dR.status === "fulfilled") setKpis(dR.value.data?.kpis ?? null);
+    }).finally(() => setLoading(false));
   }, []);
+
+  // ── Auto-load suppliers when item drawer opens (supplier dropdown needs it) ──
+  useEffect(() => {
+    if (itemDrawer !== null) loadSuppliers();
+  }, [itemDrawer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSuppliers = () => {
     if (suppLoaded) return;
@@ -58,17 +62,26 @@ export default function Inventory() {
   };
 
   const refresh = () => {
-    Promise.all([api.get("/api/inventory/items"), api.get("/api/inventory/dashboard")])
-      .then(([iR, dR]) => { setItems(Array.isArray(iR.data)?iR.data:[]); setKpis(dR.data?.kpis??null); })
-      .catch(() => {});
+    Promise.allSettled([api.get("/api/inventory/items"), api.get("/api/inventory/dashboard")])
+      .then(([iR, dR]) => {
+        if (iR.status === "fulfilled") setItems(Array.isArray(iR.value.data) ? iR.value.data : []);
+        if (dR.status === "fulfilled") setKpis(dR.value.data?.kpis ?? null);
+      });
   };
 
   // ── Handlers passed to drawers ────────────────────────────────────────────
-  const afterSave = () => { setItemDrawer(null); setMoveDrawer(null); setHistDrawer(null); setSuppDrawer(null); setSuppLoaded(false); refresh(); };
+  const afterSave = () => {
+    setItemDrawer(null); setMoveDrawer(null);
+    setHistDrawer(null); setSuppDrawer(null);
+    setSuppLoaded(false); refresh();
+  };
 
-  // ── CSV export (lives here so it can see full items list) ─────────────────
+  // ── CSV export ────────────────────────────────────────────────────────────
   const exportCSV = () => {
-    const visible = items.filter(it => (!selCat || (it.category||"Uncategorised") === selCat) && (!lowOnly || dec(it.quantity) <= dec(it.reorderLevel)));
+    const visible = items.filter(it =>
+      (!selCat || (it.category||"Uncategorised") === selCat) &&
+      (!lowOnly || dec(it.quantity) <= dec(it.reorderLevel))
+    );
     const rows = [["SKU","Name","Category","Unit","In Stock","Reorder Level","Cost/Unit","Sell/Unit","Value","Supplier","Updated"]];
     visible.forEach(it => rows.push([
       it.sku, it.name, it.category, it.unit,
@@ -85,21 +98,6 @@ export default function Inventory() {
   // ═════════════════════════════════════════════════════════════════ RENDER ══
   return (
     <div style={st.shell}>
-
-      <InventorySidebar
-        catSummary       = {catSummary}
-        kpis             = {kpis}
-        suppliers        = {suppliers}
-        selCat           = {selCat}
-        lowOnly          = {lowOnly}
-        onSelCat         = {cat => { setSelCat(cat); setLowOnly(false); }}
-        onLowToggle      = {() => setLowOnly(v => !v)}
-        onAddItem        = {() => setItemDrawer("new")}
-        onAddItemWithCat = {cat => { setSelCat(cat); setItemDrawer("new"); }}
-        onOpenSupp       = {s  => setSuppDrawer(s)}
-        onSuppTab        = {loadSuppliers}
-      />
-
       <div style={st.mainWrap}>
         {/* ── View toggle strip ───────────────────────────────────────────── */}
         <div style={st.viewStrip}>
@@ -132,6 +130,8 @@ export default function Inventory() {
               loading     = {loading}
               selCat      = {selCat}
               lowOnly     = {lowOnly}
+              onSelCat    = {setSelCat}
+              onLowToggle = {() => setLowOnly(v => !v)}
               onClearCat  = {() => setSelCat("")}
               onClearLow  = {() => setLowOnly(false)}
               onAddItem   = {() => setItemDrawer("new")}
@@ -139,6 +139,7 @@ export default function Inventory() {
               onHistDrawer= {it => setHistDrawer(it)}
               onEditDrawer= {it => setItemDrawer(it)}
               onExportCSV = {exportCSV}
+              onDeleted   = {refresh}
             />
         }
       </div>
@@ -146,8 +147,9 @@ export default function Inventory() {
       {/* ── Drawers ───────────────────────────────────────────────────────── */}
       {itemDrawer !== null && (
         <ItemDrawer
-          item       = {itemDrawer}
-          catSummary = {catSummary}
+          item       = {itemDrawer === "new" ? null : itemDrawer}
+          items      = {items}
+          suppliers  = {suppliers}
           selCat     = {selCat}
           onClose    = {() => setItemDrawer(null)}
           onSaved    = {afterSave}
@@ -182,7 +184,6 @@ export default function Inventory() {
         .inv-icon:hover      { background:${IVORY}!important; color:${TERRA}!important; border-color:${TERRA}55!important; }
         .inv-search:focus    { border-color:${TERRA}!important; box-shadow:0 0 0 3px ${TERRA}22!important; outline:none!important; }
         .inv-row:hover td    { background:#fdf8f2!important; }
-        .inv-side-add:hover  { background:${TERRA_DK}!important; }
         .inv-viewbtn:hover   { color:${TERRA}!important; background:#fff8f5!important; }
         * { box-sizing:border-box; }
       `}</style>
