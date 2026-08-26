@@ -1,0 +1,40 @@
+/* =========================================================
+   ABHIJIT ART - STICKY MOBILE ACTIONS
+   Appears once the hero is scrolled past. Phones only.
+   ========================================================= */
+
+.ap-sticky {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 900;
+  display: none;
+  gap: 10px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+
+  /* Room on the right so the floating chat bubble stays reachable. */
+  padding-right: 84px;
+
+  background: rgba(250, 247, 240, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--ap-line);
+}
+
+.ap-sticky .ap-cta {
+  flex: 1;
+  justify-content: center;
+  padding: 13px 16px;
+  font-size: 0.92rem;
+}
+
+.ap-sticky .ap-cta--ghost {
+  background: var(--ap-card);
+  color: var(--ap-ink);
+  border-color: var(--ap-line);
+}
+
+@media (max-width: 760px) {
+  .ap-sticky { display: flex; }
+}

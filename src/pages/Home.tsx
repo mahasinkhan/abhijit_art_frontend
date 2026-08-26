@@ -9,6 +9,9 @@ import WorkFanSection from "../components/home/WorkFanSection";
 import ProcessSection from "../components/home/ProcessSection";
 import CtaSection from "../components/home/CtaSection";
 import PricesSection from "../components/home/PricesSection";
+import QuotesSection from "../components/home/QuotesSection";
+import StickyActions from "../components/home/StickyActions";
+import useSmoothScroll from "../components/home/useSmoothScroll";
 import "../styles/home.css";
 
 /*  - 
@@ -327,6 +330,7 @@ function ReviewsSlider() {
 
 export default function Home() {
   const { hash } = useLocation();
+  useSmoothScroll();
 
   /* which card is being booked  -  null closes the modal */
   const [booking, setBooking] = useState<BookTarget | null>(null);
@@ -343,11 +347,13 @@ export default function Home() {
   return (
     <div style={st.page}>
       {/* SHEET 01 - HERO (redesign) */}
+      <StickyActions />
       <div className="ap-home">
         <HeroSection image="/images/abhijit_art_hero.png" />
         <ServicesSection />
         <ProcessSection />
         <WorkFanSection />
+        <QuotesSection />
         <PricesSection />
         <CtaSection />
       </div>
@@ -362,7 +368,7 @@ export default function Home() {
       <GalleryCoverflow />
 
       {/*  -  REVIEWS  -  */}
-      <ReviewsSlider />
+      {/* ReviewsSlider replaced by sheet 07 */}
 
       {/* legacy CTA banner removed - replaced by sheet 05 */}
       {/*  -  BOOKING MODAL (shared with the Services page)  -  */}

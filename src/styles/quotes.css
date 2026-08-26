@@ -1,0 +1,117 @@
+/* =========================================================
+   ABHIJIT ART - HOME SHEET 07
+   Testimonials as three columns scrolling at different speeds,
+   masked top and bottom. Loaded by QuotesSection.tsx.
+   ========================================================= */
+
+.ap-quotes-stage {
+  display: flex;
+  justify-content: center;
+  gap: clamp(16px, 1.6vw, 24px);
+  margin-top: clamp(28px, 4vw, 48px);
+  max-height: 720px;
+  overflow: hidden;
+
+  /* The fade at both edges is what makes the loop read as a
+     continuous feed rather than a list that happens to move. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 78%, transparent 100%);
+}
+
+.ap-quotes-col {
+  flex: 0 0 auto;
+  width: clamp(260px, 24vw, 330px);
+}
+
+.ap-quotes-run {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 1.6vw, 24px);
+  padding-bottom: clamp(16px, 1.6vw, 24px);
+}
+
+.ap-quote {
+  padding: clamp(22px, 2.4vw, 32px);
+  border-radius: var(--ap-r-md);
+  border: 1px solid var(--ap-line);
+  background: var(--ap-card);
+  box-shadow: 0 10px 30px rgba(28, 24, 21, 0.05);
+}
+
+.ap-quote-mark {
+  display: block;
+  font-family: var(--ap-display);
+  font-size: 2.4rem;
+  line-height: 0.6;
+  color: var(--ap-gold);
+  margin-bottom: 14px;
+}
+
+.ap-quote p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--ap-ink-2);
+  text-wrap: pretty;
+}
+
+.ap-quote-by {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ap-line);
+}
+
+.ap-quote-initials {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ap-gold);
+  color: #1f180d;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ap-quote-by b {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ap-ink);
+  line-height: 1.3;
+}
+
+.ap-quote-by span {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.82rem;
+  color: var(--ap-mute);
+  line-height: 1.4;
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1080px) {
+  .ap-quotes-col:nth-child(3) { display: none; }
+}
+
+@media (max-width: 760px) {
+  .ap-quotes-col:nth-child(2) { display: none; }
+  .ap-quotes-col { width: min(100%, 420px); }
+  .ap-quotes-stage { max-height: 560px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Motion off means the columns sit still, so the mask would just
+     clip content. Show it plainly instead. */
+  .ap-quotes-stage {
+    max-height: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
