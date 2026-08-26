@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "../../api";
 import InventoryTable     from "./InventoryTable";
 import InventoryOverview  from "./InventoryOverview";
+import OverviewFilters, { type OverviewFilter } from "./OverviewFilters";
 import SupplierList       from "./SupplierList";
 import ItemDrawer         from "./ItemDrawer";
 import MoveDrawer       from "./MoveDrawer";
@@ -26,6 +27,7 @@ export default function Inventory() {
   const [selCat,     setSelCat]     = useState("");
   const [lowOnly,    setLowOnly]    = useState(false);
   const [activeView, setActiveView] = useState<"overview"|"items"|"suppliers">("overview");
+  const [ovFilter,   setOvFilter]   = useState<OverviewFilter>({ gran:"month", from:"", to:"" });
 
   // ── Drawer state ──────────────────────────────────────────────────────────
   const [itemDrawer, setItemDrawer] = useState<InventoryItem | "new" | null>(null);
@@ -101,20 +103,38 @@ export default function Inventory() {
       <div style={st.mainWrap}>
         {/* ── View toggle strip ───────────────────────────────────────────── */}
         <div style={st.viewStrip}>
-          {(["overview","items","suppliers"] as const).map(v => (
-            <button
-              key={v}
-              className="inv-viewbtn"
-              style={{ ...st.viewBtn, ...(activeView===v ? st.viewBtnOn : {}) }}
-              onClick={() => { setActiveView(v); if(v==="suppliers") loadSuppliers(); }}
-            >
-              {v === "overview" ? "Overview" : v === "items" ? "Stock Items" : "Suppliers"}
-            </button>
-          ))}
+          <div style={st.viewTabs}>
+            {(["overview","items","suppliers"] as const).map(v => (
+              <button
+                key={v}
+                className="inv-viewbtn"
+                style={{ ...st.viewBtn, ...(activeView===v ? st.viewBtnOn : {}) }}
+                onClick={() => { setActiveView(v); if(v==="suppliers") loadSuppliers(); }}
+              >
+                {v === "overview" ? "Overview" : v === "items" ? "Stock Items" : "Suppliers"}
+              </button>
+            ))}
+          </div>
+          {activeView === "overview" && (
+            <div style={st.viewFilters}>
+              <OverviewFilters onChange={setOvFilter} />
+            </div>
+          )}
+          {activeView === "items" && (
+            <div style={st.viewActions}>
+              <button className="inv-ghost" style={st.hdrGhost} onClick={exportCSV}>⭳ Export CSV</button>
+              <button className="inv-cta"   style={st.hdrCta}   onClick={() => setItemDrawer("new")}>+ Add item</button>
+            </div>
+          )}
+          {activeView === "suppliers" && (
+            <div style={st.viewActions}>
+              <button className="inv-cta" style={st.hdrCta} onClick={() => setSuppDrawer("new")}>+ Add supplier</button>
+            </div>
+          )}
         </div>
 
         {activeView === "overview"
-          ? <InventoryOverview />
+          ? <InventoryOverview filter={ovFilter} />
           : activeView === "suppliers"
           ? <SupplierList
               suppliers = {suppliers as any}
@@ -194,7 +214,12 @@ export default function Inventory() {
 const st: Record<string, React.CSSProperties> = {
   shell:     { display:"flex", minHeight:"calc(100vh - 64px)", fontFamily:SANS, background:IVORY, color:"#1a1d27", overflow:"hidden" },
   mainWrap:  { flex:1, minWidth:0, display:"flex", flexDirection:"column", overflowY:"auto" },
-  viewStrip: { display:"flex", gap:0, borderBottom:`1px solid ${LINE}`, background:"#ffffff", flexShrink:0, padding:"0 4px" },
+  viewStrip: { display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, borderBottom:`1px solid ${LINE}`, background:"#ffffff", flexShrink:0, padding:"0 12px 0 4px", flexWrap:"wrap" },
+  viewTabs:  { display:"flex", gap:0 },
+  viewFilters:{ display:"flex", alignItems:"center", padding:"7px 0", marginLeft:"auto" },
+  viewActions:{ display:"flex", alignItems:"center", gap:8, padding:"7px 0", marginLeft:"auto" },
+  hdrGhost:   { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 14px", background:CARD, border:`1px solid ${LINE}`, color:"#1a1d27", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS },
+  hdrCta:     { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 16px", background:TERRA, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS },
   viewBtn:   { padding:"12px 20px",
                borderTopWidth:0, borderRightWidth:0, borderLeftWidth:0, borderBottomWidth:2,
                borderStyle:"solid", borderColor:"transparent",

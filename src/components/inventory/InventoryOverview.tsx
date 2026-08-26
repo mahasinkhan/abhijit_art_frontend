@@ -1,5 +1,5 @@
 // src/components/inventory/InventoryOverview.tsx
-// ── Overview tab: KPI cards, alert strip, charts, recent activity ──────────
+// ── Overview tab: filter bar + KPI cards, alert strip, charts, recent activity ──
 // Zero npm deps — all charts are hand-drawn SVG. Reads GET /api/inventory/dashboard.
 
 import { useEffect, useState } from "react";
@@ -11,12 +11,7 @@ import {
 } from "./types";
 
 // ── API response shape ────────────────────────────────────────────────────────
-interface TrendBucket {
-  month: string;           // "Aug 2026"
-  purchased: number;
-  consumed: number;
-  wastage: number;
-}
+interface TrendBucket { month: string; purchased: number; consumed: number; wastage: number; }
 interface CategoryBucket { name: string; value: number; }
 interface TopItem        { id: string; name: string; category: string; value: number; unit: string; quantity: number; }
 interface LowItem        { id: string; name: string; category: string; quantity: number; reorderLevel: number; unit: string; }
@@ -40,27 +35,45 @@ const MOV_SIGN:  Record<string,number> = { purchase:1, opening:1, returned:1, co
 const MOV_LABEL: Record<string,string> = { purchase:"Purchase", consumption:"Consumption", wastage:"Wastage", opening:"Opening", returned:"Return", adjustment:"Adjustment" };
 const dtfmt = (s: string) => new Date(s).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
 
+const fmtD = (s: string) => s ? new Date(s + "T00:00:00").toLocaleDateString("en-IN",{ day:"numeric", month:"short", year:"numeric" }) : "";
+
+type Gran = "day" | "week" | "month" | "year";
+const DEFAULT_SUB: Record<Gran,string> = { day:"Last 14 days", week:"Last 12 weeks", month:"Last 6 months", year:"Last 5 years" };
+
 // ── Skeleton loader ───────────────────────────────────────────────────────────
 function Skel({ w="100%", h=18 }: { w?: string|number; h?: number }) {
   return <div style={{ width:w, height:h, background:"#f0ece4", borderRadius:2, animation:"inv-pulse 1.4s ease infinite" }}/>;
 }
 
-// ── Tooltip state ─────────────────────────────────────────────────────────────
 interface Tip { x:number; y:number; label:string; }
 
+export interface OverviewFilter { gran: Gran; from: string; to: string; }
+
 // ═════════════════════════════════════════════════════════════════════════════
-export default function InventoryOverview() {
+export default function InventoryOverview({ filter }: { filter?: OverviewFilter }) {
   const [data,    setData]    = useState<DashData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
   const [tip,     setTip]     = useState<Tip | null>(null);
 
+  // filter comes from the tab header (index.tsx); default to last 6 months
+  const gran = filter?.gran ?? "month";
+  const from = filter?.from ?? "";
+  const to   = filter?.to   ?? "";
+
   useEffect(() => {
-    api.get("/api/inventory/dashboard")
+    setLoading(true);
+    const params: Record<string,string> = { granularity: gran };
+    if (from) params.from = from;
+    if (to)   params.to   = to;
+    api.get("/api/inventory/dashboard", { params })
       .then(r => setData(r.data))
       .catch(() => setError("Couldn't load overview data."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [gran, from, to]);
+
+  const rangeLabel = (from && to) ? `${fmtD(from)} – ${fmtD(to)}` : DEFAULT_SUB[gran];
+  const kpiSub = (from || to) ? "Selected range" : DEFAULT_SUB[gran];
 
   // ── Chart dimensions ────────────────────────────────────────────────────────
   const BAR_W = 560; const BAR_H = 160; const BAR_PAD = 40;
@@ -69,20 +82,19 @@ export default function InventoryOverview() {
   // ── Trend bar chart ─────────────────────────────────────────────────────────
   const renderTrend = () => {
     const raw = data?.trend ?? [];
-    // Normalise — backend may use 'label' or 'period' instead of 'month'
     const t = raw.map((b: any) => ({
       month:     String(b.month ?? b.label ?? b.period ?? b.date ?? ""),
       purchased: dec(b.purchased ?? b.purchase ?? b.in ?? 0),
       consumed:  dec(b.consumed  ?? b.consumption ?? b.out ?? 0),
       wastage:   dec(b.wastage   ?? 0),
-    })).filter(b => b.month);   // drop empty rows
+    })).filter(b => b.month);
 
-    if (!t.length) return <div style={st.chartEmpty}>No movement data yet — record a stock movement to see the trend.</div>;
+    if (!t.length) return <div style={st.chartEmpty}>No movement data in this range — record a stock movement to see the trend.</div>;
     const maxV = Math.max(...t.flatMap(b => [b.purchased, b.consumed, b.wastage]), 1);
     const cols  = t.length;
     const slotW = (BAR_W - BAR_PAD * 2) / cols;
-    const barW  = Math.min(slotW * 0.22, 18);
-    const gap   = barW * 0.5;
+    const barW  = Math.max(Math.min(slotW * 0.24, 16), 2);   // 2–16px wide
+    const gap   = Math.max(barW * 0.4, 1);
     const scaleH = (v: number) => (v / maxV) * (BAR_H - 24);
 
     const SERIES = [
@@ -94,12 +106,10 @@ export default function InventoryOverview() {
     return (
       <div style={{ position:"relative" }}>
         <svg width="100%" viewBox={`0 0 ${BAR_W} ${BAR_H + 28}`} style={{ display:"block" }}>
-          {/* Y gridlines */}
           {[0,.25,.5,.75,1].map(p => (
             <line key={p} x1={BAR_PAD} y1={BAR_H - p*(BAR_H-24)} x2={BAR_W-BAR_PAD} y2={BAR_H - p*(BAR_H-24)}
               stroke={LINE} strokeWidth={0.8}/>
           ))}
-          {/* Bars */}
           {t.map((b, i) => {
             const cx     = BAR_PAD + i * slotW + slotW / 2;
             const offset = (3 * barW + 2 * gap) / 2;
@@ -117,15 +127,17 @@ export default function InventoryOverview() {
               );
             });
           })}
-          {/* X labels */}
-          {t.map((b, i) => (
-            <text key={i} x={BAR_PAD + i * slotW + slotW / 2} y={BAR_H + 16}
-              textAnchor="middle" fontSize={9} fill={MUTE}>
-              {b.month.slice(0, 3)}
-            </text>
-          ))}
+          {t.map((b, i) => {
+            const step = Math.max(1, Math.ceil(cols / 12));
+            if (i % step !== 0 && i !== cols - 1) return null;   // show ~12 labels max
+            return (
+              <text key={i} x={BAR_PAD + i * slotW + slotW / 2} y={BAR_H + 16}
+                textAnchor="middle" fontSize={9} fill={MUTE}>
+                {b.month}
+              </text>
+            );
+          })}
         </svg>
-        {/* Legend */}
         <div style={{ display:"flex", gap:16, marginTop:8 }}>
           {SERIES.map(s => (
             <div key={s.key} style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, color:BODY }}>
@@ -134,7 +146,6 @@ export default function InventoryOverview() {
             </div>
           ))}
         </div>
-        {/* Tooltip */}
         {tip && (
           <div style={{ position:"fixed", left:tip.x+12, top:tip.y-10, background:INK, color:"#fff", fontSize:11.5, padding:"6px 10px", borderRadius:3, pointerEvents:"none", zIndex:999, whiteSpace:"pre" }}>
             {tip.label}
@@ -171,12 +182,10 @@ export default function InventoryOverview() {
               onMouseEnter={e => setTip({ x:e.clientX, y:e.clientY, label:`${s.name}\n${rfmt(s.value)} (${(s.pct*100).toFixed(1)}%)` })}
               onMouseLeave={() => setTip(null)}/>
           ))}
-          {/* Center hole */}
           <circle cx={DON_CX} cy={DON_CY} r={DON_R*0.52} fill={CARD}/>
           <text x={DON_CX} y={DON_CY-4}  textAnchor="middle" fontSize={8.5} fill={MUTE}>Total</text>
           <text x={DON_CX} y={DON_CY+8}  textAnchor="middle" fontSize={10}  fill={INK} fontWeight={700}>{rfmt(total)}</text>
         </svg>
-        {/* Legend */}
         <div style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column", gap:6 }}>
           {slices.map((s,i) => (
             <div key={i} style={{ display:"flex", alignItems:"center", gap:7, fontSize:12 }}>
@@ -220,31 +229,34 @@ export default function InventoryOverview() {
   // ═══════════════════════════════════════════════════════════════ RENDER ═════
   if (error) return <div style={{ padding:40, textAlign:"center", color:TERRA, fontFamily:SANS }}>{error}</div>;
 
-  // ── Derived totals from trend if kpis doesn't have them ──────────────────
+  const k = data?.kpis as any;
+
+  // Backend returns purchaseValue/consumptionValue/wastageValue; sum the trend as a fallback.
   const trendTotals = (data?.trend ?? []).reduce((acc: any, b: any) => {
     acc.purchased += dec(b.purchased ?? b.purchase ?? b.in ?? 0);
     acc.consumed  += dec(b.consumed  ?? b.consumption ?? b.out ?? 0);
     acc.wastage   += dec(b.wastage   ?? 0);
     return acc;
   }, { purchased:0, consumed:0, wastage:0 });
-
-  const k = data?.kpis;
-  const totalPurchased = dec(k?.totalPurchased) || trendTotals.purchased;
-  const totalConsumed  = dec(k?.totalConsumed)  || trendTotals.consumed;
-  const totalWastage   = dec(k?.totalWastage)   || trendTotals.wastage;
+  const totalPurchased = dec(k?.purchaseValue    ?? k?.totalPurchased) || trendTotals.purchased;
+  const totalConsumed  = dec(k?.consumptionValue ?? k?.totalConsumed)  || trendTotals.consumed;
+  const totalWastage   = dec(k?.wastageValue     ?? k?.totalWastage)   || trendTotals.wastage;
 
   return (
     <div style={st.wrap}>
+      <style>{`
+        @keyframes inv-pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+      `}</style>
 
       {/* ── KPI cards ──────────────────────────────────────────────────────── */}
       <div style={st.kpiRow}>
         {[
-          { label:"Stock value",    val: loading?null:rfmt(dec(k?.stockValue)),              sub:"At cost price",         accent:TERRA,  bg:"#fff2ee" },
-          { label:"Total purchased",val: loading?null:rfmt(dec(k?.totalPurchased)),           sub:"Last 6 months",         accent:GREEN,  bg:GREEN_LT  },
-          { label:"Total consumed", val: loading?null:rfmt(dec(k?.totalConsumed)),            sub:"Last 6 months",         accent:AMBER,  bg:"#fef3c7" },
-          { label:"Wastage",        val: loading?null:rfmt(dec(k?.totalWastage)),             sub:"Last 6 months",         accent:MUTE,   bg:IVORY     },
-          { label:"Low stock",      val: loading?null:String(k?.lowStockCount??0),            sub:"At or below reorder",   accent:(k?.lowStockCount??0)>0?AMBER:MUTE, bg:(k?.lowStockCount??0)>0?"#fef3c7":IVORY },
-          { label:"Out of stock",   val: loading?null:String(k?.outOfStockCount??0),          sub:"Needs restocking",      accent:(k?.outOfStockCount??0)>0?RED:MUTE,  bg:(k?.outOfStockCount??0)>0?RED_LT:IVORY  },
+          { label:"Stock value",    val: loading?null:rfmt(dec(k?.stockValue)),  sub:"At cost price (now)", accent:TERRA,  bg:"#fff2ee" },
+          { label:"Total purchased",val: loading?null:rfmt(totalPurchased),      sub:kpiSub,                accent:GREEN,  bg:GREEN_LT  },
+          { label:"Total consumed", val: loading?null:rfmt(totalConsumed),       sub:kpiSub,                accent:AMBER,  bg:"#fef3c7" },
+          { label:"Wastage",        val: loading?null:rfmt(totalWastage),        sub:kpiSub,                accent:MUTE,   bg:IVORY     },
+          { label:"Low stock",      val: loading?null:String(k?.lowStockCount??0),    sub:"At or below reorder", accent:(k?.lowStockCount??0)>0?AMBER:MUTE, bg:(k?.lowStockCount??0)>0?"#fef3c7":IVORY },
+          { label:"Out of stock",   val: loading?null:String(k?.outOfStockCount??0),  sub:"Needs restocking",    accent:(k?.outOfStockCount??0)>0?RED:MUTE,  bg:(k?.outOfStockCount??0)>0?RED_LT:IVORY  },
         ].map(kc => (
           <div key={kc.label} style={{ ...st.kpiCard, background:kc.bg, borderColor:`${kc.accent}22` }}>
             <div style={{ fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, marginBottom:8 }}>{kc.label}</div>
@@ -270,20 +282,18 @@ export default function InventoryOverview() {
 
       {/* ── Charts row ─────────────────────────────────────────────────────── */}
       <div style={st.chartsRow}>
-        {/* Stock flow trend */}
         <div style={{ ...st.chartCard, flex:1.8, minWidth:280 }}>
           <div style={st.chartHead}>
-            <div style={st.chartTitle}>Stock flow · last 6 months</div>
-            <div style={st.chartSub}>Purchase vs consumption vs wastage</div>
+            <div style={st.chartTitle}>Stock flow</div>
+            <div style={st.chartSub}>{rangeLabel} · by {gran}</div>
           </div>
           {loading ? <Skel h={BAR_H}/> : renderTrend()}
         </div>
 
-        {/* Category donut */}
         <div style={{ ...st.chartCard, flex:1, minWidth:220 }}>
           <div style={st.chartHead}>
             <div style={st.chartTitle}>Value by category</div>
-            <div style={st.chartSub}>At cost price</div>
+            <div style={st.chartSub}>At cost price (current stock)</div>
           </div>
           {loading ? <Skel h={180}/> : renderDonut()}
         </div>
@@ -291,16 +301,14 @@ export default function InventoryOverview() {
 
       {/* ── Top items + Low stock ───────────────────────────────────────────── */}
       <div style={st.chartsRow}>
-        {/* Top by value */}
         <div style={{ ...st.chartCard, flex:1 }}>
           <div style={st.chartHead}>
             <div style={st.chartTitle}>Top items by value</div>
-            <div style={st.chartSub}>Quantity × cost</div>
+            <div style={st.chartSub}>Quantity × cost (current stock)</div>
           </div>
           {loading ? <Skel h={120}/> : renderTopItems()}
         </div>
 
-        {/* Low / out items */}
         <div style={{ ...st.chartCard, flex:1 }}>
           <div style={st.chartHead}>
             <div style={st.chartTitle}>Needs restocking</div>
@@ -368,10 +376,6 @@ export default function InventoryOverview() {
               </div>
         )}
       </div>
-
-      <style>{`
-        @keyframes inv-pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
-      `}</style>
     </div>
   );
 }
@@ -379,6 +383,7 @@ export default function InventoryOverview() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 const st: Record<string, React.CSSProperties> = {
   wrap:       { padding:"20px 20px 40px", display:"flex", flexDirection:"column", gap:16, fontFamily:SANS },
+
   kpiRow:     { display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:12 },
   kpiCard:    { padding:"18px 20px", border:"1px solid", borderRadius:0 },
   alertStrip: { padding:"10px 16px", background:"#fef3c7", border:`1px solid ${AMBER}44`, fontSize:13, display:"flex", flexWrap:"wrap", gap:4, alignItems:"center" },

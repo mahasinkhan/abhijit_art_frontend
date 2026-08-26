@@ -6,7 +6,7 @@ import PinField from "./PinField";
 import {
   InventoryItem, KPIs, CatSummary,
   INK, MUTE, LINE, IVORY, CARD, TERRA, GOLD, GOLD_LT, GREEN, RED, SANS,
-  catColor, dec, rfmt, dtfmt, sharedSt,
+  catColor, dec, rfmt, dtfmt,
 } from "./types";
 
 interface Props {
@@ -20,17 +20,17 @@ interface Props {
   onLowToggle:   () => void;
   onClearCat:    () => void;
   onClearLow:    () => void;
-  onAddItem:     () => void;
+  onAddItem?:    () => void;
   onMoveDrawer:  (it: InventoryItem) => void;
   onHistDrawer:  (it: InventoryItem) => void;
   onEditDrawer:  (it: InventoryItem) => void;
-  onExportCSV:   () => void;
+  onExportCSV?:  () => void;
   onDeleted?:    () => void;
 }
 
 export default function InventoryTable({
   items, kpis, catSummary, loading, selCat, lowOnly,
-  onSelCat, onLowToggle, onClearCat, onClearLow, onAddItem, onMoveDrawer, onHistDrawer, onEditDrawer, onExportCSV, onDeleted,
+  onSelCat, onLowToggle, onClearCat, onClearLow, onMoveDrawer, onHistDrawer, onEditDrawer, onDeleted,
 }: Props) {
   const [search, setSearch] = useState("");
 
@@ -65,6 +65,25 @@ export default function InventoryTable({
     return list;
   })();
 
+  // Category roll-ups for the category-cards view
+  const catCards = (() => {
+    const m = new Map<string, { name: string; count: number; value: number; low: number; out: number }>();
+    for (const it of items) {
+      const name = it.category || "Uncategorised";
+      const c = m.get(name) || { name, count: 0, value: 0, low: 0, out: 0 };
+      const qty = dec(it.quantity), reord = dec(it.reorderLevel);
+      c.count += 1;
+      c.value += qty * dec(it.costPrice);
+      if (qty <= 0) c.out += 1;
+      else if (qty <= reord && reord > 0) c.low += 1;
+      m.set(name, c);
+    }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
+  // Show the flat items table when a category is picked, or a search / low-stock filter is active.
+  const showTable = !!selCat || lowOnly || !!search.trim();
+
   return (
     <div style={st.wrap}>
       {/* ── KPI strip ─────────────────────────────────────────────────── */}
@@ -97,17 +116,24 @@ export default function InventoryTable({
             />
           </div>
 
-          {/* Category dropdown (replaces sidebar) */}
-          <select
-            style={st.catSelect}
-            value={selCat}
-            onChange={e => onSelCat(e.target.value)}
-          >
-            <option value="">All categories</option>
-            {catSummary.map(c => (
-              <option key={c.name} value={c.name}>{c.name} ({c.count})</option>
-            ))}
-          </select>
+          {/* When drilled into a category → back button; otherwise the dropdown */}
+          {selCat ? (
+            <button className="inv-ghost" style={st.backBtn} onClick={onClearCat}>
+              <span style={{ fontSize:15, lineHeight:1 }}>←</span> All categories
+              <span style={st.crumbCat}>{selCat}</span>
+            </button>
+          ) : (
+            <select
+              style={st.catSelect}
+              value={selCat}
+              onChange={e => onSelCat(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {catSummary.map(c => (
+                <option key={c.name} value={c.name}>{c.name} ({c.count})</option>
+              ))}
+            </select>
+          )}
 
           {/* Low stock toggle */}
           <button
@@ -122,17 +148,39 @@ export default function InventoryTable({
             )}
           </button>
         </div>
-        <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-          <button className="inv-ghost" style={sharedSt.ghostBtn} onClick={onExportCSV}>
-            <Icon name="download" size={14}/> Export CSV
-          </button>
-          <button className="inv-cta" style={sharedSt.ctaBtn} onClick={onAddItem}>
-            <Icon name="plus" size={14} color="#fff"/> Add item
-          </button>
-        </div>
       </div>
 
-      {/* ── Table ─────────────────────────────────────────────────────── */}
+      {/* ── Category cards  OR  items table ───────────────────────────── */}
+      {!showTable ? (
+        <div style={st.tableOuter}>
+          {loading ? (
+            <div style={st.empty}>Loading…</div>
+          ) : catCards.length === 0 ? (
+            <div style={st.empty}>No stock items yet — click Add item to get started.</div>
+          ) : (
+            <div style={st.catGrid}>
+              {catCards.map((c, i) => (
+                <button key={c.name} className="inv-catcard" style={st.catCard} onClick={() => onSelCat(c.name)}>
+                  <div style={{ ...st.catAccent, background: catColor(i) }} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={st.catName}>{c.name}</div>
+                    <div style={st.catMeta}>{c.count} item{c.count!==1?"s":""}</div>
+                    <div style={st.catValue}>{rfmt(c.value)}</div>
+                    <div style={st.catValueLbl}>stock value</div>
+                    {(c.low > 0 || c.out > 0) && (
+                      <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
+                        {c.out > 0 && <span style={st.badgeOut}>{c.out} out</span>}
+                        {c.low > 0 && <span style={st.badgeLow}>{c.low} low</span>}
+                      </div>
+                    )}
+                  </div>
+                  <div style={st.catArrow}>→</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div style={st.tableOuter}>
         {loading ? (
           <div style={st.empty}>Loading…</div>
@@ -204,6 +252,7 @@ export default function InventoryTable({
           </table>
         )}
       </div>
+      )}
 
       {/* ── Delete confirm modal ──────────────────────────────────────── */}
       {delItem && (
@@ -243,6 +292,7 @@ export default function InventoryTable({
 
       <style>{`
         .inv-del:hover { background:#fff1ee !important; color:${RED} !important; border-color:${RED}55 !important; }
+        .inv-catcard:hover { border-color:${TERRA}66 !important; box-shadow:0 6px 18px rgba(217,84,47,.12); transform:translateY(-2px); }
       `}</style>
     </div>
   );
@@ -280,4 +330,20 @@ const st: Record<string, React.CSSProperties> = {
   delFt:      { display:"flex", gap:10, justifyContent:"flex-end", padding:"14px 20px", borderTop:`1px solid ${LINE}`, background:IVORY },
   delGhost:   { padding:"9px 20px", background:"transparent", border:`1px solid ${LINE}`, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:SANS, color:INK },
   delDanger:  { padding:"9px 22px", background:RED, border:"none", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS, color:"#fff" },
+
+  // category cards
+  catGrid:    { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))", gap:14, padding:20 },
+  catCard:    { display:"flex", alignItems:"stretch", gap:14, background:CARD, border:`1px solid ${LINE}`, padding:"18px 18px 18px 0", cursor:"pointer", fontFamily:SANS, textAlign:"left", position:"relative", transition:"all .15s" },
+  catAccent:  { width:5, flexShrink:0, borderRadius:2 },
+  catName:    { fontSize:16, fontWeight:800, color:INK, marginBottom:3 },
+  catMeta:    { fontSize:12, color:MUTE, marginBottom:14 },
+  catValue:   { fontSize:22, fontWeight:900, color:TERRA, fontVariantNumeric:"tabular-nums", lineHeight:1 },
+  catValueLbl:{ fontSize:10.5, color:MUTE, textTransform:"uppercase", letterSpacing:.6, marginTop:4 },
+  badgeOut:   { fontSize:10.5, fontWeight:700, color:RED, background:"#fff1ee", border:`1px solid ${RED}44`, padding:"2px 8px", borderRadius:2 },
+  badgeLow:   { fontSize:10.5, fontWeight:700, color:"#b45309", background:"#fef3c7", border:"1px solid #f0c04066", padding:"2px 8px", borderRadius:2 },
+  catArrow:   { alignSelf:"center", color:"#cfcabf", fontSize:18, fontWeight:700 },
+
+  // breadcrumb back button
+  backBtn:    { display:"inline-flex", alignItems:"center", gap:8, padding:"9px 14px", background:CARD, border:`1px solid ${LINE}`, fontSize:13, fontWeight:700, color:INK, cursor:"pointer", fontFamily:SANS },
+  crumbCat:   { marginLeft:2, padding:"2px 10px", background:`${TERRA}14`, color:TERRA, fontWeight:700, fontSize:12, borderRadius:2 },
 };
