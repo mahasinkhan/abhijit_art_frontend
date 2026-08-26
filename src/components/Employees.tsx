@@ -10,56 +10,67 @@ interface Employee {
 type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
 interface Task {
   id: string; title: string; status: TaskStatus; deadline?: string;
+  priority: string;
   assignedTo: { id: string; name: string; email: string };
 }
 
 const ACCENT = "#d9542f";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
+const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
+  pending:     { label: "Pending",     color: "#9a6a12", bg: "#fbf1dd" },
+  in_progress: { label: "In progress", color: "#1e5fa8", bg: "#e6eff9" },
+  completed:   { label: "Completed",   color: "#2f7a3f", bg: "#e5f2e8" },
+  cancelled:   { label: "Cancelled",   color: "#7c766c", bg: "#f0ede7" },
+};
+const PRIORITY_COLOR: Record<string, string> = {
+  low: "#a8a29a", medium: "#c2974a", high: ACCENT, urgent: "#7c3aed",
+};
+
 export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId: string) => void }) {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editEmp, setEditEmp] = useState<Employee | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [employees, setEmployees]   = useState<Employee[]>([]);
+  const [tasks,     setTasks]       = useState<Task[]>([]);
+  const [teamTasks, setTeamTasks]   = useState<Task[]>([]);
+  const [loading,   setLoading]     = useState(true);
+  const [showModal, setShowModal]   = useState(false);
+  const [editEmp,   setEditEmp]     = useState<Employee | null>(null);
+  const [saving,    setSaving]      = useState(false);
+  const [deleting,  setDeleting]    = useState<string | null>(null);
+  const [search,    setSearch]      = useState("");
+  const [teamView,  setTeamView]    = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
-  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
-  const [showPw, setShowPw] = useState(false);
+  const [form, setForm]         = useState({ name: "", email: "", phone: "", password: "" });
+  const [showPw, setShowPw]     = useState(false);
   const [formError, setFormError] = useState("");
 
   const loadEmployees = useCallback(async () => {
-    try {
-      const { data } = await api.get("/api/tasks/employees/list");
-      setEmployees(data);
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
+    try { const { data } = await api.get("/api/tasks/employees/list"); setEmployees(data); }
+    catch { /* ignore */ } finally { setLoading(false); }
   }, []);
 
   const loadTasks = useCallback(async () => {
-    try {
-      const { data } = await api.get("/api/tasks");
-      setTasks(data);
-    } catch { /* ignore */ }
+    try { const { data } = await api.get("/api/tasks"); setTasks(data); }
+    catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { loadEmployees(); loadTasks(); }, [loadEmployees, loadTasks]);
+  const loadTeamTasks = useCallback(async () => {
+    try { const { data } = await api.get("/api/tasks/team"); setTeamTasks(data); }
+    catch { /* ignore */ }
+  }, []);
 
-  // live task updates so "who's working on what" stays current
+  useEffect(() => { loadEmployees(); loadTasks(); loadTeamTasks(); }, [loadEmployees, loadTasks, loadTeamTasks]);
+
   useEffect(() => {
     const socket = io(API_BASE, { withCredentials: true });
     socketRef.current = socket;
-    const refresh = () => loadTasks();
+    const refresh = () => { loadTasks(); loadTeamTasks(); };
     socket.on("task:created", refresh);
     socket.on("task:updated", refresh);
     socket.on("task:deleted", refresh);
     return () => { socket.disconnect(); };
-  }, [loadTasks]);
+  }, [loadTasks, loadTeamTasks]);
 
-  // per-employee workload derived from tasks
   const now = Date.now();
   function statsFor(id: string) {
     const mine = tasks.filter((t) => t.assignedTo.id === id);
@@ -73,20 +84,13 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
     };
   }
 
-  const workingNow = employees.filter((e) => statsFor(e.id).in_progress > 0).length;
-  const totalActive = tasks.filter((t) => t.status === "pending" || t.status === "in_progress").length;
+  const workingNow   = employees.filter((e) => statsFor(e.id).in_progress > 0).length;
+  const totalActive  = tasks.filter((t) => t.status === "pending" || t.status === "in_progress").length;
   const totalOverdue = tasks.filter((t) => t.deadline && t.status !== "completed" && t.status !== "cancelled" && new Date(t.deadline).getTime() < now).length;
 
-  function openCreate() {
-    setEditEmp(null);
-    setForm({ name: "", email: "", phone: "", password: "" });
-    setFormError(""); setShowPw(false); setShowModal(true);
-  }
-  function openEdit(emp: Employee) {
-    setEditEmp(emp);
-    setForm({ name: emp.name, email: emp.email, phone: emp.phone, password: "" });
-    setFormError(""); setShowPw(false); setShowModal(true);
-  }
+  function openCreate() { setEditEmp(null); setForm({ name: "", email: "", phone: "", password: "" }); setFormError(""); setShowPw(false); setShowModal(true); }
+  function openEdit(emp: Employee) { setEditEmp(emp); setForm({ name: emp.name, email: emp.email, phone: emp.phone, password: "" }); setFormError(""); setShowPw(false); setShowModal(true); }
+
   async function save() {
     setFormError("");
     if (!form.name.trim() || !form.email.trim()) { setFormError("Name and email are required."); return; }
@@ -100,12 +104,12 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
       } else {
         await api.post("/api/users/employee", { name: form.name, email: form.email, phone: form.phone, password: form.password });
       }
-      setShowModal(false);
-      loadEmployees();
+      setShowModal(false); loadEmployees();
     } catch (err: any) {
       setFormError(err.response?.data?.error || err.response?.data?.message || "Failed to save.");
     } finally { setSaving(false); }
   }
+
   async function remove(emp: Employee) {
     const s = statsFor(emp.id);
     const active = s.pending + s.in_progress;
@@ -114,19 +118,22 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
       : `Delete employee "${emp.name}"? This cannot be undone.`;
     if (!confirm(msg)) return;
     setDeleting(emp.id);
-    try {
-      await api.delete(`/api/users/employee/${emp.id}`);
-      setEmployees((p) => p.filter((e) => e.id !== emp.id));
-      loadTasks();
-    } catch (err: any) {
-      alert(err.response?.data?.error || "Failed to delete.");
-    } finally { setDeleting(null); }
+    try { await api.delete(`/api/users/employee/${emp.id}`); setEmployees((p) => p.filter((e) => e.id !== emp.id)); loadTasks(); }
+    catch (err: any) { alert(err.response?.data?.error || "Failed to delete."); }
+    finally { setDeleting(null); }
   }
 
   const displayed = employees.filter((e) => {
     const q = search.toLowerCase();
     return !q || e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q) || e.phone.includes(q);
   });
+
+  // Group team tasks by employee for the board view
+  const teamBoard = employees.map((emp) => ({
+    emp,
+    active: teamTasks.filter((t) => t.assignedTo.id === emp.id && t.status === "in_progress"),
+    pending: teamTasks.filter((t) => t.assignedTo.id === emp.id && t.status === "pending"),
+  })).filter((row) => row.active.length > 0 || row.pending.length > 0);
 
   return (
     <div className="ep">
@@ -142,8 +149,10 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
         .ep-bar { display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
         .ep-search { padding:8px 12px; border:1px solid #d9dce3; font-size:.84rem; width:240px; font-family:inherit; }
         .ep-search:focus { outline:2px solid ${ACCENT}; outline-offset:-1px; }
-        .ep-add { margin-left:auto; background:${ACCENT}; color:#fff; border:none; padding:9px 18px; font-size:.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
+        .ep-add { background:${ACCENT}; color:#fff; border:none; padding:9px 18px; font-size:.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
         .ep-add:hover { background:#b8421f; }
+        .ep-toggle { margin-left:auto; background:#fff; color:#1f2430; border:1px solid #d9dce3; padding:9px 18px; font-size:.84rem; font-weight:700; cursor:pointer; font-family:inherit; }
+        .ep-toggle.on { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
         .ep-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
         .ep-card { background:#fff; border:1px solid #e8e8ee; padding:18px; }
         .ep-card-top { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
@@ -166,6 +175,21 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
         .ep-btn.primary:hover { background:#b8421f; }
         .ep-btn.danger { color:${ACCENT}; border-color:#f5c4bb; flex:0 0 auto; padding:8px 12px; }
         .ep-btn.danger:hover { background:#fef2ee; }
+
+        /* ── Team Board ── */
+        .ep-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+        .ep-bcol { background:#fff; border:1px solid #e8e8ee; }
+        .ep-bcol-head { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid #f0f0f4; background:#fafaf8; }
+        .ep-bcol-av { width:34px; height:34px; border-radius:50%; background:${ACCENT}; color:#fff; font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .ep-bcol-name { font-weight:700; font-size:.92rem; }
+        .ep-bcol-count { margin-left:auto; font-size:.72rem; font-weight:700; color:#6b7280; background:#f0f0f4; padding:2px 8px; border-radius:999px; }
+        .ep-btask { padding:10px 14px; border-bottom:1px solid #f5f5f8; display:flex; align-items:flex-start; gap:8px; }
+        .ep-btask:last-child { border-bottom:none; }
+        .ep-btask-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:5px; }
+        .ep-btask-title { font-size:.83rem; font-weight:600; color:#1f2430; line-height:1.35; }
+        .ep-btask-status { font-size:.68rem; font-weight:700; padding:1px 7px; border-radius:3px; display:inline-block; margin-top:3px; }
+        .ep-board-empty { padding:40px 20px; text-align:center; color:#9ca3af; font-size:.88rem; }
+
         /* modal */
         .ep-ov { position:fixed; inset:0; background:rgba(31,36,48,.5); z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px; }
         .ep-modal { background:#fff; width:100%; max-width:440px; padding:28px; position:relative; }
@@ -196,54 +220,98 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
 
       {/* Toolbar */}
       <div className="ep-bar">
-        <input className="ep-search" placeholder="Search name, email or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {!teamView && <input className="ep-search" placeholder="Search name, email or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />}
         <button className="ep-add" onClick={openCreate}>+ Add Employee</button>
+        <button className={`ep-toggle${teamView ? " on" : ""}`} onClick={() => setTeamView((v) => !v)}>
+          {teamView ? "👥 Team Board" : "👥 Team Board"}
+        </button>
       </div>
 
-      {/* Cards */}
-      {loading ? (
-        <p style={{ color: "#9ca3af", fontSize: ".88rem" }}>Loading…</p>
-      ) : displayed.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "60px 20px", color: "#9ca3af", fontSize: ".9rem" }}>
-          {search ? "No employees match your search." : "No employees yet. Click \"+ Add Employee\" to create one."}
+      {/* ── Team Board View ── */}
+      {teamView ? (
+        <div>
+          <div style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em", color: "#6b7280", marginBottom: 12 }}>
+            Live — who is working on what right now
+          </div>
+          {teamBoard.length === 0 ? (
+            <div className="ep-board-empty">No active tasks right now — everyone is idle.</div>
+          ) : (
+            <div className="ep-board">
+              {teamBoard.map(({ emp, active, pending }) => (
+                <div key={emp.id} className="ep-bcol">
+                  <div className="ep-bcol-head">
+                    <div className="ep-bcol-av">{emp.name[0].toUpperCase()}</div>
+                    <div>
+                      <div className="ep-bcol-name">{emp.name}</div>
+                      <div style={{ fontSize: ".72rem", color: "#6b7280" }}>{emp.email}</div>
+                    </div>
+                    <div className="ep-bcol-count">{active.length + pending.length} task{active.length + pending.length !== 1 ? "s" : ""}</div>
+                  </div>
+                  {active.map((t) => (
+                    <div key={t.id} className="ep-btask">
+                      <div className="ep-btask-dot" style={{ background: "#1d4ed8" }} />
+                      <div>
+                        <div className="ep-btask-title">{t.title}</div>
+                        <div className="ep-btask-status" style={{ background: STATUS_META.in_progress.bg, color: STATUS_META.in_progress.color }}>In progress</div>
+                      </div>
+                    </div>
+                  ))}
+                  {pending.map((t) => (
+                    <div key={t.id} className="ep-btask">
+                      <div className="ep-btask-dot" style={{ background: PRIORITY_COLOR[t.priority] || "#c2974a" }} />
+                      <div>
+                        <div className="ep-btask-title">{t.title}</div>
+                        <div className="ep-btask-status" style={{ background: STATUS_META.pending.bg, color: STATUS_META.pending.color }}>Pending</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="ep-grid">
-          {displayed.map((emp) => {
-            const s = statsFor(emp.id);
-            return (
-              <div key={emp.id} className="ep-card">
-                <div className="ep-card-top">
-                  <div className="ep-avatar">{emp.name[0].toUpperCase()}</div>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="ep-name">{emp.name}</div>
-                    <div className="ep-contact">{emp.email}{emp.phone ? ` · ${emp.phone}` : ""}</div>
+        /* ── Employee Cards View ── */
+        loading ? (
+          <p style={{ color: "#9ca3af", fontSize: ".88rem" }}>Loading…</p>
+        ) : displayed.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "60px 20px", color: "#9ca3af", fontSize: ".9rem" }}>
+            {search ? "No employees match your search." : "No employees yet. Click \"+ Add Employee\" to create one."}
+          </div>
+        ) : (
+          <div className="ep-grid">
+            {displayed.map((emp) => {
+              const s = statsFor(emp.id);
+              return (
+                <div key={emp.id} className="ep-card">
+                  <div className="ep-card-top">
+                    <div className="ep-avatar">{emp.name[0].toUpperCase()}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="ep-name">{emp.name}</div>
+                      <div className="ep-contact">{emp.email}{emp.phone ? ` · ${emp.phone}` : ""}</div>
+                    </div>
+                  </div>
+                  <div className={`ep-status ${s.current ? "working" : "idle"}`}>
+                    {s.current ? <>Working on: <b>{s.current}</b></> : "Idle — no active task"}
+                  </div>
+                  <div className="ep-work">
+                    <div className="ep-wcell"><div className="ep-wn" style={{ color: "#c2974a" }}>{s.pending}</div><div className="ep-wl">Pending</div></div>
+                    <div className="ep-wcell"><div className="ep-wn" style={{ color: "#1d4ed8" }}>{s.in_progress}</div><div className="ep-wl">Active</div></div>
+                    <div className="ep-wcell"><div className="ep-wn" style={{ color: "#15803d" }}>{s.completed}</div><div className="ep-wl">Done</div></div>
+                  </div>
+                  {s.overdue > 0 && <div className="ep-over-badge">⚠ {s.overdue} overdue</div>}
+                  <div className="ep-actions">
+                    <button className="ep-btn primary" onClick={() => onAssignTask?.(emp.id)}>+ Assign Task</button>
+                    <button className="ep-btn" onClick={() => openEdit(emp)}>Edit</button>
+                    <button className="ep-btn danger" disabled={deleting === emp.id} onClick={() => remove(emp)}>
+                      {deleting === emp.id ? "…" : "Delete"}
+                    </button>
                   </div>
                 </div>
-
-                <div className={`ep-status ${s.current ? "working" : "idle"}`}>
-                  {s.current ? <>Working on: <b>{s.current}</b></> : "Idle — no active task"}
-                </div>
-
-                <div className="ep-work">
-                  <div className="ep-wcell"><div className="ep-wn" style={{ color: "#c2974a" }}>{s.pending}</div><div className="ep-wl">Pending</div></div>
-                  <div className="ep-wcell"><div className="ep-wn" style={{ color: "#1d4ed8" }}>{s.in_progress}</div><div className="ep-wl">Active</div></div>
-                  <div className="ep-wcell"><div className="ep-wn" style={{ color: "#15803d" }}>{s.completed}</div><div className="ep-wl">Done</div></div>
-                </div>
-
-                {s.overdue > 0 && <div className="ep-over-badge">⚠ {s.overdue} overdue</div>}
-
-                <div className="ep-actions">
-                  <button className="ep-btn primary" onClick={() => onAssignTask?.(emp.id)}>+ Assign Task</button>
-                  <button className="ep-btn" onClick={() => openEdit(emp)}>Edit</button>
-                  <button className="ep-btn danger" disabled={deleting === emp.id} onClick={() => remove(emp)}>
-                    {deleting === emp.id ? "…" : "Delete"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )
       )}
 
       {/* Modal */}
@@ -276,11 +344,9 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
                     onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                     placeholder={editEmp ? "Leave blank to keep current" : "Min 6 characters"} autoComplete="new-password" />
                   <button type="button" className="ep-eye" onClick={() => setShowPw((v) => !v)}>
-                    {showPw ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-6.5 0-10-8-10-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                    )}
+                    {showPw
+                      ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-6.5 0-10-8-10-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>
+                      : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>}
                   </button>
                 </div>
                 {editEmp && <div className="ep-hint">Fill only to reset this employee's password.</div>}
