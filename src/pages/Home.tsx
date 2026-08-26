@@ -3,21 +3,27 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import DigitalServices from "../components/DigitalServices";
 import BookServiceModal, { type BookTarget } from "../components/BookServiceModal";
-import HowItWorks from "../components/HowItWorks";
+import HeroSection from "../components/home/HeroSection";
+import ServicesSection from "../components/home/ServicesSection";
+import WorkFanSection from "../components/home/WorkFanSection";
+import ProcessSection from "../components/home/ProcessSection";
+import CtaSection from "../components/home/CtaSection";
+import PricesSection from "../components/home/PricesSection";
+import "../styles/home.css";
 
-/* ══════════════════════════════════════════════════════════════
-   ABHIJIT ART — Home
+/*  - 
+   ABHIJIT ART  -  Home
    Restyled to match the About page: ivory canvas, terracotta +
    gold accents, Fraunces display / DM Sans body / Pinyon Script
    for the one decorative flourish. No pink, no navy, no blue.
    Corner radii follow the shared scale: 4px buttons, 6px cards,
    8px large panels; circles stay circular.
    Service images live in public/images/home/Services/ (capital S).
-   ══════════════════════════════════════════════════════════════ */
+    -  */
 
-/* ── design tokens (same values as About) ──────────────────── */
+/*  -  design tokens (same values as About)  -  */
 const IVORY = "#f7f3ea";      // page canvas
-const IVORY_2 = "#f2ebdd";    // image placeholder tint only — every section is flat IVORY
+const IVORY_2 = "#f2ebdd";    // image placeholder tint only  -  every section is flat IVORY
 const CARD = "#fffdf8";       // card surface
 const INK = "#2a231d";        // headings
 const INK_2 = "#4c4239";      // strong body
@@ -38,15 +44,15 @@ const SHADOW_MD = "0 18px 46px rgba(42,35,29,.09)";
 const SVC_IMG = "/images/home/services";
 
 const products = [
-  { name: "Visiting Cards", price: "₹299" },
-  { name: "Custom T-Shirts", price: "₹299" },
-  { name: "LED Boards", price: "₹1,499" },
-  { name: "Name Plates", price: "₹599" },
-  { name: "Stickers", price: "₹199" },
-  { name: "Printed Mugs", price: "₹349" },
+  { name: "Visiting Cards", price: "\u20B9299" },
+  { name: "Custom T-Shirts", price: "\u20B9299" },
+  { name: "LED Boards", price: "\u20B91,499" },
+  { name: "Name Plates", price: "\u20B9599" },
+  { name: "Stickers", price: "\u20B9199" },
+  { name: "Printed Mugs", price: "\u20B9349" },
 ];
 
-/* ── inline SVG icons (no external dependency) ─────────────── */
+/*  -  inline SVG icons (no external dependency)  -  */
 type IcoProps = { size?: number; stroke?: number };
 const baseIco = (size: number, stroke: number) => ({
   width: size, height: size, viewBox: "0 0 24 24", fill: "none",
@@ -114,7 +120,7 @@ const UploadIcon = ({ size = 16, stroke = 2 }: IcoProps) => (
   </svg>
 );
 
-/* feature-strip icons — outlined, terracotta (matches About stat bar) */
+/* feature-strip icons  -  outlined, terracotta (matches About stat bar) */
 const BoltIcon = ({ size = 26, stroke = 1.6 }: IcoProps) => (
   <svg {...baseIco(size, stroke)}><path d="M13 2 3 14h8l-1 8 11-12h-8z" /></svg>
 );
@@ -157,7 +163,7 @@ const services = [
   { name: "Visiting Card", sub: "Professional visiting cards with unique designs and finishes.", Icon: IdCardIcon, tint: "#eee7d6", img: `${SVC_IMG}/visiting-card.jpeg` },
 ];
 
-/* ── section label: — EYEBROW (About page style) ────────────── */
+/*  -  section label:  -  EYEBROW (About page style)  -  */
 function Eyebrow({ children, center = false }: { children: React.ReactNode; center?: boolean }) {
   return (
     <p style={{ ...st.eyebrowRow, justifyContent: center ? "center" : "flex-start" }}>
@@ -167,7 +173,7 @@ function Eyebrow({ children, center = false }: { children: React.ReactNode; cent
   );
 }
 
-/* ── Gallery coverflow carousel (center image flat, sides tilted in 3D) ── */
+/*  -  Gallery coverflow carousel (center image flat, sides tilted in 3D)  -  */
 function GalleryCoverflow() {
   const gallery = [
     "/images/gallery/work_1.jpeg",
@@ -260,22 +266,22 @@ function GalleryCoverflow() {
             );
           })}
 
-          <button aria-label="Previous" style={{ ...gx.nav, ...gx.navL }} onClick={() => go(-1)}>‹</button>
-          <button aria-label="Next" style={{ ...gx.nav, ...gx.navR }} onClick={() => go(1)}>›</button>
+          <button aria-label="Previous" style={{ ...gx.nav, ...gx.navL }} onClick={() => go(-1)}>&#8249;</button>
+          <button aria-label="Next" style={{ ...gx.nav, ...gx.navR }} onClick={() => go(1)}>&#8250;</button>
         </div>
       </div>
     </section>
   );
 }
 
-/* ── Testimonials marquee ───────────────────────────────────── */
+/*  -  Testimonials marquee  -  */
 function ReviewsSlider() {
   const reviews = [
-    { name: "Rahul Sharma", role: "Business Owner, Sharma Traders", initials: "RS", text: "Abhijit Art provides the best quality printing services. Fast delivery and amazing work — highly recommended!" },
+    { name: "Rahul Sharma", role: "Business Owner, Sharma Traders", initials: "RS", text: "Abhijit Art provides the best quality printing services. Fast delivery and amazing work, highly recommended!" },
     { name: "Priya Das", role: "Marketing Head, Das Retail Group", initials: "PD", text: "From our shop signage to flex banners, everything was crisp and delivered on time. The team understood exactly what we wanted." },
     { name: "Amit Roy", role: "Event Manager, Roy Events", initials: "AR", text: "We order all our event standees and stickers here. Consistent quality, fair pricing, and they never miss a deadline." },
     { name: "Sneha Paul", role: "Founder, Paul Boutique", initials: "SP", text: "Our visiting cards and PVC tags came out beautifully. The finishing quality is genuinely premium." },
-    { name: "Tarun Ghosh", role: "Owner, Ghosh Sweets", initials: "TG", text: "Their LED signboard transformed our storefront — bright, clean, and installed without any hassle." },
+    { name: "Tarun Ghosh", role: "Owner, Ghosh Sweets", initials: "TG", text: "Their LED signboard transformed our storefront: bright, clean, and installed without any hassle." },
     { name: "Mou Sen", role: "Manager, Sen Pharmacy", initials: "MS", text: "Reliable for bulk printing. Whenever we need urgent orders, they always come through on time." },
   ];
   const loop = [...reviews, ...reviews];
@@ -322,7 +328,7 @@ function ReviewsSlider() {
 export default function Home() {
   const { hash } = useLocation();
 
-  /* which card is being booked — null closes the modal */
+  /* which card is being booked  -  null closes the modal */
   const [booking, setBooking] = useState<BookTarget | null>(null);
 
   useEffect(() => {
@@ -336,185 +342,30 @@ export default function Home() {
 
   return (
     <div style={st.page}>
-      {/* ════════ HERO ════════ */}
-      <section style={st.heroWrap}>
-        <div style={st.heroDots} />
-        <div style={st.container}>
-          <div className="aa-hero" style={st.heroInner}>
-            <div className="aa-rise aa-hero-left" style={st.heroLeft}>
-              <Eyebrow>Since 2000 · Berhampore</Eyebrow>
-              <h1 style={st.heroTitle}>
-                <span style={st.heroLine1}>Print Whatever</span>
-                <span style={st.heroLine2}>You Want.</span>
-              </h1>
-              <span style={st.titleRule} />
-              <p style={st.heroSub}>
-                From t-shirt design to flex, laser cutting and stationery —
-                we print everything to make your brand stand out.
-              </p>
-              <div style={st.heroBtns}>
-                <Link to="/services" style={st.btnSolid}>
-                  Explore Services <span style={st.btnArrow}>→</span>
-                </Link>
-                <Link to="/services" style={st.btnOutline}>
-                  Upload Design <UploadIcon />
-                </Link>
-              </div>
-            </div>
+      {/* SHEET 01 - HERO (redesign) */}
+      <div className="ap-home">
+        <HeroSection image="/images/abhijit_art_hero.png" />
+        <ServicesSection />
+        <ProcessSection />
+        <WorkFanSection />
+        <PricesSection />
+        <CtaSection />
+      </div>
 
-            <div className="aa-rise aa-delay aa-hero-right" style={st.heroRight}>
-              <div style={st.heroArc} />
-              <img
-                src="/images/abhijit_art_hero.png"
-                alt="Abhijit Art — Printing & Design Studio showcasing flex printer, custom mug, visiting cards and branding materials"
-                style={st.heroImage}
-              />
-            </div>
-          </div>
+      {/* legacy feature strip, HowItWorks and services grid removed - replaced by sheets 02 and 04 */}
 
-          {/* Feature strip */}
-          <div className="aa-feature-strip" style={st.featureStrip}>
-            {features.map((f) => {
-              const Icon = f.Icon;
-              return (
-                <div key={f.title} className="aa-feature-item" style={st.featureItem}>
-                  <span style={st.featureIcon}><Icon /></span>
-                  <div>
-                    <p style={st.featureTitle}>{f.title}</p>
-                    <p style={st.featureSub}>{f.sub}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ════════ HOW IT WORKS ════════ */}
-      <HowItWorks />
-
-      {/* ════════ OUR SERVICES ════════ */}
-      <section style={{ background: IVORY, padding: "96px 0" }}>
-        <div style={st.container}>
-          <div style={{ textAlign: "center" }}>
-            <Eyebrow center>Our Services</Eyebrow>
-            <h2 style={st.h2}>Everything we print &amp; create</h2>
-            <p style={st.lead}>Premium printing, signage and fabrication — all under one roof.</p>
-          </div>
-
-          <div className="svc-grid">
-            {services.map((sv) => {
-              const Icon = sv.Icon;
-              return (
-                <div key={sv.name} className="aa-card" style={st.svcCard}>
-                  <div style={st.svcMediaWrap}>
-                    <div className="svc-media" style={{ ...st.svcMedia, background: sv.tint }}>
-                      <img
-                        src={sv.img}
-                        alt={sv.name}
-                        style={st.svcImg}
-                        loading="lazy"
-                        onError={(e) => { e.currentTarget.style.display = "none"; }}
-                      />
-                    </div>
-                    <div style={st.svcBadge}><Icon /></div>
-                  </div>
-                  <div style={st.svcBody}>
-                    <h3 style={st.svcName}>{sv.name}</h3>
-                    <p style={st.svcDesc}>{sv.sub}</p>
-                    <div className="svc-order-wrap">
-                      <div className="svc-order-inner">
-                        <button
-                          type="button"
-                          className="svc-order"
-                          onClick={() => setBooking({ title: sv.name, icon: <Icon size={22} /> })}
-                        >
-                          Order Now <span aria-hidden>→</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={{ textAlign: "center", marginTop: 52 }}>
-            <Link to="/services" style={st.btnSolidLg}>View All Services →</Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ════════ DIGITAL SERVICES — second pillar (Software + Marketing) ════════ */}
+      {/*  -  DIGITAL SERVICES  -  second pillar (Software + Marketing)  -  */}
       <DigitalServices />
 
-      {/* ════════ FEATURED PRODUCTS ════════ */}
-      <section style={{ background: IVORY, padding: "96px 0" }}>
-        <div style={st.container}>
-          <div style={{ textAlign: "center" }}>
-            <Eyebrow center>Our Products</Eyebrow>
-            <h2 style={st.h2}>Featured products</h2>
-            <p style={st.lead}>Small runs or bulk orders — same finish either way.</p>
-          </div>
-
-          <div className="aa-price-grid">
-            {products.map((p, i) => (
-              <motion.button
-                key={p.name}
-                type="button"
-                className="aa-price-row"
-                onClick={() => setBooking({ title: p.name })}
-                initial={{ opacity: 0, y: 14 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.5 }}
-                transition={{ duration: 0.45, delay: (i % 3) * 0.09, ease: [0.2, 0.8, 0.2, 1] }}
-              >
-                <span className="aa-price-name">{p.name}</span>
-                <span className="aa-price-right">
-                  <span className="aa-price-from">from</span>
-                  <span className="aa-price-val">{p.price}</span>
-                  <span className="aa-price-arrow" aria-hidden>→</span>
-                </span>
-              </motion.button>
-            ))}
-          </div>
-
-          <p style={st.priceNote}>
-            Indicative starting prices — final quote depends on size, material and quantity.
-          </p>
-        </div>
-      </section>
-
-      {/* ════════ WORK GALLERY (coverflow carousel) ════════ */}
+      {/* legacy featured products removed - replaced by sheet 06 */}
+      {/*  -  WORK GALLERY (coverflow carousel)  -  */}
       <GalleryCoverflow />
 
-      {/* ════════ REVIEWS ════════ */}
+      {/*  -  REVIEWS  -  */}
       <ReviewsSlider />
 
-      {/* ════════ CTA BANNER ════════ */}
-      <section style={{ background: IVORY, padding: "0 0 96px" }}>
-        <div className="aa-cta" style={{ ...st.container, ...st.ctaBanner }}>
-          <div style={st.ctaGlow} />
-          <div style={{ position: "relative", zIndex: 1 }}>
-            <h2 style={st.ctaTitle}>Need custom printing<br />for your business?</h2>
-            <p style={st.ctaSub}>Premium quality, fast turnaround, fair pricing.</p>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <Link to="/contact" style={st.ctaBtnLight}>Contact Us Now</Link>
-              <a href="https://wa.me/919876543210" target="_blank" rel="noreferrer" style={st.ctaBtnWa}>
-                💬 Chat on WhatsApp
-              </a>
-            </div>
-          </div>
-          <div style={st.ctaOffer}>
-            <p style={st.offerUpto}>UPTO</p>
-            <p style={st.offerPct}>30%</p>
-            <p style={st.offerOff}>OFF</p>
-            <p style={st.offerNote}>For Bulk Orders</p>
-          </div>
-        </div>
-      </section>
-
-      {/* ════════ BOOKING MODAL (shared with the Services page) ════════ */}
+      {/* legacy CTA banner removed - replaced by sheet 05 */}
+      {/*  -  BOOKING MODAL (shared with the Services page)  -  */}
       <BookServiceModal service={booking} onClose={() => setBooking(null)} />
 
       <style>{`
@@ -525,7 +376,7 @@ export default function Home() {
         .aa-card { transition: transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s, border-color .3s; }
         .aa-card:hover { transform: translateY(-8px); box-shadow: ${SHADOW_MD}; border-color: ${TERRA}55; }
 
-        /* services card — image shrinks so Order Now fits, card height stays ~constant */
+        /* services card  -  image shrinks so Order Now fits, card height stays ~constant */
         .svc-media { height: 170px; transition: height .4s cubic-bezier(.2,.8,.2,1); }
         .aa-card:hover .svc-media { height: 118px; }
         .svc-order-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .4s cubic-bezier(.2,.8,.2,1); }
@@ -546,7 +397,7 @@ export default function Home() {
           .svc-media, .svc-order-wrap, .svc-order { transition: none; }
         }
 
-        /* feature strip — thin warm dividers */
+        /* feature strip  -  thin warm dividers */
         .aa-feature-item { border-left: 1px solid ${LINE}; }
         .aa-feature-item:first-child { border-left: none; }
         @media (max-width: 760px) {
@@ -574,7 +425,7 @@ export default function Home() {
         @keyframes rvScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
         @media (prefers-reduced-motion: reduce) { .rv-track { animation: none; } }
 
-        /* featured products — rate-card rows */
+        /* featured products  -  rate-card rows */
         .aa-price-grid {
           margin: 54px auto 0; max-width: 1080px;
           display: grid; grid-template-columns: repeat(2, 1fr);
@@ -614,7 +465,7 @@ export default function Home() {
         }
         .aa-price-row:hover .aa-price-arrow { opacity: 1; transform: translateX(0); }
 
-        /* touch devices never hover — keep the affordance visible */
+        /* touch devices never hover  -  keep the affordance visible */
         @media (hover: none) {
           .aa-price-arrow { opacity: .55; transform: none; }
         }
@@ -622,7 +473,7 @@ export default function Home() {
           .aa-price-row::after, .aa-price-name, .aa-price-arrow { transition: none; }
         }
 
-        /* services grid — 5 up, responsive */
+        /* services grid  -  5 up, responsive */
         .svc-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 26px; margin-top: 56px; align-items: start; }
         @media (max-width: 1200px) { .svc-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 760px)  { .svc-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; } }
@@ -652,7 +503,7 @@ export default function Home() {
   );
 }
 
-/* ───────────────────────── styles ───────────────────────── */
+/*  -  styles  -  */
 const st: Record<string, React.CSSProperties> = {
   page: {
     background: IVORY, color: INK, fontFamily: SANS,
@@ -743,7 +594,7 @@ const st: Record<string, React.CSSProperties> = {
   svcName: { margin: "0 0 8px", fontFamily: SERIF, fontSize: 19, fontWeight: 700, color: INK, letterSpacing: -0.3 },
   svcDesc: { margin: 0, fontSize: 13.5, color: MUTED, lineHeight: 1.65, maxWidth: 230, marginLeft: "auto", marginRight: "auto" },
 
-  /* PRODUCTS — rate-card list */
+  /* PRODUCTS  -  rate-card list */
   priceNote: {
     textAlign: "center", color: MUTED, fontSize: 13, lineHeight: 1.7,
     margin: "34px auto 0", maxWidth: 460,
@@ -792,7 +643,7 @@ const st: Record<string, React.CSSProperties> = {
   },
 };
 
-/* ── gallery coverflow styles ── */
+/*  -  gallery coverflow styles  -  */
 const gx: Record<string, React.CSSProperties> = {
   wrap: { background: IVORY, padding: "88px 0 84px", color: INK, overflow: "hidden", width: "100%" },
   inner: { maxWidth: 1600, margin: "0 auto", padding: "0 clamp(16px, 3vw, 40px)", textAlign: "center", boxSizing: "border-box", position: "relative", zIndex: 1 },
@@ -826,7 +677,7 @@ const gx: Record<string, React.CSSProperties> = {
   navR: { right: "clamp(6px, 1.5vw, 28px)" },
 };
 
-/* ── testimonials styles ── */
+/*  -  testimonials styles  -  */
 const rv: Record<string, React.CSSProperties> = {
   wrap: { background: IVORY, padding: "88px 0", position: "relative", overflow: "hidden" },
   inner: { maxWidth: 1280, margin: "0 auto", padding: "0 clamp(16px, 3vw, 40px)", position: "relative", zIndex: 1 },

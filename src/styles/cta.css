@@ -1,0 +1,151 @@
+/* =========================================================
+   ABHIJIT ART - HOME SHEET 05
+   Dark CTA band. Loaded by CtaSection.tsx.
+   The only dark block on the page - it earns attention by
+   being the sole break in the cream.
+   ========================================================= */
+
+.ap-cta-band {
+  padding: clamp(20px, 3vw, 40px) 0 clamp(40px, 6vw, 80px);
+}
+
+.ap-cta-inner {
+  position: relative;
+  margin-inline: clamp(12px, 1.6vw, 28px);
+  padding: clamp(36px, 5vw, 76px) clamp(24px, 4.5vw, 76px);
+  border-radius: var(--ap-r-lg);
+  background: var(--ap-dark);
+  overflow: hidden;
+}
+
+/* A slow gold wash in the top-right so the block is not a flat
+   rectangle. Kept very low contrast on purpose. */
+.ap-cta-inner::after {
+  content: '';
+  position: absolute;
+  top: -30%;
+  right: -10%;
+  width: 55%;
+  height: 160%;
+  background: radial-gradient(ellipse at center, rgba(184, 135, 58, 0.22) 0%, rgba(184, 135, 58, 0) 70%);
+  pointer-events: none;
+}
+
+.ap-cta-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: clamp(24px, 4vw, 56px);
+}
+
+.ap-cta-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ap-cta-eyebrow i {
+  display: block;
+  width: 28px;
+  height: 2px;
+  background: var(--ap-gold-lt);
+}
+.ap-cta-eyebrow span {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ap-gold-lt);
+}
+
+.ap-cta-title {
+  font-family: var(--ap-display);
+  font-weight: 700;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  margin: 0;
+  color: #fff;
+  max-width: 18ch;
+}
+.ap-cta-title em {
+  font-style: italic;
+  color: var(--ap-gold-lt);
+}
+
+.ap-cta-copy {
+  margin: 16px 0 0;
+  max-width: 46ch;
+  font-size: clamp(0.98rem, 1.1vw, 1.08rem);
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ap-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Ghost flips to light here, same as in the hero. */
+.ap-cta-band .ap-cta--ghost {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+  background: transparent;
+}
+.ap-cta-band .ap-cta--ghost:hover {
+  background: #fff;
+  color: var(--ap-ink);
+  border-color: #fff;
+}
+
+/* ---------- stats ---------- */
+
+.ap-stats {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: clamp(36px, 5vw, 64px);
+  padding-top: clamp(24px, 3vw, 36px);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.ap-stat {
+  padding-right: 24px;
+}
+
+.ap-stat b {
+  display: block;
+  font-family: var(--ap-display);
+  font-weight: 700;
+  font-size: clamp(2.2rem, 4vw, 3rem);
+  line-height: 1;
+  color: var(--ap-gold-lt);
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-stat span {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 900px) {
+  .ap-cta-top { flex-direction: column; align-items: flex-start; }
+  .ap-cta-title { max-width: 100%; }
+  .ap-stats { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .ap-stat { padding-right: 0; }
+}
+
+@media (max-width: 520px) {
+  .ap-cta-actions { width: 100%; }
+  .ap-cta-actions .ap-cta { flex: 1 1 100%; justify-content: center; }
+}

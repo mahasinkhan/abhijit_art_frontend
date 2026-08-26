@@ -1,0 +1,273 @@
+@import url('https://api.fontshare.com/v2/css?f%5B%5D=zodiak@700,701,800,801&f%5B%5D=general-sans@400,500,600,700&display=swap');
+
+/* =========================================================
+   ABHIJIT ART - HOME REDESIGN (v4)
+   System: warm cream + gold, retro display serif, soft radii.
+   Hero: full-bleed photograph, text left, light type over a
+   left-weighted scrim.
+   Namespaced .ap- and scoped to .ap-home so the global
+   .card / .btn / .section rules stay untouched.
+   ========================================================= */
+
+.ap-home {
+  --ap-cream: #faf7f0;
+  --ap-cream-warm: #f5eee1;
+  --ap-card: #ffffff;
+  --ap-ink: #1c1815;
+  --ap-ink-2: #3d3630;
+  --ap-mute: #6f6862;
+  --ap-gold: #b8873a;
+  --ap-gold-lt: #e2bd7c;
+  --ap-gold-dk: #9a6f2c;
+  --ap-line: #e8e0d2;
+  --ap-dark: #171412;
+
+  --ap-r-lg: 24px;
+  --ap-r-md: 14px;
+  --ap-r-sm: 8px;
+
+  --ap-display: 'Zodiak', Georgia, serif;
+  --ap-body: 'General Sans', system-ui, -apple-system, sans-serif;
+
+  --ap-gutter: clamp(20px, 4vw, 56px);
+  --ap-max: 1280px;
+
+  background: var(--ap-cream);
+  color: var(--ap-ink);
+  font-family: var(--ap-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.ap-home *,
+.ap-home *::before,
+.ap-home *::after { box-sizing: border-box; }
+
+/* ---------- layout ---------- */
+
+.ap-shell {
+  max-width: var(--ap-max);
+  margin: 0 auto;
+  padding-inline: var(--ap-gutter);
+}
+
+.ap-sec { padding-block: clamp(56px, 8vw, 112px); }
+.ap-sec--warm { background: var(--ap-cream-warm); }
+
+.ap-sec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: clamp(24px, 3vw, 40px);
+}
+
+.ap-h2 {
+  font-family: var(--ap-display);
+  font-weight: 700;
+  font-size: clamp(2.1rem, 4.2vw, 3.4rem);
+  line-height: 1.04;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.ap-sub {
+  margin: 6px 0 0;
+  font-size: clamp(1rem, 1.2vw, 1.15rem);
+  color: var(--ap-ink-2);
+}
+
+.ap-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ap-gold);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ap-more:hover { color: var(--ap-gold-dk); }
+
+.ap-rule { height: 1px; background: var(--ap-line); border: 0; }
+
+/* ---------- buttons ---------- */
+
+.ap-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 30px;
+  border-radius: var(--ap-r-sm);
+  border: 1px solid transparent;
+  background: var(--ap-gold);
+  color: #1f180d;
+  font-family: var(--ap-body);
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.22s ease, color 0.22s ease, border-color 0.22s ease;
+}
+.ap-cta:hover { background: var(--ap-gold-dk); color: #fff; }
+
+.ap-cta--ghost {
+  background: transparent;
+  color: var(--ap-ink);
+  border-color: rgba(28, 24, 21, 0.16);
+}
+.ap-cta--ghost:hover { background: var(--ap-card); color: var(--ap-gold-dk); border-color: var(--ap-gold); }
+
+.ap-home a:focus-visible,
+.ap-home button:focus-visible {
+  outline: 2px solid var(--ap-gold-lt);
+  outline-offset: 3px;
+}
+
+/* ---------- cards ---------- */
+
+.ap-card {
+  background: var(--ap-card);
+  border: 1px solid var(--ap-line);
+  border-radius: var(--ap-r-md);
+  padding: 22px;
+  transition: border-color 0.22s ease;
+}
+.ap-card:hover { border-color: var(--ap-gold); }
+
+/* ---------- hero ---------- */
+
+/* Sits nearly edge to edge rather than inside .ap-shell, so the
+   photograph carries the full width of the viewport. */
+.ap-hero { padding: clamp(10px, 1.4vw, 18px) 0 0; }
+
+.ap-hero-frame {
+  position: relative;
+  height: clamp(540px, 84vh, 820px);
+  margin-inline: clamp(12px, 1.6vw, 28px);
+  border-radius: var(--ap-r-lg);
+  overflow: hidden;
+  background: var(--ap-dark);
+}
+
+.ap-hero-frame > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center right;
+}
+
+/* Weighted to the left, where the type sits. The right side of the
+   photograph stays close to untouched. */
+.ap-hero-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(16, 13, 10, 0.9) 0%, rgba(16, 13, 10, 0.72) 32%, rgba(16, 13, 10, 0.34) 58%, rgba(16, 13, 10, 0.06) 82%, rgba(16, 13, 10, 0) 100%),
+    linear-gradient(0deg, rgba(16, 13, 10, 0.4) 0%, rgba(16, 13, 10, 0) 45%);
+  pointer-events: none;
+}
+
+.ap-hero-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+  padding-inline: clamp(26px, 6vw, 104px);
+  padding-block: clamp(28px, 5vw, 64px);
+}
+
+.ap-hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: clamp(18px, 2.4vw, 28px);
+}
+.ap-hero-eyebrow i {
+  display: block;
+  width: 34px;
+  height: 2px;
+  background: var(--ap-gold-lt);
+}
+.ap-hero-eyebrow span {
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ap-gold-lt);
+}
+
+.ap-hero-title {
+  font-family: var(--ap-display);
+  font-weight: 800;
+  font-size: clamp(2.6rem, 5.6vw, 5rem);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: #ffffff;
+  max-width: 16ch;
+}
+.ap-hero-title span { display: block; }
+.ap-hero-title em {
+  font-style: italic;
+  font-weight: 700;
+  color: var(--ap-gold-lt);
+}
+
+.ap-hero-copy {
+  margin: clamp(18px, 2.4vw, 26px) 0 0;
+  max-width: 44ch;
+  font-size: clamp(1rem, 1.15vw, 1.12rem);
+  line-height: 1.68;
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.ap-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-start;
+  margin-top: clamp(26px, 3.2vw, 40px);
+}
+
+/* Ghost button sits on the photograph here, so it flips to light. */
+.ap-hero .ap-cta--ghost {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+}
+.ap-hero .ap-cta--ghost:hover {
+  background: #ffffff;
+  color: var(--ap-ink);
+  border-color: #ffffff;
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 900px) {
+  .ap-sec-head { flex-direction: column; align-items: flex-start; }
+  .ap-hero-frame { height: clamp(500px, 82vh, 640px); }
+  .ap-hero-frame > img { object-position: center; }
+  .ap-hero-scrim {
+    background:
+      linear-gradient(90deg, rgba(16, 13, 10, 0.88) 0%, rgba(16, 13, 10, 0.62) 55%, rgba(16, 13, 10, 0.3) 100%),
+      linear-gradient(0deg, rgba(16, 13, 10, 0.45) 0%, rgba(16, 13, 10, 0) 50%);
+  }
+  .ap-hero-title { max-width: 100%; }
+}
+
+@media (max-width: 520px) {
+  .ap-hero-actions .ap-cta { flex: 1 1 100%; justify-content: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ap-home *,
+  .ap-home *::before,
+  .ap-home *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

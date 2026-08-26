@@ -1,0 +1,91 @@
+/* =========================================================
+   ABHIJIT ART - HOME SHEET 06
+   Starting prices. Loaded by PricesSection.tsx.
+   Rows, not cards - same hairline language as the trust row,
+   so the page keeps one structural vocabulary.
+   ========================================================= */
+
+.ap-price-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(32px, 5vw, 72px);
+  border-top: 1px solid var(--ap-line);
+}
+
+.ap-price-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  padding: clamp(18px, 2.2vw, 26px) 0;
+  border-bottom: 1px solid var(--ap-line);
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: var(--ap-body);
+  transition: padding-left 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ap-price-row:hover,
+.ap-price-row:focus-visible { padding-left: 10px; }
+
+.ap-price-name {
+  font-family: var(--ap-display);
+  font-weight: 700;
+  font-size: clamp(1.05rem, 1.5vw, 1.3rem);
+  color: var(--ap-ink);
+  line-height: 1.2;
+}
+
+/* Dotted leader between name and price, the way a printed price
+   list sets it. Collapses to nothing when space is tight. */
+.ap-price-lead {
+  flex: 1;
+  height: 1px;
+  margin-bottom: 5px;
+  background-image: linear-gradient(to right, var(--ap-line) 0 3px, transparent 3px 7px);
+  background-size: 7px 1px;
+  background-repeat: repeat-x;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.ap-price-row:hover .ap-price-lead { opacity: 1; }
+
+.ap-price-val {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.ap-price-val i {
+  font-style: normal;
+  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ap-mute);
+}
+.ap-price-val b {
+  font-family: var(--ap-display);
+  font-weight: 700;
+  font-size: clamp(1.05rem, 1.5vw, 1.3rem);
+  color: var(--ap-gold-dk);
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-price-note {
+  margin: clamp(22px, 3vw, 34px) 0 0;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--ap-mute);
+  max-width: 62ch;
+}
+
+@media (max-width: 760px) {
+  .ap-price-grid { grid-template-columns: minmax(0, 1fr); }
+  .ap-price-lead { display: none; }
+}

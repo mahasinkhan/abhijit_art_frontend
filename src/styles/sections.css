@@ -1,0 +1,163 @@
+/* =========================================================
+   ABHIJIT ART - HOME SHEET 02
+   Services rail + trust row. Loaded by ServicesSection.tsx.
+   Tokens come from home.css; this file only adds.
+   ========================================================= */
+
+/* ---------- section head ---------- */
+
+.ap-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ap-eyebrow i {
+  display: block;
+  width: 28px;
+  height: 2px;
+  background: var(--ap-gold);
+}
+.ap-eyebrow span {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ap-gold);
+}
+
+/* ---------- services rail ---------- */
+
+/* Bleeds past .ap-shell on the right so the last card is clipped
+   by the viewport edge - that clipping is the affordance telling
+   people the row scrolls. */
+.ap-rail-wrap {
+  position: relative;
+  margin-right: calc(var(--ap-gutter) * -1);
+}
+
+.ap-rail {
+  display: flex;
+  gap: clamp(12px, 1.4vw, 18px);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding: 4px calc(var(--ap-gutter)) 8px 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.ap-rail::-webkit-scrollbar { display: none; }
+
+.ap-rail-item {
+  position: relative;
+  flex: 0 0 auto;
+  width: clamp(190px, 21vw, 256px);
+  aspect-ratio: 3 / 4;
+  border-radius: var(--ap-r-md);
+  overflow: hidden;
+  scroll-snap-align: start;
+  background: var(--ap-cream-warm);
+  text-decoration: none;
+  display: block;
+}
+
+.ap-rail-item img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ap-rail-item:hover img,
+.ap-rail-item:focus-visible img { transform: scale(1.07); }
+
+.ap-rail-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(16, 13, 10, 0.82) 0%, rgba(16, 13, 10, 0.28) 38%, rgba(16, 13, 10, 0) 68%);
+  transition: opacity 0.4s ease;
+}
+.ap-rail-item:hover .ap-rail-veil { opacity: 0.88; }
+
+.ap-rail-label {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  color: #fff;
+}
+.ap-rail-label b {
+  display: block;
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+}
+.ap-rail-label i {
+  display: block;
+  width: 0;
+  height: 2px;
+  margin-top: 8px;
+  background: var(--ap-gold-lt);
+  transition: width 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ap-rail-item:hover .ap-rail-label i,
+.ap-rail-item:focus-visible .ap-rail-label i { width: 34px; }
+
+/* ---------- trust row ---------- */
+
+/* Hairlines instead of boxes. Four boxed cards is the shape every
+   print shop site uses; the rules do the same job more quietly. */
+.ap-trust {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--ap-line);
+  margin-top: clamp(36px, 5vw, 64px);
+}
+
+.ap-trust-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: clamp(20px, 2.4vw, 30px) clamp(16px, 2vw, 28px);
+  border-right: 1px solid var(--ap-line);
+}
+.ap-trust-item:last-child { border-right: 0; }
+.ap-trust-item:first-child { padding-left: 0; }
+
+.ap-trust-item svg {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  color: var(--ap-gold);
+}
+
+.ap-trust-item b {
+  display: block;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--ap-ink);
+}
+.ap-trust-item span {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--ap-mute);
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 900px) {
+  .ap-trust { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ap-trust-item:nth-child(2) { border-right: 0; }
+  .ap-trust-item:nth-child(3) { border-top: 1px solid var(--ap-line); padding-left: 0; }
+  .ap-trust-item:nth-child(4) { border-top: 1px solid var(--ap-line); }
+}
+
+@media (max-width: 520px) {
+  .ap-trust { grid-template-columns: minmax(0, 1fr); }
+  .ap-trust-item { border-right: 0; padding-left: 0; }
+  .ap-trust-item + .ap-trust-item { border-top: 1px solid var(--ap-line); }
+  .ap-rail-item { width: 62vw; }
+}

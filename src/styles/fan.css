@@ -1,0 +1,80 @@
+/* =========================================================
+   ABHIJIT ART - HOME SHEET 03
+   Fanned work stack. Loaded by WorkFanSection.tsx.
+   Tokens come from home.css.
+   ========================================================= */
+
+.ap-fan-stage {
+  position: relative;
+  height: clamp(420px, 50vw, 620px);
+  margin-top: clamp(20px, 3vw, 40px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1400px;
+}
+
+.ap-fan-card {
+  position: absolute;
+  width: clamp(210px, 25vw, 330px);
+  aspect-ratio: 3 / 4;
+  border-radius: var(--ap-r-md);
+  overflow: hidden;
+  background: var(--ap-card);
+  border: 6px solid var(--ap-card);
+  cursor: pointer;
+  transform-origin: 50% 118%;
+  will-change: transform;
+  padding: 0;
+}
+
+.ap-fan-card img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+/* Non-active cards sit back behind a wash so the front card reads
+   as the subject rather than one of five competing images. */
+.ap-fan-veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(250, 247, 240, 0.45);
+  transition: opacity 0.5s ease;
+}
+
+.ap-fan-chip {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 10px 20px;
+  border-radius: var(--ap-r-sm);
+  background: var(--ap-gold);
+  color: #1f180d;
+  font-size: 0.88rem;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(16, 13, 10, 0.24);
+}
+
+.ap-fan-hint {
+  margin-top: clamp(14px, 2vw, 22px);
+  text-align: center;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ap-mute);
+}
+
+.ap-fan-card:focus-visible {
+  outline: 2px solid var(--ap-gold-dk);
+  outline-offset: 4px;
+}
+
+@media (max-width: 640px) {
+  .ap-fan-stage { height: clamp(380px, 92vw, 460px); }
+  .ap-fan-card { width: 60vw; border-width: 5px; }
+}
