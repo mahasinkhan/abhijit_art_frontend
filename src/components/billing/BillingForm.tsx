@@ -54,29 +54,30 @@ interface Props {
   dbCustomers: CustomerLite[];
   bizSaved:    boolean;
 
-  onBizChange:       (biz: Party) => void;
-  onClientChange:    (client: Party) => void;
-  onInvNoChange:     (v: string) => void;
-  onDateChange:      (v: string) => void;
-  onItemsChange:     (items: LineItem[]) => void;
-  onDiscTypeChange:  (v: DiscType) => void;
-  onDiscValChange:   (v: string) => void;
-  onTaxPctChange:    (v: string) => void;
-  onNotesChange:     (v: string) => void;
-  onWarrantyChange:  (v: string) => void;
-  onAdvanceChange:   (v: string) => void;
-  onPayMethodChange: (v: PayMethod) => void;
-  onCatFilterChange: (v: string) => void;
-  onSaveBiz:         () => void;
+  onBizChange:        (biz: Party) => void;
+  onClientChange:     (client: Party) => void;
+  onInvNoChange:      (v: string) => void;
+  onDateChange:       (v: string) => void;
+  onItemsChange:      (items: LineItem[]) => void;
+  onDiscTypeChange:   (v: DiscType) => void;
+  onDiscValChange:    (v: string) => void;
+  onTaxPctChange:     (v: string) => void;
+  onNotesChange:      (v: string) => void;
+  onWarrantyChange:   (v: string) => void;
+  onAdvanceChange:    (v: string) => void;
+  onPayMethodChange:  (v: PayMethod) => void;
+  onCatFilterChange?: (v: string) => void;
+  onSaveBiz:          () => void;
 }
 
-const UNITS = ["piece","sqft","metre","roll","sheet","litre","kg","box","set"];
+const CUSTOM = "__custom__";
 
 export default function BillingForm(p: Props) {
-  const [nameSugOpen,  setNameSugOpen]  = useState(false);
-  const [activeSug,    setActiveSug]    = useState(-1);
-  const [pickerOpen,   setPickerOpen]   = useState<string|null>(null);
-  const [pickerQuery,  setPickerQuery]  = useState("");
+  const [nameSugOpen, setNameSugOpen] = useState(false);
+  const [activeSug,   setActiveSug]   = useState(-1);
+
+  // Per-row chosen category (rowId → category name, or CUSTOM)
+  const [rowCat, setRowCat] = useState<Record<string,string>>({});
 
   // Customer suggestions
   const nameQuery = p.client.name.trim().toLowerCase();
@@ -98,35 +99,57 @@ export default function BillingForm(p: Props) {
     setNameSugOpen(false); setActiveSug(-1);
   };
 
-  // Stock picker
-  const filteredStock = useMemo(() => {
-    const byCat = p.catFilter ? p.stockItems.filter(s=>s.category===p.catFilter) : p.stockItems;
-    const q = pickerQuery.trim().toLowerCase();
-    if (!q) return byCat;
-    return byCat.filter(s => s.name.toLowerCase().includes(q)||s.sku.toLowerCase().includes(q));
-  },[p.stockItems, p.catFilter, pickerQuery]);
+  // ── Item helpers ────────────────────────────────────────────────────────────
+  const stockById = useMemo(() => {
+    const m = new Map<string, StockItem>();
+    for (const s of p.stockItems) m.set(s.id, s);
+    return m;
+  }, [p.stockItems]);
 
-  const linkStock = (rowId: string, stock: StockItem) => {
-    const price = dec(stock.sellPrice)>0 ? dec(stock.sellPrice) : dec(stock.costPrice);
-    p.onItemsChange(p.items.map(it => it.id!==rowId ? it : {
-      ...it, desc:stock.name, rate:String(price||""), itemId:stock.id, unit:stock.unit,
-    }));
-    setPickerOpen(null); setPickerQuery("");
+  // Category for a row: explicit choice, else derived from the linked stock item
+  const catOf = (it: LineItem) => {
+    if (rowCat[it.id] !== undefined) return rowCat[it.id];
+    if (it.itemId) return stockById.get(it.itemId)?.category || "";
+    return "";
   };
 
-  const setItem = (id:string, k:keyof LineItem, v:string) =>
-    p.onItemsChange(p.items.map(it => it.id===id ? {...it,[k]:v} : it));
+  const itemsInCat = (cat: string) =>
+    !cat || cat === CUSTOM ? [] : p.stockItems.filter(s => (s.category || "") === cat);
+
+  const setItem = (id:string, patch: Partial<LineItem>) =>
+    p.onItemsChange(p.items.map(it => it.id===id ? {...it, ...patch} : it));
+
+  // Category changed → clear the linked item on that row
+  const pickCat = (rowId: string, cat: string) => {
+    setRowCat(m => ({ ...m, [rowId]: cat }));
+    setItem(rowId, { itemId: undefined, unit: undefined, desc: "", rate: "" });
+  };
+
+  // Item chosen → fill description, rate (sell price) and unit
+  const pickStock = (rowId: string, stockId: string) => {
+    if (!stockId) { setItem(rowId, { itemId: undefined, unit: undefined, desc: "", rate: "" }); return; }
+    const s = stockById.get(stockId);
+    if (!s) return;
+    const price = dec(s.sellPrice) > 0 ? dec(s.sellPrice) : dec(s.costPrice);
+    setItem(rowId, { itemId: s.id, desc: s.name, rate: String(price || ""), unit: s.unit });
+  };
 
   const addItem = () => p.onItemsChange([...p.items, {id:uid(),desc:"",qty:"1",rate:""}]);
-  const removeItem = (id:string) => p.items.length>1 && p.onItemsChange(p.items.filter(it=>it.id!==id));
+  const removeItem = (id:string) => {
+    if (p.items.length === 1) return;
+    p.onItemsChange(p.items.filter(it=>it.id!==id));
+    setRowCat(m => { const n = {...m}; delete n[id]; return n; });
+  };
 
   const inp = {
     width:"100%", boxSizing:"border-box" as const, padding:"10px 12px",
     border:"1px solid #e6dcd2", borderRadius:0, fontSize:14,
     fontFamily:SANS, background:CARD, color:INK, colorScheme:"light" as const,
   };
+  const inpSm  = {...inp, padding:"9px 8px", fontSize:13};
   const inpNum = {...inp, textAlign:"right" as const, fontVariantNumeric:"tabular-nums" as const};
   const card   = { background:GLOW, border:`1px solid ${LINE}`, boxShadow:GLOW_SHADOW, padding:"20px 22px" };
+  const GRID   = "minmax(0,0.85fr) minmax(0,1.35fr) 64px 92px 88px 28px";
 
   return (
     <div style={{ minWidth:0 }}>
@@ -199,95 +222,75 @@ export default function BillingForm(p: Props) {
 
       {/* ── Items ─────────────────────────────────────────────────────────── */}
       <section style={{ ...card, marginTop:16 }}>
-        {/* Header with category filter */}
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10, marginBottom:14 }}>
+        <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", flexWrap:"wrap", gap:10, marginBottom:14 }}>
           <h2 style={{ fontSize:16, fontWeight:800, margin:0, color:INK }}>Items</h2>
-          {p.stockCats.length>0 && (
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:12, fontWeight:700, color:MUTE }}>Filter by category</span>
-              <select className="bl-in" style={{...inp,width:"auto",minWidth:130,padding:"7px 10px",fontSize:13}}
-                value={p.catFilter} onChange={e=>{p.onCatFilterChange(e.target.value);setPickerOpen(null);}}>
-                <option value="">All categories</option>
-                {p.stockCats.map(c=><option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          )}
+          <span style={{ fontSize:11.5, color:MUTE }}>Pick a category, then the item — or choose Custom</span>
         </div>
 
         {/* Column headers */}
-        <div style={{ display:"grid", gridTemplateColumns:"64px minmax(0,1fr) 72px 104px 94px 30px", gap:8, alignItems:"center", fontSize:10.5, fontWeight:700, color:MUTE, letterSpacing:.7, textTransform:"uppercase" as const, padding:"0 2px 8px" }}>
-          <span>Stock</span><span>Description</span><span style={{textAlign:"right"}}>Qty</span><span style={{textAlign:"right"}}>Rate (₹)</span><span style={{textAlign:"right"}}>Amount</span><span/>
+        <div style={{ display:"grid", gridTemplateColumns:GRID, gap:8, alignItems:"center", fontSize:10.5, fontWeight:700, color:MUTE, letterSpacing:.7, textTransform:"uppercase" as const, padding:"0 2px 8px" }}>
+          <span>Category</span><span>Item</span><span style={{textAlign:"right"}}>Qty</span><span style={{textAlign:"right"}}>Rate (₹)</span><span style={{textAlign:"right"}}>Amount</span><span/>
         </div>
 
-        {p.items.map(it => (
-          <div key={it.id} style={{ position:"relative", marginBottom:8 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"64px minmax(0,1fr) 72px 104px 94px 30px", gap:8, alignItems:"center" }}>
-              {/* Stock picker button */}
-              <button type="button" className="bl-stockpick"
-                style={{ width:"100%", height:40, border:`1px solid ${it.itemId?"#c8a84b":"#e6dcd2"}`, background:it.itemId?"#fffdf0":CARD, borderRadius:0, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4, fontSize:11, fontWeight:700, color:it.itemId?"#8a6a1c":MUTE, fontFamily:SANS }}
-                onClick={()=>{setPickerOpen(pickerOpen===it.id?null:it.id);setPickerQuery("");}}>
-                {it.itemId
-                  ? <><span style={{fontSize:9}}>✦</span> {it.unit||"linked"}</>
-                  : <>+ Stock</>}
-              </button>
+        {p.items.map(it => {
+          const cat      = catOf(it);
+          const isCustom = cat === CUSTOM;
+          const opts     = itemsInCat(cat);
+          const linked   = it.itemId ? stockById.get(it.itemId) : undefined;
+          const avail    = linked ? dec(linked.quantity) : 0;
+          const after    = avail - num(it.qty);
 
-              <input className="bl-in" style={inp} placeholder="Service / product" value={it.desc}
-                onChange={e=>setItem(it.id,"desc",e.target.value)}
-                onFocus={()=>{if(pickerOpen===it.id)setPickerOpen(null);}}/>
-              <input className="bl-in" style={{...inpNum,width:"100%"}} type="number" min="0" value={it.qty}
-                onChange={e=>setItem(it.id,"qty",e.target.value)}/>
-              <input className="bl-in" style={{...inpNum,width:"100%"}} type="number" min="0" placeholder="0" value={it.rate}
-                onChange={e=>setItem(it.id,"rate",e.target.value)}/>
-              <span style={{ textAlign:"right", fontSize:13, fontWeight:800, color:INK, fontVariantNumeric:"tabular-nums" }}>
-                {rupee(num(it.qty)*num(it.rate))}
-              </span>
-              <button className="bl-del" style={{ width:30,height:30,display:"grid",placeItems:"center",borderRadius:0,border:"none",background:"transparent",color:FAINT,cursor:"pointer" }}
-                onClick={()=>removeItem(it.id)} disabled={p.items.length===1} aria-label="Remove item">
-                <Icon name="trash" size={15}/>
-              </button>
-            </div>
+          return (
+            <div key={it.id} style={{ marginBottom:10 }}>
+              <div style={{ display:"grid", gridTemplateColumns:GRID, gap:8, alignItems:"center" }}>
 
-            {/* Stock picker dropdown */}
-            {pickerOpen===it.id && (
-              <div style={{ position:"absolute", top:"100%", left:0, right:0, zIndex:80, marginTop:2, background:CARD, border:`1px solid ${LINE}`, boxShadow:"0 16px 38px -8px rgba(24,22,28,.28)", minWidth:320 }}
-                onClick={e=>e.stopPropagation()}>
-                <div style={{ padding:"6px 8px", borderBottom:`1px solid ${LINE}` }}>
-                  <input className="bl-in" style={{...inp,padding:"7px 10px",fontSize:13}} placeholder="Search by name or SKU…"
-                    value={pickerQuery} autoFocus onChange={e=>setPickerQuery(e.target.value)}/>
-                </div>
-                <div style={{ maxHeight:220, overflowY:"auto" }}>
-                  {filteredStock.length===0
-                    ? <div style={{ padding:"12px",fontSize:12.5,color:MUTE }}>{p.stockItems.length===0?"No stock items — add items in Inventory first.":"No matches."}</div>
-                    : filteredStock.map(s => (
-                      <button key={s.id} type="button" className="bl-pickrow"
-                        style={{ display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"9px 12px",border:"none",background:"transparent",cursor:"pointer",fontFamily:SANS,borderBottom:`1px solid #f4f1ec` }}
-                        onMouseDown={e=>{e.preventDefault();linkStock(it.id,s);}}>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontWeight:700,fontSize:13,color:INK,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{s.name}</div>
-                          <div style={{ fontSize:11,color:MUTE,marginTop:1 }}>
-                            {s.sku} · {s.category||"—"} · <span style={{color:dec(s.quantity)>0?GREEN:TERRA}}>{dec(s.quantity)} {s.unit}</span>
-                          </div>
-                        </div>
-                        <div style={{ textAlign:"right", flexShrink:0 }}>
-                          {dec(s.sellPrice)>0
-                            ? <><div style={{fontWeight:800,fontSize:13,color:TERRA}}>{rupee(dec(s.sellPrice))}</div><div style={{fontSize:10,color:MUTE}}>sell / {s.unit}</div></>
-                            : <><div style={{fontWeight:800,fontSize:13,color:MUTE}}>{rupee(dec(s.costPrice))}</div><div style={{fontSize:10,color:FAINT}}>cost / {s.unit} · no sell price</div></>}
-                        </div>
-                      </button>
+                {/* 1 — Category */}
+                <select className="bl-in" style={inpSm} value={cat} onChange={e=>pickCat(it.id, e.target.value)}>
+                  <option value="">Category…</option>
+                  {p.stockCats.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value={CUSTOM}>✏️ Custom</option>
+                </select>
+
+                {/* 2 — Item (dropdown) or free text (custom) */}
+                {isCustom ? (
+                  <input className="bl-in" style={inp} placeholder="Service / product" value={it.desc}
+                    onChange={e=>setItem(it.id,{desc:e.target.value})}/>
+                ) : (
+                  <select className="bl-in" style={{...inpSm, color: it.itemId?INK:MUTE}}
+                    value={it.itemId||""} disabled={!cat}
+                    onChange={e=>pickStock(it.id, e.target.value)}>
+                    <option value="">{cat ? (opts.length ? "Select item…" : "No items in this category") : "Pick a category first"}</option>
+                    {opts.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} — {dec(s.quantity)} {s.unit}</option>
                     ))}
-                </div>
-                {it.itemId && (
-                  <div style={{ padding:"6px 10px", borderTop:`1px solid ${LINE}`, display:"flex", justifyContent:"flex-end" }}>
-                    <button type="button" style={{ fontSize:11.5,fontWeight:700,color:TERRA,background:"transparent",border:"none",cursor:"pointer",fontFamily:SANS }}
-                      onMouseDown={e=>{e.preventDefault();p.onItemsChange(p.items.map(r=>r.id===it.id?{...r,itemId:undefined,unit:undefined}:r));setPickerOpen(null);}}>
-                      Remove stock link
-                    </button>
-                  </div>
+                  </select>
                 )}
+
+                <input className="bl-in" style={{...inpNum,width:"100%"}} type="number" min="0" value={it.qty}
+                  onChange={e=>setItem(it.id,{qty:e.target.value})}/>
+                <input className="bl-in" style={{...inpNum,width:"100%"}} type="number" min="0" placeholder="0" value={it.rate}
+                  onChange={e=>setItem(it.id,{rate:e.target.value})}/>
+                <span style={{ textAlign:"right", fontSize:13, fontWeight:800, color:INK, fontVariantNumeric:"tabular-nums" }}>
+                  {rupee(num(it.qty)*num(it.rate))}
+                </span>
+                <button className="bl-del" style={{ width:28,height:28,display:"grid",placeItems:"center",borderRadius:0,border:"none",background:"transparent",color:FAINT,cursor:"pointer" }}
+                  onClick={()=>removeItem(it.id)} disabled={p.items.length===1} aria-label="Remove item">
+                  <Icon name="trash" size={15}/>
+                </button>
               </div>
-            )}
-          </div>
-        ))}
+
+              {/* Stock hint for a linked item */}
+              {linked && (
+                <div style={{ gridColumn:"1 / -1", fontSize:11, marginTop:4, paddingLeft:2,
+                  color: after < 0 ? TERRA : MUTE }}>
+                  {after < 0
+                    ? `⚠️ Only ${avail} ${linked.unit} in stock — this will go ${Math.abs(after)} below zero`
+                    : `${avail} ${linked.unit} available${dec(linked.sellPrice)>0?` · sell ${rupee(dec(linked.sellPrice))}/${linked.unit}`:""}`}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         <button className="bl-add" style={{ display:"inline-flex",alignItems:"center",gap:7,marginTop:4,padding:"9px 15px",borderRadius:0,border:"1px dashed #ddd0c4",background:"transparent",color:"#545a67",fontFamily:SANS,fontWeight:700,fontSize:13,cursor:"pointer" }}
           onClick={addItem}><Icon name="plus" size={15}/> Add item</button>
@@ -346,12 +349,11 @@ export default function BillingForm(p: Props) {
         .bl-in:focus{border-color:${TERRA}!important;box-shadow:0 0 0 3px ${TERRA}22!important;outline:none}
         .bl-in[type="number"]{-moz-appearance:textfield;appearance:textfield}
         .bl-in[type="number"]::-webkit-outer-spin-button,.bl-in[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-        .bl-stockpick:hover{border-color:#c8a84b!important;background:#fffdf0!important;color:#8a6a1c!important}
+        .bl-in:disabled{background:#faf7f3;color:${MUTE};cursor:not-allowed}
         .bl-add:hover{border-color:${TERRA}66;color:${TERRA};background:#fffcf9}
         .bl-del:hover:not(:disabled){color:${TERRA};background:#fdecea}
         .bl-del:disabled{opacity:.35;cursor:not-allowed}
         .bl-sug:hover{background:#fffcf9!important}
-        .bl-pickrow:hover{background:#fffcf9!important}
         .bl-seg{transition:all .2s}
         .bl-link:hover{color:${TERRA}!important}
       `}</style>

@@ -8,7 +8,7 @@ import {
   loadAutosave, nextInvoiceNo, AUTOSAVE_KEY, computeTotals,
   btnSt, TERRA, TERRA_DK, GOLD, WA, WA_DK, LINE, CARD, MUTE, SANS, INK, GREEN,
 } from "./types";
-import { buildSideBySideA4HTML, amtWordsPreview, type InvoicePrintData } from "../invoicePrint";
+import { buildFullA4HTML, amtWordsPreview, type InvoicePrintData } from "../invoicePrint";
 import BillingForm    from "./BillingForm";
 import BillingPreview from "./BillingPreview";
 import EmailModal     from "./modals/EmailModal";
@@ -196,7 +196,7 @@ export default function Billing() {
 
   const saveBiz = () => { saveBizToStorage(biz); setBizSaved(true); setTimeout(()=>setBizSaved(false),2000); };
 
-  // ── Download PDF ──────────────────────────────────────────────────────────
+  // ── Download PDF — full A4 portrait, one bill per sheet ───────────────────
   const download = () => {
     bumpSeq(invNo); maybeSave();
     if (!hasLines) return;
@@ -213,7 +213,7 @@ export default function Billing() {
     };
     const w = window.open("","_blank","width=1280,height=820");
     if (!w) return;
-    const html = buildSideBySideA4HTML(payload).replace(/src="\/images\/Signature\.png"/g, `src="${sigBase64||'/images/Signature.png'}"`);
+    const html = buildFullA4HTML(payload).replace(/src="\/images\/Signature\.png"/g, `src="${sigBase64||'/images/Signature.png'}"`);
     w.document.write(html); w.document.close();
   };
 
@@ -291,7 +291,7 @@ export default function Billing() {
       )}
 
       {/* ── Two-column layout ────────────────────────────────────────────── */}
-      <div className="bl-layout" style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)", gap:16, alignItems:"start" }}>
+      <div className="bl-layout" style={{ display:"grid", gridTemplateColumns:"minmax(0,1.35fr) minmax(0,1fr)", gap:18, alignItems:"start" }}>
         <BillingForm
           biz={biz} client={client} invNo={invNo} date={date}
           items={items} discType={discType} discVal={discVal} taxPct={taxPct}
@@ -311,6 +311,7 @@ export default function Billing() {
           biz={biz} client={client} invNo={invNo} date={date}
           items={items} totals={totals} advancePaid={advancePaid} balanceDue={balanceDue}
           taxPct={taxPct} qrBase64={qrBase64} logoBase64={logoBase64} sigBase64={sigBase64}
+          notes={notes} warranty={warranty}
         />
       </div>
 
