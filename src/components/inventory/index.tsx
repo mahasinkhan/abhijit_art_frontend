@@ -28,6 +28,7 @@ export default function Inventory() {
   const [lowOnly,    setLowOnly]    = useState(false);
   const [activeView, setActiveView] = useState<"overview"|"items"|"suppliers">("overview");
   const [ovFilter,   setOvFilter]   = useState<OverviewFilter>({ gran:"month", from:"", to:"" });
+  const [stmtActions, setStmtActions] = useState<{ onPurchase:()=>void; onPayment:()=>void; canPay:boolean } | null>(null);
 
   // ── Drawer state ──────────────────────────────────────────────────────────
   const [itemDrawer, setItemDrawer] = useState<InventoryItem | "new" | null>(null);
@@ -128,7 +129,15 @@ export default function Inventory() {
           )}
           {activeView === "suppliers" && (
             <div style={st.viewActions}>
-              <button className="inv-cta" style={st.hdrCta} onClick={() => setSuppDrawer("new")}>+ Add supplier</button>
+              {stmtActions ? (
+                <>
+                  <button className="inv-ghost" style={st.hdrGhost} onClick={stmtActions.onPurchase}>+ Record purchase</button>
+                  <button className="inv-cta"   style={{ ...st.hdrCta, ...(stmtActions.canPay ? {} : st.hdrCtaOff) }}
+                    onClick={stmtActions.onPayment} disabled={!stmtActions.canPay}>+ Record payment</button>
+                </>
+              ) : (
+                <button className="inv-cta" style={st.hdrCta} onClick={() => setSuppDrawer("new")}>+ Add supplier</button>
+              )}
             </div>
           )}
         </div>
@@ -142,6 +151,7 @@ export default function Inventory() {
               onAdd     = {() => setSuppDrawer("new")}
               onEdit    = {s  => setSuppDrawer(s)}
               onRefresh = {() => { setSuppLoaded(false); setSuppLoading(false); loadSuppliers(); }}
+              onStatementActions = {setStmtActions}
             />
           : <InventoryTable
               items       = {items}
@@ -220,6 +230,7 @@ const st: Record<string, React.CSSProperties> = {
   viewActions:{ display:"flex", alignItems:"center", gap:8, padding:"7px 0", marginLeft:"auto" },
   hdrGhost:   { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 14px", background:CARD, border:`1px solid ${LINE}`, color:"#1a1d27", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS },
   hdrCta:     { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 16px", background:TERRA, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS },
+  hdrCtaOff:  { background:"#e6e2da", color:"#a8a49c", cursor:"not-allowed" },
   viewBtn:   { padding:"12px 20px",
                borderTopWidth:0, borderRightWidth:0, borderLeftWidth:0, borderBottomWidth:2,
                borderStyle:"solid", borderColor:"transparent",

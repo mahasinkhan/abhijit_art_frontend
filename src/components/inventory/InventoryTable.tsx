@@ -3,6 +3,7 @@ import { useState } from "react";
 import api from "../../api";
 import Icon from "./Icon";
 import PinField from "./PinField";
+import OverviewFilters from "./OverviewFilters";
 import {
   InventoryItem, KPIs, CatSummary,
   INK, MUTE, LINE, IVORY, CARD, TERRA, GOLD, GOLD_LT, GREEN, RED, SANS,
@@ -40,6 +41,10 @@ export default function InventoryTable({
   const [delBusy, setDelBusy] = useState(false);
   const [delErr,  setDelErr]  = useState("");
 
+  // "Updated in" date filter (filters the item list by updatedAt)
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo,   setDateTo]   = useState("");
+
   async function confirmDelete() {
     if (!delItem || !delPin) { setDelErr("PIN required"); return; }
     setDelBusy(true); setDelErr("");
@@ -62,6 +67,8 @@ export default function InventoryTable({
       const q = search.toLowerCase();
       list = list.filter(it => it.name.toLowerCase().includes(q) || it.sku.toLowerCase().includes(q) || (it.category||"").toLowerCase().includes(q));
     }
+    if (dateFrom) list = list.filter(it => (it.updatedAt||"").slice(0,10) >= dateFrom);
+    if (dateTo)   list = list.filter(it => (it.updatedAt||"").slice(0,10) <= dateTo);
     return list;
   })();
 
@@ -82,7 +89,7 @@ export default function InventoryTable({
   })();
 
   // Show the flat items table when a category is picked, or a search / low-stock filter is active.
-  const showTable = !!selCat || lowOnly || !!search.trim();
+  const showTable = !!selCat || lowOnly || !!search.trim() || !!dateFrom || !!dateTo;
 
   return (
     <div style={st.wrap}>
@@ -147,6 +154,12 @@ export default function InventoryTable({
               <span style={st.lowCount}>{kpis?.lowStockCount}</span>
             )}
           </button>
+
+          {/* Date filter — filters items by their last-updated date */}
+          <div style={st.dateWrap}>
+            <span style={st.dateLbl}>Updated</span>
+            <OverviewFilters onChange={f => { setDateFrom(f.from); setDateTo(f.to); }} />
+          </div>
         </div>
       </div>
 
@@ -346,4 +359,8 @@ const st: Record<string, React.CSSProperties> = {
   // breadcrumb back button
   backBtn:    { display:"inline-flex", alignItems:"center", gap:8, padding:"9px 14px", background:CARD, border:`1px solid ${LINE}`, fontSize:13, fontWeight:700, color:INK, cursor:"pointer", fontFamily:SANS },
   crumbCat:   { marginLeft:2, padding:"2px 10px", background:`${TERRA}14`, color:TERRA, fontWeight:700, fontSize:12, borderRadius:2 },
+
+  // date filter (by updatedAt)
+  dateWrap:   { display:"inline-flex", alignItems:"center", gap:8, paddingLeft:10, marginLeft:2, borderLeft:`1px solid ${LINE}` },
+  dateLbl:    { fontSize:10, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.9 },
 };

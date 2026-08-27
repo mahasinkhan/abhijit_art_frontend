@@ -5,10 +5,11 @@ import { useState } from "react";
 import api from "../../api";
 import Icon from "./Icon";
 import SupplierStatement from "./SupplierStatement";
+import OverviewFilters from "./OverviewFilters";
 import {
   Supplier, INK, BODY, MUTE, LINE, IVORY, CARD,
   TERRA, TERRA_DK, GOLD, GOLD_LT, GREEN, AMBER, RED, SANS,
-  dec, rupee, rfmt, dtfmt, sharedSt,
+  dec, rupee, rfmt, dtfmt,
 } from "./types";
 
 interface SupplierWithBalance extends Supplier {
@@ -20,9 +21,10 @@ interface SupplierWithBalance extends Supplier {
 interface Props {
   suppliers: SupplierWithBalance[];
   loading:   boolean;
-  onAdd:     () => void;
+  onAdd?:    () => void;
   onEdit:    (s: Supplier) => void;
   onRefresh: () => void;
+  onStatementActions?: (a: any) => void;
 }
 
 // ── Print statement (unchanged) ──────────────────────────────────────────────
@@ -118,9 +120,13 @@ function downloadStatement(sup: SupplierWithBalance, purchased: number, paid: nu
   }).catch(() => alert("Couldn't load statement data."));
 }
 
-export default function SupplierList({ suppliers, loading, onAdd, onEdit, onRefresh }: Props) {
+export default function SupplierList({ suppliers, loading, onEdit, onRefresh, onStatementActions }: Props) {
   const [openId, setOpenId] = useState<string|null>(null);
   const [search, setSearch] = useState("");
+
+  // "Last purchase" date filter
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo,   setDateTo]   = useState("");
 
   // ── Open statement view ────────────────────────────────────────────────────
   if (openId) {
@@ -128,6 +134,7 @@ export default function SupplierList({ suppliers, loading, onAdd, onEdit, onRefr
       <SupplierStatement
         supplierId = {openId}
         onBack     = {() => { setOpenId(null); onRefresh(); }}
+        onActions  = {onStatementActions}
       />
     );
   }
@@ -136,12 +143,20 @@ export default function SupplierList({ suppliers, loading, onAdd, onEdit, onRefr
   const totalPurchased   = suppliers.reduce((s,sup) => s + dec(sup.totalPurchased), 0);
   const totalPaid        = suppliers.reduce((s,sup) => s + dec(sup.totalPaid), 0);
 
-  const shown = search.trim()
-    ? suppliers.filter(s =>
-        s.name.toLowerCase().includes(search.toLowerCase()) ||
+  const shown = (() => {
+    let list = suppliers;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(s =>
+        s.name.toLowerCase().includes(q) ||
         (s.phone||"").includes(search) ||
-        (s.email||"").toLowerCase().includes(search.toLowerCase()))
-    : suppliers;
+        (s.email||"").toLowerCase().includes(q));
+    }
+    // filter by last purchase date
+    if (dateFrom) list = list.filter(s => (s.lastPurchaseAt||"").slice(0,10) >= dateFrom);
+    if (dateTo)   list = list.filter(s => (s.lastPurchaseAt||"").slice(0,10) <= dateTo);
+    return list;
+  })();
 
   return (
     <div style={st.wrap}>
@@ -174,9 +189,12 @@ export default function SupplierList({ suppliers, loading, onAdd, onEdit, onRefr
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <button className="inv-cta" style={sharedSt.ctaBtn} onClick={onAdd}>
-          <Icon name="plus" size={14} color="#fff"/> Add supplier
-        </button>
+
+        {/* Date filter — filters suppliers by their last purchase date */}
+        <div style={st.dateWrap}>
+          <span style={st.dateLbl}>Last purchase</span>
+          <OverviewFilters onChange={f => { setDateFrom(f.from); setDateTo(f.to); }} />
+        </div>
       </div>
 
       {/* ── Table ───────────────────────────────────────────────────────── */}
@@ -185,7 +203,7 @@ export default function SupplierList({ suppliers, loading, onAdd, onEdit, onRefr
           <div style={st.empty}>Loading…</div>
         ) : shown.length === 0 ? (
           <div style={st.empty}>
-            {suppliers.length === 0 ? "No suppliers yet — click Add supplier to get started." : "No suppliers match your search."}
+            {suppliers.length === 0 ? "No suppliers yet — use Add supplier above to get started." : "No suppliers match the current filter."}
           </div>
         ) : (
           <table style={st.table}>
@@ -268,6 +286,8 @@ const st: Record<string, React.CSSProperties> = {
   kpiLabel:   { fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, marginBottom:8 },
   toolbar:    { display:"flex", alignItems:"center", gap:10, padding:"13px 20px", borderBottom:`1px solid ${LINE}`, background:CARD, flexShrink:0, flexWrap:"wrap" },
   searchWrap: { display:"flex", alignItems:"center", gap:8, border:`1px solid ${LINE}`, background:CARD, padding:"9px 12px", flex:1, maxWidth:380, minWidth:160 },
+  dateWrap:   { display:"inline-flex", alignItems:"center", gap:8, paddingLeft:12, borderLeft:`1px solid ${LINE}`, flexWrap:"wrap" },
+  dateLbl:    { fontSize:10, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.9, whiteSpace:"nowrap" },
   searchIn:   { flex:1, border:"none", outline:"none", fontSize:13.5, fontFamily:SANS, color:INK, background:"transparent" },
   tableOuter: { flex:1, overflowX:"auto" },
   table:      { width:"100%", borderCollapse:"collapse", fontSize:13.5 },

@@ -69,6 +69,11 @@ function buildLedger(purchases: any[] = [], payments: any[] = []): LedgerRow[] {
   return rows;
 }
 
+// ── Filter helpers ────────────────────────────────────────────────────────────
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const YEARS  = (() => { const cy = new Date().getFullYear(); const a:number[] = []; for (let y = cy+1; y >= cy-5; y--) a.push(y); return a; })();
+const isoDay = (s: string) => { const d = s ? new Date(s) : null; return d && !isNaN(d.getTime()) ? d.toISOString().slice(0,10) : ""; };
+
 // ── Purchase detail accordion ─────────────────────────────────────────────────
 function PurchaseDetail({ p }: { p: any }) {
   const [open,  setOpen]  = useState(false);
@@ -145,15 +150,25 @@ const st2 = {
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
+interface StatementActions { onPurchase: () => void; onPayment: () => void; canPay: boolean; }
+
 interface Props {
   supplierId: string;
   onBack:     () => void;
+  onActions?: (a: StatementActions | null) => void;
 }
 
-export default function SupplierStatement({ supplierId, onBack }: Props) {
+export default function SupplierStatement({ supplierId, onBack, onActions }: Props) {
   const [stmt,    setStmt]    = useState<Statement|null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
+
+  // ── Statement filters ───────────────────────────────────────────────────────
+  const [fFrom,  setFFrom]  = useState("");
+  const [fTo,    setFTo]    = useState("");
+  const [fMonth, setFMonth] = useState("");
+  const [fYear,  setFYear]  = useState("");
+  const [fType,  setFType]  = useState<"all"|"purchase"|"payment">("all");
 
   // ── Stock items for purchase picker ────────────────────────────────────────
   const [stockItems, setStockItems] = useState<{id:string;name:string;unit:string;sku:string}[]>([]);
@@ -186,7 +201,6 @@ export default function SupplierStatement({ supplierId, onBack }: Props) {
     api.get(`/api/inventory/suppliers/${supplierId}/statement`)
       .then(r => {
         const d = r.data;
-        console.log("[SupplierStatement] raw keys:", Object.keys(d));
 
         // Backend returns { supplier, summary, entries:[{kind,debit,credit,...}], ... }
         const supplier = d?.supplier ?? d;
@@ -235,14 +249,14 @@ export default function SupplierStatement({ supplierId, onBack }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Derived ─────────────────────────────────────────────────────────────────
+  // ── Derived (all-time totals from the backend summary) ─────────────────────
   const totalPurchased = dec(stmt?.supplier.totalPurchased);
   const totalPaid      = dec(stmt?.supplier.totalPaid);
   const outstanding    = Math.max(totalPurchased - totalPaid, 0);
 
   // Use backend entries (already has running balance) if available, else rebuild
   const rawEntries: any[] = (stmt as any)?._entries ?? [];
-  const ledger: LedgerRow[] = rawEntries.length > 0
+  const ledgerAll: LedgerRow[] = rawEntries.length > 0
     ? rawEntries.map((e: any) => ({
         kind:    e.kind,
         date:    e.date || e.createdAt || "",
@@ -254,6 +268,36 @@ export default function SupplierStatement({ supplierId, onBack }: Props) {
               note:e.note||"", paidAt:e.date, createdAt:e.createdAt } as any,
       }))
     : stmt ? buildLedger(stmt.purchases, stmt.payments) : [];
+
+  // ── Apply filters ───────────────────────────────────────────────────────────
+  const filterActive = !!(fFrom || fTo || fMonth || fYear || fType !== "all");
+  const ledger: LedgerRow[] = ledgerAll.filter(row => {
+    if (fType !== "all" && row.kind !== fType) return false;
+    const day = isoDay(row.date || (row.data as any)?.createdAt || "");
+    if (!day) return !fFrom && !fTo && !fMonth && !fYear;
+    if (fFrom && day < fFrom) return false;
+    if (fTo   && day > fTo)   return false;
+    if (fYear  && day.slice(0,4) !== fYear) return false;
+    if (fMonth && day.slice(5,7) !== String(fMonth).padStart(2,"0")) return false;
+    return true;
+  });
+
+  // Totals for the visible rows (so the footer matches what's on screen)
+  const shownPurchased = ledger.reduce((s,r) => s + (r.kind==="purchase" ? dec((r.data as any).total ?? (r.data as any).debit ?? 0) : 0), 0);
+  const shownPaid      = ledger.reduce((s,r) => s + (r.kind==="payment"  ? dec((r.data as any).amount ?? (r.data as any).credit ?? 0) : 0), 0);
+  const shownBalance   = filterActive ? shownPurchased - shownPaid : outstanding;
+
+  const resetFilters = () => { setFFrom(""); setFTo(""); setFMonth(""); setFYear(""); setFType("all"); };
+
+  // Expose the purchase/payment actions to the page header (index.tsx)
+  useEffect(() => {
+    onActions?.({
+      onPurchase: () => setPurOpen(true),
+      onPayment:  () => setPayOpen(true),
+      canPay:     outstanding > 0,
+    });
+    return () => onActions?.(null);
+  }, [onActions, outstanding]);
 
   // ── Record payment ───────────────────────────────────────────────────────────
   const savePayment = async () => {
@@ -330,14 +374,26 @@ export default function SupplierStatement({ supplierId, onBack }: Props) {
             {s.gstin  && <span>GSTIN: {s.gstin}</span>}
           </div>
         </div>
-        <div style={{ display:"flex", gap:10, flexShrink:0 }}>
-          <button className="inv-ghost" style={sharedSt.ghostBtn} onClick={() => setPurOpen(true)}>
-            <Icon name="plus" size={14}/> Record purchase
-          </button>
-          <button className="inv-cta" style={sharedSt.ctaBtn} onClick={() => setPayOpen(true)}
-            disabled={outstanding <= 0}>
-            <Icon name="plus" size={14} color="#fff"/> Record payment
-          </button>
+        <div style={{ display:"flex", gap:10, flexShrink:0, alignItems:"center", flexWrap:"wrap" }}>
+          <div style={st.hdrFilters}>
+            <input type="date" style={st.hInp} value={fFrom} onChange={e=>setFFrom(e.target.value)} title="From date"/>
+            <span style={{ color:MUTE, fontSize:12 }}>→</span>
+            <input type="date" style={st.hInp} value={fTo} onChange={e=>setFTo(e.target.value)} title="To date"/>
+            <select style={st.hInp} value={fMonth} onChange={e=>setFMonth(e.target.value)} title="Month">
+              <option value="">Month</option>
+              {MONTHS.map((m,i)=> <option key={m} value={i+1}>{m}</option>)}
+            </select>
+            <select style={st.hInp} value={fYear} onChange={e=>setFYear(e.target.value)} title="Year">
+              <option value="">Year</option>
+              {YEARS.map(y=> <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select style={st.hInp} value={fType} onChange={e=>setFType(e.target.value as any)} title="Type">
+              <option value="all">All types</option>
+              <option value="purchase">Purchase</option>
+              <option value="payment">Payment</option>
+            </select>
+            {filterActive && <button style={st.hReset} onClick={resetFilters} title="Clear filters">↺</button>}
+          </div>
         </div>
       </div>
 
@@ -368,16 +424,19 @@ export default function SupplierStatement({ supplierId, onBack }: Props) {
 
       {/* ── Statement ───────────────────────────────────────────────────── */}
       <div style={st.ledgerCard}>
-        <div style={{ padding:"16px 20px 14px", borderBottom:`1px solid ${LINE}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div>
-            <div style={st.ledgerTitle}>Statement</div>
-            <div style={st.ledgerSub}>Newest first · {ledger.length} transaction{ledger.length!==1?"s":""}</div>
+        <div style={{ padding:"16px 20px 14px", borderBottom:`1px solid ${LINE}` }}>
+          <div style={st.ledgerTitle}>Statement</div>
+          <div style={st.ledgerSub}>
+            Newest first · {ledger.length} transaction{ledger.length!==1?"s":""}
+            {filterActive && ledgerAll.length !== ledger.length && ` of ${ledgerAll.length}`}
           </div>
         </div>
 
         {ledger.length === 0 ? (
           <div style={{ padding:"48px 0", textAlign:"center", color:MUTE, fontSize:14 }}>
-            No transactions yet. Record a purchase to get started.
+            {ledgerAll.length === 0
+              ? "No transactions yet. Record a purchase to get started."
+              : "No transactions match the current filter."}
           </div>
         ) : (
           <div style={{ overflowX:"auto" }}>
@@ -462,11 +521,13 @@ export default function SupplierStatement({ supplierId, onBack }: Props) {
               </tbody>
               <tfoot>
                 <tr style={{ background:IVORY, borderTop:`2px solid ${LINE}` }}>
-                  <td colSpan={3} style={{ ...st.td, fontWeight:700, color:INK }}>Total</td>
-                  <td style={{ ...st.td, textAlign:"right", fontWeight:800, color:TERRA, fontVariantNumeric:"tabular-nums" }}>{rupee(totalPurchased)}</td>
-                  <td style={{ ...st.td, textAlign:"right", fontWeight:800, color:GREEN, fontVariantNumeric:"tabular-nums" }}>{rupee(totalPaid)}</td>
+                  <td colSpan={3} style={{ ...st.td, fontWeight:700, color:INK }}>
+                    Total{filterActive ? <span style={{ fontWeight:600, color:MUTE, fontSize:12 }}> · filtered</span> : null}
+                  </td>
+                  <td style={{ ...st.td, textAlign:"right", fontWeight:800, color:TERRA, fontVariantNumeric:"tabular-nums" }}>{rupee(filterActive?shownPurchased:totalPurchased)}</td>
+                  <td style={{ ...st.td, textAlign:"right", fontWeight:800, color:GREEN, fontVariantNumeric:"tabular-nums" }}>{rupee(filterActive?shownPaid:totalPaid)}</td>
                   <td style={{ ...st.td, textAlign:"right", fontWeight:900, fontSize:15, fontVariantNumeric:"tabular-nums",
-                    color:outstanding>0?TERRA:GREEN }}>{rupee(outstanding)} {outstanding<=0?"✓":""}</td>
+                    color:shownBalance>0?TERRA:GREEN }}>{rupee(Math.max(shownBalance,0))} {shownBalance<=0?"✓":""}</td>
                   <td style={st.td}/>
                 </tr>
               </tfoot>
@@ -653,7 +714,7 @@ function DeletePaymentBtn({ pid, onDelete }: { pid:string; onDelete:(pid:string,
 // ── Styles ────────────────────────────────────────────────────────────────────
 const st: Record<string, React.CSSProperties> = {
   wrap:        { padding:"24px 24px 60px", display:"flex", flexDirection:"column", gap:20, fontFamily:SANS },
-  pageHead:    { display:"flex", alignItems:"flex-start", gap:16, flexWrap:"wrap" },
+  pageHead:    { display:"flex", alignItems:"center", gap:16, flexWrap:"wrap", rowGap:12 },
   backBtn:     { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 14px", border:`1px solid ${LINE}`, background:CARD, color:MUTE, fontFamily:SANS, fontWeight:700, fontSize:13, cursor:"pointer", borderRadius:0, flexShrink:0 },
   suppName:    { fontSize:22, fontWeight:900, color:INK, margin:0, letterSpacing:-.3 },
   summaryRow:  { display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:12 },
@@ -665,6 +726,12 @@ const st: Record<string, React.CSSProperties> = {
   ledgerHead:  { padding:"16px 20px", borderBottom:`1px solid ${LINE}` },
   ledgerTitle: { fontSize:15, fontWeight:800, color:INK },
   ledgerSub:   { fontSize:12, color:MUTE, marginTop:2 },
+
+  // header filters (compact, sit beside the supplier name)
+  hdrFilters:  { display:"inline-flex", alignItems:"center", gap:5, flexWrap:"wrap", paddingRight:10, marginRight:2, borderRight:`1px solid ${LINE}` },
+  hInp:        { padding:"7px 9px", border:`1px solid ${LINE}`, background:CARD, color:INK, fontSize:12.5, fontFamily:SANS, outline:"none", cursor:"pointer" },
+  hReset:      { width:30, height:30, border:`1px solid ${LINE}`, background:IVORY, color:MUTE, fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:SANS },
+
   stmtHdr:     { display:"flex", alignItems:"center", padding:"9px 20px", background:IVORY, borderBottom:`1px solid ${LINE}`, fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.7 } as React.CSSProperties,
   stmtRow:     { display:"flex", alignItems:"flex-start", padding:"14px 20px", borderBottom:`1px solid ${LINE}`, gap:12, background:CARD, transition:"background .15s" } as React.CSSProperties,
   stmtTotal:   { display:"flex", alignItems:"center", padding:"14px 20px", background:IVORY, borderTop:`2px solid ${LINE}`, fontSize:13 } as React.CSSProperties,
