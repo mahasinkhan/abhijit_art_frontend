@@ -27,7 +27,7 @@ interface Props {
   onStatementActions?: (a: any) => void;
 }
 
-// ── Print statement (unchanged) ──────────────────────────────────────────────
+// ── Print statement ──────────────────────────────────────────────────────────
 function downloadStatement(sup: SupplierWithBalance, purchased: number, paid: number, outstanding: number) {
   api.get(`/api/inventory/suppliers/${sup.id}/statement`).then(r => {
     const d = r.data;
@@ -123,12 +123,9 @@ function downloadStatement(sup: SupplierWithBalance, purchased: number, paid: nu
 export default function SupplierList({ suppliers, loading, onEdit, onRefresh, onStatementActions }: Props) {
   const [openId, setOpenId] = useState<string|null>(null);
   const [search, setSearch] = useState("");
-
-  // "Last purchase" date filter
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo,   setDateTo]   = useState("");
 
-  // ── Open statement view ────────────────────────────────────────────────────
   if (openId) {
     return (
       <SupplierStatement
@@ -139,10 +136,7 @@ export default function SupplierList({ suppliers, loading, onEdit, onRefresh, on
     );
   }
 
-  const totalOutstanding = suppliers.reduce((s,sup) => s + Math.max(dec(sup.totalPurchased)-dec(sup.totalPaid),0), 0);
-  const totalPurchased   = suppliers.reduce((s,sup) => s + dec(sup.totalPurchased), 0);
-  const totalPaid        = suppliers.reduce((s,sup) => s + dec(sup.totalPaid), 0);
-
+  // ── Filter suppliers first ────────────────────────────────────────────────
   const shown = (() => {
     let list = suppliers;
     if (search.trim()) {
@@ -152,32 +146,22 @@ export default function SupplierList({ suppliers, loading, onEdit, onRefresh, on
         (s.phone||"").includes(search) ||
         (s.email||"").toLowerCase().includes(q));
     }
-    // filter by last purchase date
     if (dateFrom) list = list.filter(s => (s.lastPurchaseAt||"").slice(0,10) >= dateFrom);
     if (dateTo)   list = list.filter(s => (s.lastPurchaseAt||"").slice(0,10) <= dateTo);
     return list;
   })();
 
+  // ── KPI totals from filtered list ──────────────────────────────────────────
+  const filterActive     = !!(search.trim() || dateFrom || dateTo);
+  const kpiList          = filterActive ? shown : suppliers;
+  const totalPurchased   = kpiList.reduce((s,sup) => s + dec(sup.totalPurchased), 0);
+  const totalPaid        = kpiList.reduce((s,sup) => s + dec(sup.totalPaid), 0);
+  const totalOutstanding = kpiList.reduce((s,sup) => s + Math.max(dec(sup.totalPurchased)-dec(sup.totalPaid),0), 0);
+
   return (
     <div style={st.wrap}>
 
-      {/* ── KPI strip (matches Stock Items) ─────────────────────────────── */}
-      <div style={st.kpiStrip}>
-        {[
-          { label:"Total suppliers",   val: loading?"…":String(suppliers.length),   sub:"Active vendors",       accent: GOLD },
-          { label:"Total purchased",   val: loading?"…":rupee(totalPurchased),       sub:"All-time",             accent: INK },
-          { label:"Total paid",        val: loading?"…":rupee(totalPaid),            sub:"Settled so far",       accent: GREEN },
-          { label:"Total outstanding", val: loading?"…":rupee(totalOutstanding),     sub:"Still owed",           accent: totalOutstanding>0?TERRA:GREEN },
-        ].map(k => (
-          <div key={k.label} style={st.kpiCard}>
-            <div style={st.kpiLabel}>{k.label}</div>
-            <div style={{ fontSize:26, fontWeight:900, color:k.accent, fontVariantNumeric:"tabular-nums", lineHeight:1 }}>{k.val}</div>
-            <div style={{ fontSize:11, color:MUTE, marginTop:6 }}>{k.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      {/* ── Toolbar (top) ───────────────────────────────────────────── */}
       <div style={st.toolbar}>
         <div style={st.searchWrap}>
           <Icon name="search" size={15} color={MUTE} />
@@ -189,12 +173,26 @@ export default function SupplierList({ suppliers, loading, onEdit, onRefresh, on
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-
-        {/* Date filter — filters suppliers by their last purchase date */}
         <div style={st.dateWrap}>
           <span style={st.dateLbl}>Last purchase</span>
           <OverviewFilters onChange={f => { setDateFrom(f.from); setDateTo(f.to); }} />
         </div>
+      </div>
+
+      {/* ── KPI strip ─────────────────────────────────────────────────── */}
+      <div style={st.kpiStrip}>
+        {[
+          { label:"Total suppliers",   val: loading?"…":String(filterActive ? shown.length : suppliers.length), sub: filterActive ? "Filtered" : "Active vendors", accent: GOLD },
+          { label:"Total purchased",   val: loading?"…":rupee(totalPurchased),       sub: filterActive ? "Filtered period" : "All-time", accent: INK },
+          { label:"Total paid",        val: loading?"…":rupee(totalPaid),            sub: filterActive ? "Filtered period" : "Settled so far", accent: GREEN },
+          { label:"Total outstanding", val: loading?"…":rupee(totalOutstanding),     sub: filterActive ? "Filtered" : "Still owed", accent: totalOutstanding>0?TERRA:GREEN },
+        ].map(k => (
+          <div key={k.label} style={st.kpiCard}>
+            <div style={st.kpiLabel}>{k.label}</div>
+            <div style={{ fontSize:26, fontWeight:900, color:k.accent, fontVariantNumeric:"tabular-nums", lineHeight:1 }}>{k.val}</div>
+            <div style={{ fontSize:11, color:MUTE, marginTop:6 }}>{k.sub}</div>
+          </div>
+        ))}
       </div>
 
       {/* ── Table ───────────────────────────────────────────────────────── */}
@@ -222,7 +220,6 @@ export default function SupplierList({ suppliers, loading, onEdit, onRefresh, on
                 const isSettled   = outstanding <= 0 && purchased > 0;
                 return (
                   <tr key={sup.id} className="inv-row" style={{ background: idx%2===0 ? CARD : IVORY }}>
-                    {/* Supplier */}
                     <td style={st.td}>
                       <div style={{ display:"flex", alignItems:"center", gap:11 }}>
                         <div style={st.avatar}>{sup.name.slice(0,2).toUpperCase()}</div>
@@ -232,17 +229,13 @@ export default function SupplierList({ suppliers, loading, onEdit, onRefresh, on
                         </div>
                       </div>
                     </td>
-                    {/* Contact */}
                     <td style={{ ...st.td, fontSize:12.5, color:BODY }}>
                       {sup.phone && <div>{sup.phone}</div>}
                       {sup.email && <div style={{ color:MUTE, fontSize:11.5, marginTop:1 }}>{sup.email}</div>}
                       {!sup.phone && !sup.email && <span style={{ color:MUTE }}>—</span>}
                     </td>
-                    {/* Purchased */}
                     <td style={{ ...st.td, fontVariantNumeric:"tabular-nums", fontWeight:700 }}>{rupee(purchased)}</td>
-                    {/* Paid */}
                     <td style={{ ...st.td, fontVariantNumeric:"tabular-nums", fontWeight:700, color:paid>0?GREEN:MUTE }}>{rupee(paid)}</td>
-                    {/* Outstanding */}
                     <td style={{ ...st.td, fontVariantNumeric:"tabular-nums" }}>
                       {isSettled ? (
                         <span style={{ color:GREEN, fontWeight:700, fontSize:12.5 }}>Settled ✓</span>
@@ -250,16 +243,12 @@ export default function SupplierList({ suppliers, loading, onEdit, onRefresh, on
                         <span style={{ color:outstanding>0?TERRA:MUTE, fontWeight:800 }}>{rupee(outstanding)}</span>
                       )}
                     </td>
-                    {/* Last purchase */}
                     <td style={{ ...st.td, color:MUTE, fontSize:11.5, whiteSpace:"nowrap" }}>
                       {sup.lastPurchaseAt ? dtfmt(sup.lastPurchaseAt).split(",")[0] : "—"}
                     </td>
-                    {/* Actions */}
                     <td style={{ ...st.td, textAlign:"right" }}>
                       <div style={{ display:"flex", gap:5, justifyContent:"flex-end" }}>
-                        <button className="inv-cta" style={st.viewBtn} onClick={() => setOpenId(sup.id)}>
-                          View
-                        </button>
+                        <button className="inv-cta" style={st.viewBtn} onClick={() => setOpenId(sup.id)}>View</button>
                         <button className="inv-icon" style={st.iconBtn} title="Download statement" onClick={() => downloadStatement(sup, purchased, paid, outstanding)}>
                           <Icon name="download" size={14}/>
                         </button>
