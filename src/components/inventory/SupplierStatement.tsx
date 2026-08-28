@@ -9,8 +9,35 @@ import PinField from "./PinField";
 import {
   Supplier, INK, BODY, MUTE, LINE, IVORY, CARD,
   TERRA, TERRA_DK, GOLD, GOLD_LT, GREEN, GREEN_LT,
-  AMBER, RED, RED_LT, SANS, dec, rupee, rfmt, dtfmt, sharedSt,
+  AMBER, RED, RED_LT, SANS, dec, rupee, rfmt, sharedSt,
 } from "./types";
+
+// ── IST formatter helpers ─────────────────────────────────────────────────────
+const IST = { timeZone: "Asia/Kolkata" } as const;
+
+const fmtDate = (d: string | null | undefined) => {
+  if (!d) return "—";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric", ...IST });
+};
+
+const fmtTime = (d: string | null | undefined) => {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "";
+  return dt.toLocaleTimeString("en-IN", { hour:"2-digit", minute:"2-digit", hour12:true, ...IST });
+};
+
+const fmtDateTime = (d: string | null | undefined) => {
+  if (!d) return "—";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString("en-IN", {
+    day:"numeric", month:"short", year:"numeric",
+    hour:"2-digit", minute:"2-digit", hour12:true, ...IST,
+  });
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PurchaseItem {
@@ -33,28 +60,19 @@ interface Statement {
   payments:  SupplierPayment[];
 }
 
-// ── Ledger entry (merged purchases + payments sorted by date) ─────────────────
+// ── Ledger entry ──────────────────────────────────────────────────────────────
 type LedgerRow =
   | { kind:"purchase"; date:string; data:Purchase; running:number }
   | { kind:"payment";  date:string; data:SupplierPayment; running:number };
 
 function buildLedger(purchases: any[] = [], payments: any[] = []): LedgerRow[] {
-  const safeP = Array.isArray(purchases) ? purchases : [];
-  const safePay = Array.isArray(payments) ? payments : [];
+  const safeP   = Array.isArray(purchases) ? purchases : [];
+  const safePay = Array.isArray(payments)  ? payments  : [];
   const rows: LedgerRow[] = [
-    ...safeP.map(p => ({
-      kind:"purchase" as const,
-      date: String(p?.billDate || p?.createdAt || p?.date || ""),
-      data: p as Purchase,
-      running: 0,
-    })),
-    ...safePay.map(p => ({
-      kind:"payment" as const,
-      date: String(p?.paidAt || p?.createdAt || p?.date || ""),
-      data: p as SupplierPayment,
-      running: 0,
-    })),
+    ...safeP.map(p => ({ kind:"purchase" as const, date: String(p?.billDate || p?.createdAt || p?.date || ""), data: p as Purchase, running: 0 })),
+    ...safePay.map(p => ({ kind:"payment" as const, date: String(p?.paidAt || p?.createdAt || p?.date || ""), data: p as SupplierPayment, running: 0 })),
   ];
+  // Sort ascending for correct running balance
   rows.sort((a,b) => {
     const ta = a.date ? new Date(a.date).getTime() : 0;
     const tb = b.date ? new Date(b.date).getTime() : 0;
@@ -66,7 +84,8 @@ function buildLedger(purchases: any[] = [], payments: any[] = []): LedgerRow[] {
     else                       bal -= dec((r.data as any).amount ?? 0);
     r.running = bal;
   }
-  return rows;
+  // Reverse for display: newest first
+  return rows.reverse();
 }
 
 // ── Filter helpers ────────────────────────────────────────────────────────────
@@ -76,8 +95,8 @@ const isoDay = (s: string) => { const d = s ? new Date(s) : null; return d && !i
 
 // ── Purchase detail accordion ─────────────────────────────────────────────────
 function PurchaseDetail({ p }: { p: any }) {
-  const [open,  setOpen]  = useState(false);
-  const [lines, setLines] = useState<any[]>([]);
+  const [open,    setOpen]    = useState(false);
+  const [lines,   setLines]   = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   const toggle = () => {
@@ -162,14 +181,12 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
 
-  // ── Statement filters ───────────────────────────────────────────────────────
   const [fFrom,  setFFrom]  = useState("");
   const [fTo,    setFTo]    = useState("");
   const [fMonth, setFMonth] = useState("");
   const [fYear,  setFYear]  = useState("");
   const [fType,  setFType]  = useState<"all"|"purchase"|"payment">("all");
 
-  // ── Stock items for purchase picker (with category) ─────────────────────────
   const [stockItems, setStockItems] = useState<{id:string;name:string;unit:string;sku:string;category:string}[]>([]);
   useEffect(() => {
     api.get("/api/inventory/items").then(r => {
@@ -181,16 +198,13 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
     }).catch(()=>{});
   }, []);
 
-  // Unique sorted categories
   const stockCategories = Array.from(new Set(stockItems.map(it => it.category))).sort();
 
-  // ── Payment modal ───────────────────────────────────────────────────────────
-  const [payOpen,  setPayOpen]  = useState(false);
-  const [payForm,  setPayForm]  = useState({ amount:"", method:"cash" as "cash"|"online", note:"", pin:"" });
-  const [payErr,   setPayErr]   = useState("");
-  const [payBusy,  setPayBusy]  = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
+  const [payForm, setPayForm] = useState({ amount:"", method:"cash" as "cash"|"online", note:"", pin:"" });
+  const [payErr,  setPayErr]  = useState("");
+  const [payBusy, setPayBusy] = useState(false);
 
-  // ── Purchase modal ──────────────────────────────────────────────────────────
   const [purOpen,  setPurOpen]  = useState(false);
   const [purErr,   setPurErr]   = useState("");
   const [purBusy,  setPurBusy]  = useState(false);
@@ -199,7 +213,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
     billNo:"", billDate: new Date().toISOString().slice(0,10),
     discType:"amount" as "amount"|"percent", discVal:"0", taxPct:"0", notes:"", advance:"",
   });
-  // Each line now has a `category` field for the two-step picker
   const [purLines, setPurLines] = useState([{ id:"1", itemId:"", name:"", qty:"1", rate:"", unit:"piece", category:"" }]);
 
   const load = useCallback(() => {
@@ -242,9 +255,13 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
   const outstanding    = Math.max(totalPurchased - totalPaid, 0);
 
   const rawEntries: any[] = (stmt as any)?._entries ?? [];
-  const ledgerAll: LedgerRow[] = rawEntries.length > 0
-    ? rawEntries.map((e: any) => ({
-        kind:    e.kind,
+
+  // Build ledger: map entries and sort by actual datetime (newest first)
+  const ledgerAll: LedgerRow[] = (() => {
+    let rows: LedgerRow[];
+    if (rawEntries.length > 0) {
+      rows = rawEntries.map((e: any) => ({
+        kind:    e.kind as "purchase" | "payment",
         date:    e.date || e.createdAt || "",
         running: dec(e.balance),
         data:    e.kind === "purchase"
@@ -252,8 +269,20 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
               total:e.debit, notes:e.note||"", items:[], _itemCount:e.itemCount??0 } as any
           : { id:e.id, amount:e.credit, method:e.method||"cash",
               note:e.note||"", paidAt:e.date, createdAt:e.createdAt } as any,
-      }))
-    : stmt ? buildLedger(stmt.purchases, stmt.payments) : [];
+      }));
+    } else if (stmt) {
+      rows = buildLedger(stmt.purchases, stmt.payments);
+    } else {
+      rows = [];
+    }
+    // Sort by createdAt descending (newest first)
+    rows.sort((a, b) => {
+      const ta = new Date((a.data as any).createdAt || a.date || 0).getTime() || 0;
+      const tb = new Date((b.data as any).createdAt || b.date || 0).getTime() || 0;
+      return tb - ta; // newest first
+    });
+    return rows;
+  })();
 
   const filterActive = !!(fFrom || fTo || fMonth || fYear || fType !== "all");
   const ledger: LedgerRow[] = ledgerAll.filter(row => {
@@ -267,25 +296,30 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
     return true;
   });
 
-  // Group advance payments with their parent purchase row
-  // Advance payments have notes like "Advance on purchase #BILLNO"
-  const advanceMap = new Map<number, LedgerRow>(); // purchase index → advance payment row
-  const hideRows = new Set<number>(); // indices of advance rows to hide
+  // Group advance payments with their parent purchase by matching bill number
+  const advanceMap = new Map<number, LedgerRow>();
+  const hideRows   = new Set<number>();
+
+  // First pass: build a map of billNo → purchase index
+  const billNoToIdx = new Map<string, number>();
+  ledger.forEach((row, i) => {
+    if (row.kind === "purchase") {
+      const bn = String((row.data as any).billNo || "").trim();
+      if (bn) billNoToIdx.set(bn, i);
+    }
+  });
+
+  // Second pass: match advance payments to their purchase by bill number in note
   ledger.forEach((row, i) => {
     if (row.kind === "payment") {
-      const note = String((row.data as any).note || "");
-      const match = note.match(/Advance on purchase(?:\s*#?\s*(.+))?/i);
+      const note  = String((row.data as any).note || "");
+      const match = note.match(/Advance on purchase\s*#?\s*(.+)/i);
       if (match) {
-        // Find the closest purchase row (preceding this payment)
-        for (let j = i + 1; j < ledger.length; j++) {
-          if (ledger[j].kind === "purchase") {
-            const billNo = (ledger[j].data as any).billNo || "";
-            if (!match[1] || billNo === match[1] || !billNo) {
-              advanceMap.set(j, row);
-              hideRows.add(i);
-              break;
-            }
-          }
+        const refNo = match[1].trim();
+        const purIdx = billNoToIdx.get(refNo);
+        if (purIdx !== undefined) {
+          advanceMap.set(purIdx, row);
+          hideRows.add(i);
         }
       }
     }
@@ -302,7 +336,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
     return () => onActions?.(null);
   }, [onActions, outstanding]);
 
-  // ── Record payment ────────────────────────────────────────────────────────
   const savePayment = async () => {
     if (!payForm.amount || dec(payForm.amount) <= 0) { setPayErr("Enter a valid amount."); return; }
     if (!payForm.pin) { setPayErr("Enter your security PIN."); return; }
@@ -324,7 +357,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
     } catch(e:any) { alert(e?.response?.data?.error || "Couldn't delete."); }
   };
 
-  // ── Record purchase ────────────────────────────────────────────────────────
   const addPurLine = () => setPurLines(l => [...l, { id:Date.now().toString(), itemId:"", name:"", qty:"1", rate:"", unit:"piece", category:"" }]);
   const setPurLine = (id:string, k:string, v:string) => setPurLines(l => l.map(r => r.id===id ? {...r,[k]:v} : r));
 
@@ -342,14 +374,15 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
         items: lines.map(l => ({ itemId: l.itemId||null, name:l.name.trim(), quantity:dec(l.qty), rate:dec(l.rate), unit:l.unit })),
         pin: purPin,
       });
-      // Auto-record advance payment if specified
       const advAmt = dec(purForm.advance);
       if (advAmt > 0) {
         try {
           await api.post(`/api/inventory/suppliers/${supplierId}/payments`, {
-            amount: advAmt, method: "cash", note: `Advance on purchase${purForm.billNo ? " #" + purForm.billNo : ""}`, pin: purPin,
+            amount: advAmt, method: "cash",
+            note: `Advance on purchase${purForm.billNo ? " #" + purForm.billNo : ""}`,
+            pin: purPin,
           });
-        } catch { /* advance payment failed silently — user can record manually */ }
+        } catch { /* advance payment failed silently */ }
       }
       setPurOpen(false); setPurPin(""); setPurErr("");
       setPurForm({ billNo:"", billDate:new Date().toISOString().slice(0,10), discType:"amount", discVal:"0", taxPct:"0", notes:"", advance:"" });
@@ -367,13 +400,15 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
 
   function downloadStatementPdf() {
     const esc = (v: any) => String(v ?? "").replace(/[&<>"']/g, (c: string) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c] as string));
-    const fmt = (d: string) => d ? new Date(d).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"}) : "—";
-    const rows = ledgerAll.map((row, i) => {
+    // PDF uses ascending order (oldest first)
+    const pdfRows = [...ledgerAll].reverse();
+    const rows = pdfRows.map((row, i) => {
       const p = row.data as any;
       const isPurchase = row.kind === "purchase";
       const amount = dec(p.total ?? p.debit ?? p.amount ?? p.credit ?? 0);
+      const dateRaw = p.createdAt || row.date || p.billDate || "";
       return `<tr style="background:${i%2===0?"#fff":"#faf8f4"}">
-        <td>${fmt(p.createdAt||row.date||"")}</td>
+        <td>${esc(fmtDate(dateRaw))} <span style="font-size:11px;color:#aaa">${esc(fmtTime(dateRaw))}</span></td>
         <td><span class="${isPurchase?"badge-p":"badge-pay"}">${isPurchase?"Purchase":"Payment"}</span></td>
         <td>${esc(isPurchase?(p.billNo?`Bill #${p.billNo}`:"Purchase"):(p.method||"Cash"))}</td>
         <td style="color:#8a8f9a">${esc(p.note||"—")}</td>
@@ -403,14 +438,14 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
       </head><body>
       <h1>Supplier Statement</h1>
       <div class="sup">${esc(s.name)}</div>
-      <div class="meta">${s.phone?`📞 ${esc(s.phone)}&nbsp;&nbsp;`:""}${s.email?`✉ ${esc(s.email)}&nbsp;&nbsp;`:""} Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</div>
+      <div class="meta">${s.phone?`📞 ${esc(s.phone)}&nbsp;&nbsp;`:""}${s.email?`✉ ${esc(s.email)}&nbsp;&nbsp;`:""} Generated ${fmtDate(new Date().toISOString())}</div>
       <div class="cards">
         <div class="card"><div class="card-l">Total Purchased</div><div class="card-v">₹${totalPurchased.toLocaleString("en-IN",{minimumFractionDigits:2})}</div></div>
         <div class="card"><div class="card-l">Total Paid</div><div class="card-v" style="color:#15803d">₹${totalPaid.toLocaleString("en-IN",{minimumFractionDigits:2})}</div></div>
         <div class="card" style="background:${outstanding>0?"#fff8f5":"#f0fdf4"}"><div class="card-l">Balance Due</div><div class="card-v" style="color:${outstanding>0?"#d9542f":"#15803d"}">₹${outstanding.toLocaleString("en-IN",{minimumFractionDigits:2})}${outstanding<=0?" ✓":""}</div></div>
       </div>
       <table><thead><tr>
-        <th>Date</th><th>Type</th><th>Reference</th><th>Note</th>
+        <th>Date & Time</th><th>Type</th><th>Reference</th><th>Note</th>
         <th class="r">Purchased (₹)</th><th class="r">Paid (₹)</th><th class="r">Balance (₹)</th>
       </tr></thead>
       <tbody>${rows||"<tr><td colspan='7' style='text-align:center;color:#aaa;padding:24px'>No transactions.</td></tr>"}</tbody>
@@ -466,13 +501,13 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
         </div>
       </div>
 
-      {/* Summary cards — show filtered values when filter active */}
+      {/* Summary cards */}
       {(() => {
         const cardPurchased = filterActive ? shownPurchased : totalPurchased;
-        const cardPaid      = filterActive ? shownPaid : totalPaid;
+        const cardPaid      = filterActive ? shownPaid      : totalPaid;
         const cardDue       = filterActive ? Math.max(shownPurchased - shownPaid, 0) : outstanding;
         const purchaseCount = filterActive ? ledger.filter(r => r.kind === "purchase").length : (stmt.purchases||[]).length;
-        const paymentCount  = filterActive ? ledger.filter(r => r.kind === "payment").length : (stmt.payments||[]).length;
+        const paymentCount  = filterActive ? ledger.filter(r => r.kind === "payment").length  : (stmt.payments||[]).length;
         return (
           <div style={st.summaryRow}>
             <div style={st.sumCard}>
@@ -493,7 +528,7 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
             {!filterActive && s.lastPurchaseAt && (
               <div style={st.sumCard}>
                 <div style={st.sumLabel}>Last purchase</div>
-                <div style={{ fontSize:15, fontWeight:700, color:INK, marginTop:6 }}>{dtfmt(s.lastPurchaseAt)}</div>
+                <div style={{ fontSize:15, fontWeight:700, color:INK, marginTop:6 }}>{fmtDateTime(s.lastPurchaseAt)}</div>
               </div>
             )}
           </div>
@@ -535,27 +570,19 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
               </thead>
               <tbody>
                 {ledger.map((row, i) => {
-                  if (hideRows.has(i)) return null; // advance merged into purchase row
+                  if (hideRows.has(i)) return null;
                   const isPurchase = row.kind === "purchase";
                   const p          = row.data as any;
                   const amount     = dec(p.total ?? p.debit ?? p.amount ?? p.credit ?? 0);
                   const itemCount  = p._itemCount ?? (p.items||[]).length ?? 0;
                   const advanceRow = isPurchase ? advanceMap.get(i) : null;
                   const advanceAmt = advanceRow ? dec((advanceRow.data as any).amount ?? (advanceRow.data as any).credit ?? 0) : 0;
+                  const dateRaw    = p.createdAt || row.date || p.billDate || "";
                   return (
                     <tr key={p.id||i} style={{ background: i%2===0 ? CARD : IVORY, borderLeft:`3px solid ${isPurchase?TERRA:GREEN}` }}>
                       <td style={{ ...st.td, whiteSpace:"nowrap", color:MUTE, fontSize:12 }}>
-                        {(() => {
-                          const raw = p.createdAt || row.date || p.billDate || "";
-                          const d = raw ? new Date(raw) : null;
-                          const dateStr = d && !isNaN(d.getTime())
-                            ? d.toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" })
-                            : "—";
-                          const timeStr = d && !isNaN(d.getTime())
-                            ? d.toLocaleTimeString("en-IN", { hour:"2-digit", minute:"2-digit", hour12:true })
-                            : "";
-                          return (<><div>{dateStr}</div>{timeStr && <div style={{ fontSize:10.5, marginTop:2 }}>{timeStr}</div>}</>);
-                        })()}
+                        <div style={{ fontWeight:600, color:INK }}>{fmtDate(dateRaw)}</div>
+                        <div style={{ fontSize:10.5, marginTop:2 }}>{fmtTime(dateRaw)}</div>
                       </td>
                       <td style={st.td}>
                         <span style={{ display:"inline-block", padding:"3px 9px", fontSize:11, fontWeight:700, background: isPurchase?"#fff2ee":GREEN_LT, color:isPurchase?TERRA:GREEN }}>
@@ -564,7 +591,9 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                       </td>
                       <td style={{ ...st.td, maxWidth:280 }}>
                         <div style={{ fontWeight:700, color:INK, marginBottom:2 }}>
-                          {isPurchase ? (p.billNo ? `Bill #${p.billNo}` : "Purchase bill") : (p.method ? p.method.charAt(0).toUpperCase()+p.method.slice(1) : "Cash")}
+                          {isPurchase
+                            ? (p.billNo ? `Bill #${p.billNo}` : "Purchase bill")
+                            : (p.method ? p.method.charAt(0).toUpperCase()+p.method.slice(1) : "Cash")}
                         </div>
                         {p.note && <div style={{ fontSize:11.5, color:MUTE, marginBottom:3 }}>{p.note}</div>}
                         {isPurchase && itemCount > 0 && <div style={{ fontSize:11.5, color:MUTE, marginBottom:4 }}>{itemCount} item{itemCount!==1?"s":""}</div>}
@@ -584,7 +613,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                       </td>
                       <td style={{ ...st.td, textAlign:"right", fontWeight:800, fontVariantNumeric:"tabular-nums", whiteSpace:"nowrap" }}>
                         {(() => {
-                          // For purchase with advance: show the post-advance running balance
                           const displayBalance = advanceRow ? advanceRow.running : row.running;
                           return <span style={{ color: displayBalance > 0 ? TERRA : GREEN }}>{rupee(displayBalance)}</span>;
                         })()}
@@ -623,8 +651,8 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
             <div style={sharedSt.dBody}>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:1, background:LINE, border:`1px solid ${LINE}`, marginBottom:18 }}>
                 {[
-                  { label:"Outstanding",  val:rupee(outstanding), color:TERRA },
-                  { label:"After payment",val:rupee(Math.max(outstanding-dec(payForm.amount),0)), color:Math.max(outstanding-dec(payForm.amount),0)===0?GREEN:AMBER },
+                  { label:"Outstanding",   val:rupee(outstanding), color:TERRA },
+                  { label:"After payment", val:rupee(Math.max(outstanding-dec(payForm.amount),0)), color:Math.max(outstanding-dec(payForm.amount),0)===0?GREEN:AMBER },
                 ].map(b=>(
                   <div key={b.label} style={{ background:CARD, padding:"14px 18px", textAlign:"center" }}>
                     <div style={{ fontSize:10.5, color:MUTE, textTransform:"uppercase", letterSpacing:.7, marginBottom:5 }}>{b.label}</div>
@@ -670,8 +698,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                 <label style={sharedSt.field}><span style={sharedSt.lbl}>Bill date</span>
                   <input style={sharedSt.inp} type="date" value={purForm.billDate} onChange={e=>setPurForm(p=>({...p,billDate:e.target.value}))}/></label>
               </div>
-
-              {/* ── Line items with Category → Item two-step picker ── */}
               <div style={{ marginTop:16 }}>
                 <div style={{ fontSize:12, fontWeight:700, color:BODY, marginBottom:8 }}>Items purchased</div>
                 <div style={{ display:"grid", gridTemplateColumns:"minmax(0,1.8fr) 72px 90px 76px 28px", gap:6, marginBottom:6 }}>
@@ -681,25 +707,17 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                 </div>
                 {purLines.map(l=>(
                   <div key={l.id} style={{ display:"grid", gridTemplateColumns:"minmax(0,1.8fr) 72px 90px 76px 28px", gap:6, marginBottom:8, alignItems:"start" }}>
-
-                    {/* Two-step picker: Category → Item */}
                     <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                      {/* Step 1: Category */}
                       <select style={{ ...sharedSt.inp, fontSize:12 }} value={l.category} onChange={e => {
-                        setPurLines(lines => lines.map(r => r.id === l.id
-                          ? { ...r, category: e.target.value, itemId:"", name:"", unit:"piece" }
-                          : r));
+                        setPurLines(lines => lines.map(r => r.id === l.id ? { ...r, category: e.target.value, itemId:"", name:"", unit:"piece" } : r));
                       }}>
                         <option value="">— select category —</option>
                         {stockCategories.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
-                      {/* Step 2: Item (filtered by category, only shown after category picked) */}
                       {l.category ? (
                         <select style={{ ...sharedSt.inp, fontSize:12 }} value={l.itemId} onChange={e => {
                           const picked = stockItems.find(s => s.id === e.target.value);
-                          setPurLines(lines => lines.map(r => r.id === l.id
-                            ? { ...r, itemId: e.target.value, name: picked?.name||"", unit: picked?.unit||"piece" }
-                            : r));
+                          setPurLines(lines => lines.map(r => r.id === l.id ? { ...r, itemId: e.target.value, name: picked?.name||"", unit: picked?.unit||"piece" } : r));
                         }}>
                           <option value="">— select item —</option>
                           {stockItems.filter(si => si.category === l.category).map(si => (
@@ -710,7 +728,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                         <div style={{ fontSize:11, color:MUTE, padding:"6px 2px", fontStyle:"italic" }}>Pick a category first</div>
                       )}
                     </div>
-
                     <input style={{ ...sharedSt.inp, textAlign:"right" }} type="number" min="0" value={l.qty} onChange={e=>setPurLine(l.id,"qty",e.target.value)}/>
                     <input style={{ ...sharedSt.inp, textAlign:"right" }} type="number" min="0" placeholder="0" value={l.rate} onChange={e=>setPurLine(l.id,"rate",e.target.value)}/>
                     <select style={sharedSt.inp} value={l.unit} onChange={e=>setPurLine(l.id,"unit",e.target.value)}>
@@ -726,8 +743,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                   <Icon name="plus" size={13}/> Add line
                 </button>
               </div>
-
-              {/* Totals preview */}
               {(() => {
                 const lines = purLines.filter(l=>(l.itemId||l.name.trim())&&dec(l.qty)>0&&dec(l.rate)>0);
                 const sub   = lines.reduce((s,l)=>s+dec(l.qty)*dec(l.rate),0);
@@ -745,8 +760,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                   </div>
                 ) : null;
               })()}
-
-              {/* Advance Payment */}
               <label style={sharedSt.field}>
                 <span style={sharedSt.lbl}>Advance Payment (₹) · paid now to supplier</span>
                 <input style={{ ...sharedSt.inp, borderColor: dec(purForm.advance) > 0 ? GREEN : undefined }}
@@ -758,8 +771,6 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                   </div>
                 )}
               </label>
-
-              {/* Discount & GST — optional */}
               <div style={sharedSt.row2}>
                 <label style={sharedSt.field}><span style={sharedSt.lbl}>Discount (optional)</span>
                   <div style={{ display:"flex", gap:6 }}>

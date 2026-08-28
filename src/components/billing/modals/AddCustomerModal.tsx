@@ -22,7 +22,7 @@ export default function AddCustomerModal({ initialName, initialPhone, initialEma
     if (!form.name.trim()) { setErr("Name is required."); return; }
     setBusy(true); setErr("");
     try {
-      await api.post("/api/users", { name:form.name.trim(), email:form.email.trim(), phone:form.phone.trim(), address:form.address.trim(), notes:form.notes.trim() });
+      await api.post("/api/customers", { name:form.name.trim(), email:form.email.trim(), phone:form.phone.trim(), address:form.address.trim(), source:"offline" });
       onAdded(form.name.trim(), form.phone.trim(), form.email.trim(), form.address.trim());
     } catch(e:any) { setErr(e?.response?.data?.message || "Couldn't add the customer."); }
     finally { setBusy(false); }

@@ -33,17 +33,14 @@ export default function InventoryTable({
   items, kpis, catSummary, loading, selCat, lowOnly,
   onSelCat, onLowToggle, onClearCat, onClearLow, onMoveDrawer, onHistDrawer, onEditDrawer, onDeleted,
 }: Props) {
-  const [search, setSearch] = useState("");
+  const [search,   setSearch]   = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo,   setDateTo]   = useState("");
 
-  // ── Delete confirm modal state ─────────────────────────────────────────────
   const [delItem, setDelItem] = useState<InventoryItem | null>(null);
   const [delPin,  setDelPin]  = useState("");
   const [delBusy, setDelBusy] = useState(false);
   const [delErr,  setDelErr]  = useState("");
-
-  // "Updated in" date filter (filters the item list by updatedAt)
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo,   setDateTo]   = useState("");
 
   async function confirmDelete() {
     if (!delItem || !delPin) { setDelErr("PIN required"); return; }
@@ -72,7 +69,6 @@ export default function InventoryTable({
     return list;
   })();
 
-  // Category roll-ups for the category-cards view
   const catCards = (() => {
     const m = new Map<string, { name: string; count: number; value: number; low: number; out: number }>();
     for (const it of items) {
@@ -88,18 +84,19 @@ export default function InventoryTable({
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
   })();
 
-  // Show the flat items table when a category is picked, or a search / low-stock filter is active.
   const showTable = !!selCat || lowOnly || !!search.trim() || !!dateFrom || !!dateTo;
+  const activeFilters = [selCat, lowOnly, search.trim(), dateFrom||dateTo].filter(Boolean).length;
 
   return (
     <div style={st.wrap}>
+
       {/* ── KPI strip ─────────────────────────────────────────────────── */}
       <div style={st.kpiStrip}>
         {[
-          { label:"Total items",  val: loading?"…":String(kpis?.totalItems ?? items.length), sub:"Active in catalogue",  icon:"box",     accent: GOLD   },
-          { label:"Stock value",  val: loading?"…":rfmt(dec(kpis?.stockValue)),               sub:"At cost price",         icon:"download",accent: TERRA  },
-          { label:"Low stock",    val: loading?"…":String(kpis?.lowStockCount ?? 0),           sub:"At or below reorder",   icon:"warning", accent:(kpis?.lowStockCount??0)>0?"#b45309":MUTE },
-          { label:"Out of stock", val: loading?"…":String(kpis?.outOfStockCount ?? 0),          sub:"Needs restocking",      icon:"warning", accent:(kpis?.outOfStockCount??0)>0?RED:MUTE    },
+          { label:"Total items",  val: loading?"…":String(kpis?.totalItems ?? items.length), sub:"Active in catalogue",  accent: GOLD   },
+          { label:"Stock value",  val: loading?"…":rfmt(dec(kpis?.stockValue)),               sub:"At cost price",        accent: TERRA  },
+          { label:"Low stock",    val: loading?"…":String(kpis?.lowStockCount ?? 0),           sub:"At or below reorder",  accent:(kpis?.lowStockCount??0)>0?"#b45309":MUTE },
+          { label:"Out of stock", val: loading?"…":String(kpis?.outOfStockCount ?? 0),         sub:"Needs restocking",     accent:(kpis?.outOfStockCount??0)>0?RED:MUTE    },
         ].map(k => (
           <div key={k.label} style={st.kpiCard}>
             <div style={{ fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, marginBottom:8 }}>{k.label}</div>
@@ -109,61 +106,88 @@ export default function InventoryTable({
         ))}
       </div>
 
-      {/* ── Toolbar ───────────────────────────────────────────────────── */}
-      <div style={st.toolbar}>
-        <div style={{ display:"flex", gap:8, flex:1, alignItems:"center", flexWrap:"wrap", minWidth:0 }}>
-          <div style={st.searchWrap}>
-            <Icon name="search" size={15} color={MUTE} />
-            <input
-              className="inv-search"
-              style={st.searchIn}
-              placeholder="Search name, SKU or category…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
+      {/* ── Filter bar ────────────────────────────────────────────────── */}
+      <div style={st.filterBar}>
 
-          {/* When drilled into a category → back button; otherwise the dropdown */}
-          {selCat ? (
-            <button className="inv-ghost" style={st.backBtn} onClick={onClearCat}>
-              <span style={{ fontSize:15, lineHeight:1 }}>←</span> All categories
-              <span style={st.crumbCat}>{selCat}</span>
-            </button>
-          ) : (
-            <select
-              style={st.catSelect}
-              value={selCat}
-              onChange={e => onSelCat(e.target.value)}
-            >
-              <option value="">All categories</option>
-              {catSummary.map(c => (
-                <option key={c.name} value={c.name}>{c.name} ({c.count})</option>
-              ))}
-            </select>
-          )}
-
-          {/* Low stock toggle */}
-          <button
-            style={{ ...st.lowToggle, ...(lowOnly ? st.lowToggleOn : {}) }}
-            onClick={onLowToggle}
-            title="Show only low stock"
-          >
-            <Icon name="warning" size={13} color={lowOnly ? TERRA : MUTE} />
-            <span>Low stock</span>
-            {(kpis?.lowStockCount ?? 0) > 0 && (
-              <span style={st.lowCount}>{kpis?.lowStockCount}</span>
-            )}
+        {/* Category first */}
+        {selCat ? (
+          <button className="inv-filter-active" style={st.filterChip} onClick={onClearCat}>
+            <span style={{ fontSize:11, color:MUTE }}>Category:</span>
+            <span style={{ fontWeight:700, color:TERRA }}>{selCat}</span>
+            <span style={st.chipX}>×</span>
           </button>
+        ) : (
+          <select style={st.filterSelect} value={selCat} onChange={e => onSelCat(e.target.value)}>
+            <option value="">All categories</option>
+            {catSummary.map(c => (
+              <option key={c.name} value={c.name}>{c.name} ({c.count})</option>
+            ))}
+          </select>
+        )}
 
-          {/* Date filter — filters items by their last-updated date */}
-          <div style={st.dateWrap}>
-            <span style={st.dateLbl}>Updated</span>
-            <OverviewFilters onChange={f => { setDateFrom(f.from); setDateTo(f.to); }} />
-          </div>
+        <div style={st.divider} />
+
+        {/* Search */}
+        <div style={st.searchWrap}>
+          <Icon name="search" size={15} color={MUTE} />
+          <input
+            className="inv-search"
+            style={st.searchIn}
+            placeholder="Search name, SKU or category…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {search && (
+            <button style={st.clearX} onClick={() => setSearch("")}>×</button>
+          )}
         </div>
+
+        {/* Low stock */}
+        <button
+          className={lowOnly ? "inv-filter-active" : "inv-filter-btn"}
+          style={{ ...st.filterBtn, ...(lowOnly ? st.filterBtnOn : {}) }}
+          onClick={onLowToggle}
+        >
+          <Icon name="warning" size={13} color={lowOnly ? TERRA : MUTE} />
+          Low stock
+          {(kpis?.lowStockCount ?? 0) > 0 && (
+            <span style={{ ...st.badge, background: lowOnly ? TERRA : "#f0e6dc", color: lowOnly ? "#fff" : "#9a6a3a" }}>
+              {kpis?.lowStockCount}
+            </span>
+          )}
+        </button>
+
+        <div style={st.divider} />
+
+        {/* Date filter */}
+        <div style={st.dateRow}>
+          <span style={st.dateLabel}>Updated</span>
+          <OverviewFilters onChange={f => { setDateFrom(f.from); setDateTo(f.to); }} />
+        </div>
+
+        {/* Clear all */}
+        {activeFilters > 0 && (
+          <>
+            <div style={st.divider} />
+            <button style={st.clearAll} onClick={() => { onClearCat(); if(lowOnly) onLowToggle(); setSearch(""); setDateFrom(""); setDateTo(""); }}>
+              Clear all
+            </button>
+          </>
+        )}
       </div>
 
-      {/* ── Category cards  OR  items table ───────────────────────────── */}
+      {/* ── Results count ─────────────────────────────────────────────── */}
+      {showTable && (
+        <div style={st.resultsMeta}>
+          <span style={{ color:MUTE, fontSize:12.5 }}>
+            Showing <b style={{ color:INK }}>{tableItems.length}</b> of {items.length} items
+            {selCat && <> in <b style={{ color:TERRA }}>{selCat}</b></>}
+            {lowOnly && <> · <span style={{ color:"#b45309" }}>low stock only</span></>}
+          </span>
+        </div>
+      )}
+
+      {/* ── Category cards OR items table ─────────────────────────────── */}
       {!showTable ? (
         <div style={st.tableOuter}>
           {loading ? (
@@ -194,77 +218,77 @@ export default function InventoryTable({
           )}
         </div>
       ) : (
-      <div style={st.tableOuter}>
-        {loading ? (
-          <div style={st.empty}>Loading…</div>
-        ) : tableItems.length === 0 ? (
-          <div style={st.empty}>
-            {items.length === 0 ? "No stock items yet — click Add item to get started." : "No items match the current filter."}
-          </div>
-        ) : (
-          <table style={st.table}>
-            <thead>
-              <tr>
-                {["Item","Category","In Stock","Cost / Unit","Sell / Unit","Value","Supplier","Updated",""].map(h => (
-                  <th key={h} style={st.th}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {tableItems.map((it, idx) => {
-                const qty   = dec(it.quantity);
-                const reord = dec(it.reorderLevel);
-                const cost  = dec(it.costPrice);
-                const sell  = dec(it.sellPrice);
-                const isLow = qty <= reord && reord > 0;
-                const isOut = qty <= 0;
-                const catIdx = catSummary.findIndex(c => c.name === (it.category||"Uncategorised"));
-                return (
-                  <tr key={it.id} className="inv-row" style={{ background: idx%2===0 ? CARD : IVORY }}>
-                    <td style={st.td}>
-                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                        <div style={{ width:3, height:40, background:catColor(catIdx>=0?catIdx:0), borderRadius:2, flexShrink:0 }} />
-                        <div>
-                          <div style={{ fontWeight:700, fontSize:13.5, color:INK }}>{it.name}</div>
-                          <div style={{ fontSize:11, color:MUTE, marginTop:1, fontFamily:"monospace" }}>{it.sku}</div>
+        <div style={st.tableOuter}>
+          {loading ? (
+            <div style={st.empty}>Loading…</div>
+          ) : tableItems.length === 0 ? (
+            <div style={st.empty}>
+              {items.length === 0 ? "No stock items yet — click Add item to get started." : "No items match the current filters."}
+            </div>
+          ) : (
+            <table style={st.table}>
+              <thead>
+                <tr>
+                  {["Item","Category","In Stock","Cost / Unit","Sell / Unit","Value","Supplier","Updated",""].map(h => (
+                    <th key={h} style={st.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tableItems.map((it, idx) => {
+                  const qty   = dec(it.quantity);
+                  const reord = dec(it.reorderLevel);
+                  const cost  = dec(it.costPrice);
+                  const sell  = dec(it.sellPrice);
+                  const isLow = qty <= reord && reord > 0;
+                  const isOut = qty <= 0;
+                  const catIdx = catSummary.findIndex(c => c.name === (it.category||"Uncategorised"));
+                  return (
+                    <tr key={it.id} className="inv-row" style={{ background: idx%2===0 ? CARD : IVORY }}>
+                      <td style={st.td}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <div style={{ width:3, height:40, background:catColor(catIdx>=0?catIdx:0), borderRadius:2, flexShrink:0 }} />
+                          <div>
+                            <div style={{ fontWeight:700, fontSize:13.5, color:INK }}>{it.name}</div>
+                            <div style={{ fontSize:11, color:MUTE, marginTop:1, fontFamily:"monospace" }}>{it.sku}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td style={st.td}>
-                      <span style={st.catPill}>{it.category||"—"}</span>
-                    </td>
-                    <td style={st.td}>
-                      <div style={{ fontWeight:700, fontVariantNumeric:"tabular-nums", fontSize:14, color:isOut?RED:isLow?"#b45309":GREEN }}>
-                        {qty} {it.unit}
-                      </div>
-                      <div style={{ fontSize:10.5, marginTop:2 }}>
-                        {isOut  ? <span style={{color:RED,fontWeight:700}}>Out of stock</span>
-                        :isLow  ? <span style={{color:"#b45309",fontWeight:700}}>Low stock</span>
-                        :         <span style={{color:GREEN}}>In stock</span>}
-                      </div>
-                    </td>
-                    <td style={{ ...st.td, fontVariantNumeric:"tabular-nums" }}>{rfmt(cost)}</td>
-                    <td style={{ ...st.td, fontVariantNumeric:"tabular-nums", fontWeight:sell>0?700:400, color:sell>0?TERRA:MUTE }}>
-                      {sell > 0 ? rfmt(sell) : "—"}
-                    </td>
-                    <td style={{ ...st.td, fontWeight:700, fontVariantNumeric:"tabular-nums" }}>{rfmt(qty*cost)}</td>
-                    <td style={{ ...st.td, color:MUTE, fontSize:12.5 }}>{it.supplier?.name||"—"}</td>
-                    <td style={{ ...st.td, color:MUTE, fontSize:11, whiteSpace:"nowrap" }}>{dtfmt(it.updatedAt)}</td>
-                    <td style={{ ...st.td, textAlign:"right" }}>
-                      <div style={{ display:"flex", gap:5, justifyContent:"flex-end" }}>
-                        <button className="inv-icon" style={st.iconBtn}    title="Move stock" onClick={()=>onMoveDrawer(it)}><Icon name="move"    size={14}/></button>
-                        <button className="inv-icon" style={st.iconBtn}    title="History"    onClick={()=>onHistDrawer(it)}><Icon name="history" size={14}/></button>
-                        <button className="inv-icon" style={st.iconBtn}    title="Edit"       onClick={()=>onEditDrawer(it)}><Icon name="edit"    size={14}/></button>
-                        <button className="inv-del"  style={st.delBtn}     title="Delete"     onClick={()=>{ setDelItem(it); setDelPin(""); setDelErr(""); }}><Icon name="trash"   size={14}/></button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                      </td>
+                      <td style={st.td}>
+                        <span style={st.catPill}>{it.category||"—"}</span>
+                      </td>
+                      <td style={st.td}>
+                        <div style={{ fontWeight:700, fontVariantNumeric:"tabular-nums", fontSize:14, color:isOut?RED:isLow?"#b45309":GREEN }}>
+                          {qty} {it.unit}
+                        </div>
+                        <div style={{ fontSize:10.5, marginTop:2 }}>
+                          {isOut  ? <span style={{color:RED,fontWeight:700}}>Out of stock</span>
+                          :isLow  ? <span style={{color:"#b45309",fontWeight:700}}>Low stock</span>
+                          :         <span style={{color:GREEN}}>In stock</span>}
+                        </div>
+                      </td>
+                      <td style={{ ...st.td, fontVariantNumeric:"tabular-nums" }}>{rfmt(cost)}</td>
+                      <td style={{ ...st.td, fontVariantNumeric:"tabular-nums", fontWeight:sell>0?700:400, color:sell>0?TERRA:MUTE }}>
+                        {sell > 0 ? rfmt(sell) : "—"}
+                      </td>
+                      <td style={{ ...st.td, fontWeight:700, fontVariantNumeric:"tabular-nums" }}>{rfmt(qty*cost)}</td>
+                      <td style={{ ...st.td, color:MUTE, fontSize:12.5 }}>{it.supplier?.name||"—"}</td>
+                      <td style={{ ...st.td, color:MUTE, fontSize:11, whiteSpace:"nowrap" }}>{dtfmt(it.updatedAt)}</td>
+                      <td style={{ ...st.td, textAlign:"right" }}>
+                        <div style={{ display:"flex", gap:5, justifyContent:"flex-end" }}>
+                          <button className="inv-icon" style={st.iconBtn} title="Move stock" onClick={()=>onMoveDrawer(it)}><Icon name="move"    size={14}/></button>
+                          <button className="inv-icon" style={st.iconBtn} title="History"    onClick={()=>onHistDrawer(it)}><Icon name="history" size={14}/></button>
+                          <button className="inv-icon" style={st.iconBtn} title="Edit"       onClick={()=>onEditDrawer(it)}><Icon name="edit"    size={14}/></button>
+                          <button className="inv-del"  style={st.delBtn}  title="Delete"     onClick={()=>{ setDelItem(it); setDelPin(""); setDelErr(""); }}><Icon name="trash" size={14}/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       )}
 
       {/* ── Delete confirm modal ──────────────────────────────────────── */}
@@ -304,8 +328,12 @@ export default function InventoryTable({
       )}
 
       <style>{`
+        .inv-search:focus { outline:none; }
+        .inv-filter-btn:hover { background:#fff6f0 !important; border-color:${TERRA}55 !important; color:${TERRA} !important; }
+        .inv-filter-active { border-color:${TERRA}88 !important; }
         .inv-del:hover { background:#fff1ee !important; color:${RED} !important; border-color:${RED}55 !important; }
         .inv-catcard:hover { border-color:${TERRA}66 !important; box-shadow:0 6px 18px rgba(217,84,47,.12); transform:translateY(-2px); }
+        .inv-icon:hover { background:#f5f5f5 !important; color:${INK} !important; }
       `}</style>
     </div>
   );
@@ -315,15 +343,26 @@ const st: Record<string, React.CSSProperties> = {
   wrap:       { flex:1, minWidth:0, display:"flex", flexDirection:"column", overflowY:"auto" },
   kpiStrip:   { display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1, background:LINE, borderBottom:`1px solid ${LINE}`, flexShrink:0 },
   kpiCard:    { background:CARD, padding:"22px 24px" },
-  toolbar:    { display:"flex", alignItems:"center", gap:10, padding:"13px 20px", borderBottom:`1px solid ${LINE}`, background:CARD, flexShrink:0, flexWrap:"wrap" },
-  searchWrap: { display:"flex", alignItems:"center", gap:8, border:`1px solid ${LINE}`, background:CARD, padding:"9px 12px", flex:1, maxWidth:340, minWidth:160 },
-  searchIn:   { flex:1, border:"none", outline:"none", fontSize:13.5, fontFamily:SANS, color:INK, background:"transparent" },
-  catSelect:  { padding:"9px 12px", border:`1px solid ${LINE}`, background:CARD, fontSize:13, fontFamily:SANS, color:INK, cursor:"pointer", outline:"none", fontWeight:600, minWidth:150 },
-  lowToggle:  { display:"inline-flex", alignItems:"center", gap:7, padding:"9px 13px", border:`1px solid ${LINE}`, background:CARD, fontSize:12.5, fontFamily:SANS, fontWeight:600, color:MUTE, cursor:"pointer", transition:"all .15s" },
-  lowToggleOn:{ background:"#fff1ee", borderColor:`${TERRA}66`, color:TERRA },
-  lowCount:   { fontSize:11, fontWeight:700, background:TERRA, color:"#fff", padding:"1px 7px", borderRadius:10, fontVariantNumeric:"tabular-nums" },
-  pill:       { display:"inline-flex", alignItems:"center", gap:7, padding:"5px 11px", background:GOLD_LT, border:`1px solid ${GOLD}66`, fontSize:12, fontWeight:700, color:"#7a5a10" },
-  pillX:      { background:"none", border:"none", cursor:"pointer", lineHeight:1, padding:0, fontSize:14, fontFamily:SANS, color:"inherit" },
+
+  // ── Filter bar ────────────────────────────────────────────────────────────
+  filterBar:  { display:"flex", alignItems:"center", gap:0, padding:"10px 16px", borderBottom:`1px solid ${LINE}`, background:"#fafafa", flexShrink:0, flexWrap:"wrap", rowGap:8 },
+  searchWrap: { display:"flex", alignItems:"center", gap:8, background:CARD, border:`1px solid ${LINE}`, padding:"8px 12px", minWidth:220, flex:"1 1 220px", maxWidth:320 },
+  searchIn:   { flex:1, border:"none", outline:"none", fontSize:13, fontFamily:SANS, color:INK, background:"transparent" },
+  clearX:     { background:"none", border:"none", cursor:"pointer", color:MUTE, fontSize:17, lineHeight:1, padding:"0 2px" },
+  divider:    { width:1, height:28, background:LINE, margin:"0 10px", flexShrink:0 },
+  filterSelect:{ padding:"8px 12px", border:`1px solid ${LINE}`, background:CARD, fontSize:13, fontFamily:SANS, color:INK, cursor:"pointer", outline:"none", fontWeight:600, minWidth:150 },
+  filterBtn:  { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 13px", border:`1px solid ${LINE}`, background:CARD, fontSize:12.5, fontFamily:SANS, fontWeight:600, color:MUTE, cursor:"pointer", whiteSpace:"nowrap" as const, transition:"all .15s" },
+  filterBtnOn:{ background:"#fff1ee", borderColor:`${TERRA}66`, color:TERRA },
+  filterChip: { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 13px", border:`1px solid ${TERRA}55`, background:"#fff6f2", fontSize:12.5, fontFamily:SANS, fontWeight:600, color:INK, cursor:"pointer" },
+  chipX:      { marginLeft:2, color:MUTE, fontSize:15, lineHeight:1 },
+  badge:      { fontSize:11, fontWeight:700, padding:"1px 7px", borderRadius:10, fontVariantNumeric:"tabular-nums" as const },
+  dateRow:    { display:"inline-flex", alignItems:"center", gap:8 },
+  dateLabel:  { fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase" as const, letterSpacing:.8, whiteSpace:"nowrap" as const },
+  clearAll:   { padding:"8px 13px", background:"none", border:`1px solid ${LINE}`, fontSize:12.5, fontWeight:600, color:MUTE, cursor:"pointer", fontFamily:SANS, whiteSpace:"nowrap" as const },
+
+  resultsMeta:{ padding:"8px 20px", borderBottom:`1px solid ${LINE}`, background:IVORY, flexShrink:0 },
+
+  // ── Table ─────────────────────────────────────────────────────────────────
   tableOuter: { flex:1, overflowX:"auto" },
   table:      { width:"100%", borderCollapse:"collapse", fontSize:13.5 },
   th:         { padding:"11px 16px", textAlign:"left", fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, borderBottom:`2px solid ${LINE}`, background:IVORY, whiteSpace:"nowrap" },
@@ -333,7 +372,7 @@ const st: Record<string, React.CSSProperties> = {
   delBtn:     { width:32, height:32, display:"grid", placeItems:"center", border:`1px solid ${LINE}`, background:CARD, color:MUTE, cursor:"pointer", borderRadius:0, transition:"all .18s" },
   empty:      { padding:"60px 0", textAlign:"center", color:MUTE, fontFamily:SANS },
 
-  // delete modal
+  // ── Delete modal ─────────────────────────────────────────────────────────
   overlay:    { position:"fixed", inset:0, background:"rgba(42,35,29,.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:2000, backdropFilter:"blur(2px)" },
   delBox:     { background:CARD, width:"min(440px,94vw)", boxShadow:"0 8px 40px rgba(0,0,0,.18)", display:"flex", flexDirection:"column", fontFamily:SANS, color:INK },
   delHd:      { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 20px", borderBottom:`1px solid ${LINE}`, background:IVORY, fontSize:14, fontWeight:700 },
@@ -344,7 +383,7 @@ const st: Record<string, React.CSSProperties> = {
   delGhost:   { padding:"9px 20px", background:"transparent", border:`1px solid ${LINE}`, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:SANS, color:INK },
   delDanger:  { padding:"9px 22px", background:RED, border:"none", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS, color:"#fff" },
 
-  // category cards
+  // ── Category cards ────────────────────────────────────────────────────────
   catGrid:    { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))", gap:14, padding:20 },
   catCard:    { display:"flex", alignItems:"stretch", gap:14, background:CARD, border:`1px solid ${LINE}`, padding:"18px 18px 18px 0", cursor:"pointer", fontFamily:SANS, textAlign:"left", position:"relative", transition:"all .15s" },
   catAccent:  { width:5, flexShrink:0, borderRadius:2 },
@@ -355,12 +394,4 @@ const st: Record<string, React.CSSProperties> = {
   badgeOut:   { fontSize:10.5, fontWeight:700, color:RED, background:"#fff1ee", border:`1px solid ${RED}44`, padding:"2px 8px", borderRadius:2 },
   badgeLow:   { fontSize:10.5, fontWeight:700, color:"#b45309", background:"#fef3c7", border:"1px solid #f0c04066", padding:"2px 8px", borderRadius:2 },
   catArrow:   { alignSelf:"center", color:"#cfcabf", fontSize:18, fontWeight:700 },
-
-  // breadcrumb back button
-  backBtn:    { display:"inline-flex", alignItems:"center", gap:8, padding:"9px 14px", background:CARD, border:`1px solid ${LINE}`, fontSize:13, fontWeight:700, color:INK, cursor:"pointer", fontFamily:SANS },
-  crumbCat:   { marginLeft:2, padding:"2px 10px", background:`${TERRA}14`, color:TERRA, fontWeight:700, fontSize:12, borderRadius:2 },
-
-  // date filter (by updatedAt)
-  dateWrap:   { display:"inline-flex", alignItems:"center", gap:8, paddingLeft:10, marginLeft:2, borderLeft:`1px solid ${LINE}` },
-  dateLbl:    { fontSize:10, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.9 },
 };

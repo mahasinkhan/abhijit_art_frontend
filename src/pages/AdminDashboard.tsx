@@ -6,7 +6,7 @@ const Bookings         = lazy(() => import("../components/Bookings"));
 const Customers        = lazy(() => import("../components/Customers"));
 const Inventory        = lazy(() => import("../components/inventory"));
 const InvoiceMaker     = lazy(() => import("../components/billing"));
-const Invoices         = lazy(() => import("../components/Invoices"));
+const Invoices         = lazy(() => import("../components/invoices"));
 const PaymentReminders = lazy(() => import("../components/PaymentReminders"));
 const Activity         = lazy(() => import("../components/Activity"));
 const AdminPostUpload  = lazy(() => import("../components/AdminPostUpload"));

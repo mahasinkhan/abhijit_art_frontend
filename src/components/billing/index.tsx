@@ -15,7 +15,6 @@ import EmailModal     from "./modals/EmailModal";
 import WhatsAppModal  from "./modals/WhatsAppModal";
 import AddCustomerModal from "./modals/AddCustomerModal";
 
-// ── Icon ──────────────────────────────────────────────────────────────────────
 function Icon({ name, size=16 }: { name:string; size?:number }) {
   const p = { fill:"none", stroke:"currentColor", strokeWidth:1.8, strokeLinecap:"round" as const, strokeLinejoin:"round" as const };
   const map: Record<string,JSX.Element> = {
@@ -31,7 +30,6 @@ function Icon({ name, size=16 }: { name:string; size?:number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" style={{flexShrink:0}} aria-hidden>{map[name]}</svg>;
 }
 
-// ── Turn any axios/network failure into a readable line ──────────────────────
 function saveErrorText(e: any): string {
   const st  = e?.response?.status;
   const msg = e?.response?.data?.message || e?.response?.data?.error;
@@ -45,13 +43,12 @@ function saveErrorText(e: any): string {
 
 type SavedInvoice = { id?: string; invNo: string; pdfUrl?: string; stock?: string; stockWarn?: boolean };
 
-// Turn the backend `stock` sync object into a short human line + warn flag.
 function describeStock(stock: any): { text: string; warn: boolean } {
   if (!stock) return { text: "", warn: false };
   if (stock.error) return { text: `Stock not updated — ${stock.error}`, warn: true };
   const n = Number(stock.movementCount || 0);
   const unresolved = Array.isArray(stock.unresolved) ? stock.unresolved.length : 0;
-  if (!stock.changed && !n && !unresolved) return { text: "", warn: false }; // pure-service bill
+  if (!stock.changed && !n && !unresolved) return { text: "", warn: false };
   let text = n ? `Stock updated — ${n} item${n === 1 ? "" : "s"} consumed` : "Stock checked";
   const low = Array.isArray(stock.warnings) ? stock.warnings.length : 0;
   if (low) text += `, ${low} now low/out`;
@@ -62,7 +59,6 @@ function describeStock(stock: any): { text: string; warn: boolean } {
 // ═════════════════════════════════════════════════════════════════════════════
 export default function Billing() {
 
-  // ── Core state ───────────────────────────────────────────────────────────
   const [biz,       setBiz]      = useState<Party>(loadBiz);
   const [client,    setClient]   = useState<Party>({ name:"",address:"",phone:"",email:"",gstin:"",pan:"" });
   const [invNo,     setInvNo]    = useState(nextInvoiceNo);
@@ -76,29 +72,22 @@ export default function Billing() {
   const [advance,   setAdvance]  = useState("0");
   const [payMethod, setPayMethod]= useState<PayMethod>("cash");
 
-  // ── UI state ─────────────────────────────────────────────────────────────
   const [bizSaved,  setBizSaved] = useState(false);
   const [savedTick, setSavedTick]= useState(false);
   const [savingNow, setSavingNow]= useState(false);
   const [saveErr,   setSaveErr]  = useState("");
-
-  // The current invoice once it has been saved. Cleared on ANY content edit,
-  // so Download / WhatsApp / Email only ever act on an up-to-date saved bill.
   const [savedInv,  setSavedInv] = useState<SavedInvoice | null>(null);
 
-  // ── Images ────────────────────────────────────────────────────────────────
   const [qrBase64,   setQrBase64]   = useState("");
   const [logoBase64, setLogoBase64] = useState("");
   const [sigBase64,  setSigBase64]  = useState("");
 
-  // ── Data ──────────────────────────────────────────────────────────────────
   const [customers,   setCustomers]   = useState<CustomerLite[]>([]);
   const [dbCustomers, setDbCustomers] = useState<CustomerLite[]>([]);
   const [stockItems,  setStockItems]  = useState<StockItem[]>([]);
   const [stockCats,   setStockCats]   = useState<string[]>([]);
   const [catFilter,   setCatFilter]   = useState("");
 
-  // ── Modals ────────────────────────────────────────────────────────────────
   const [mailOpen,  setMailOpen]  = useState(false);
   const [mailTo,    setMailTo]    = useState("");
   const [mailSubj,  setMailSubj]  = useState("");
@@ -117,14 +106,12 @@ export default function Billing() {
   const [addCustOpen,  setAddCustOpen]  = useState(false);
   const pendingAction = useRef<(()=>void)|null>(null);
 
-  // ── Derived ───────────────────────────────────────────────────────────────
   const totals: Totals = useMemo(() => computeTotals(items, discType, discVal, taxPct), [items, discType, discVal, taxPct]);
   const advancePaid = Math.min(Math.max(num(advance), 0), totals.total);
   const balanceDue  = Math.max(totals.total - advancePaid, 0);
   const hasLines    = items.some(it => it.desc.trim() || num(it.rate) > 0);
-  const canExport   = !!savedInv;               // exports unlock only after a save
+  const canExport   = !!savedInv;
 
-  // ── Load images ───────────────────────────────────────────────────────────
   useEffect(() => {
     const toB64 = (src: string) => new Promise<string>(res => {
       const img = new Image(); img.crossOrigin = "anonymous";
@@ -136,7 +123,6 @@ export default function Billing() {
     toB64("/images/Signature.png").then(setSigBase64);
   }, []);
 
-  // ── Load customers ────────────────────────────────────────────────────────
   useEffect(() => {
     api.get("/api/invoices").then(r => {
       const seen = new Set<string>(); const out: CustomerLite[] = [];
@@ -151,13 +137,18 @@ export default function Billing() {
   }, []);
 
   const loadDbCustomers = () => {
-    api.get("/api/users").then(r => {
-      setDbCustomers((Array.isArray(r.data)?r.data:[]).map((u:any) => ({ name:String(u.name||"").trim(), phone:String(u.phone||"").trim(), email:String(u.email||"").trim(), gstin:"", address:String(u.address||"").trim() })));
-    }).catch(e => console.warn("[billing] users load failed:", e));
+    api.get("/api/customers").then(r => {
+      setDbCustomers((Array.isArray(r.data)?r.data:[]).map((u:any) => ({
+        name:    String(u.name    || "").trim(),
+        phone:   String(u.phone   || "").trim(),
+        email:   String(u.email   || "").trim(),
+        gstin:   String(u.gstin   || "").trim(),
+        address: String(u.address || "").trim(),
+      })));
+    }).catch(e => console.warn("[billing] customers load failed:", e));
   };
   useEffect(() => { loadDbCustomers(); }, []);
 
-  // ── Load stock items ──────────────────────────────────────────────────────
   const loadStock = () => {
     api.get("/api/inventory/items").then(r => {
       const rows: StockItem[] = Array.isArray(r.data)?r.data:[];
@@ -167,31 +158,30 @@ export default function Billing() {
   };
   useEffect(() => { loadStock(); }, []);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   const normPhone = (v: string) => v.replace(/[\s\-()]/g,"").replace(/^\+91/,"").replace(/^0+/,"");
 
   const clientIsRegistered = () => {
     const np = normPhone(client.phone.trim()); const nm = client.name.trim().toLowerCase();
+    if (!np && !nm) return true; // empty = no customer needed
     return dbCustomers.some(c => {
       const cp = normPhone(c.phone);
-      if (np&&cp&&np===cp) return true;
-      if (nm&&c.name.trim().toLowerCase()===nm) return true;
+      if (np && cp && np === cp) return true;
+      if (nm && c.name.trim().toLowerCase() === nm) return true;
       return false;
     });
   };
 
-  const withCustomer = (action: ()=>void) => {
-    if (!client.name.trim()) { action(); return; }
-    if (clientIsRegistered()) { action(); return; }
-    pendingAction.current = action;
+  const customerNeeded = !!client.name.trim() && !clientIsRegistered();
+
+  const openAddCustomer = () => {
+    pendingAction.current = null;
     setAddCustOpen(true);
   };
 
-  // Closing the add-customer modal must NEVER swallow the invoice action.
   const closeAddCustomer = () => {
     setAddCustOpen(false);
     const act = pendingAction.current; pendingAction.current = null;
-    if (act) setTimeout(act, 50);   // continue without registering the customer
+    if (act) setTimeout(act, 50);
   };
 
   const invoicePayload = () => ({
@@ -203,24 +193,18 @@ export default function Billing() {
     discType, discVal, taxPct, notes, warranty, paidAmount:advancePaid, paymentMethod:payMethod,
   });
 
-  // ── SAVE — persist + consume stock. Number is NOT rolled here, so the saved
-  //          bill stays on screen and can be exported. "New invoice" rolls it. ─
   const persistInvoice = async (): Promise<boolean> => {
     if (!hasLines || savingNow) return false;
+    if (customerNeeded) { openAddCustomer(); return false; }
     setSaveErr(""); setSavingNow(true);
     try {
       const res = await api.post("/api/invoices", invoicePayload());
       const inv = res?.data || {};
       const s = describeStock(inv.stock);
-      bumpSeq(invNo);                              // reserve this number for good
-      setSavedInv({
-        id:        inv.id,
-        invNo,
-        pdfUrl:    inv.pdfUrl || "",
-        stock:     s.text,
-        stockWarn: s.warn,
-      });
-      loadStock();                                 // refresh on-hand quantities
+      bumpSeq(invNo);
+      setSavedInv({ id:inv.id, invNo, pdfUrl:inv.pdfUrl||"", stock:s.text, stockWarn:s.warn });
+      loadStock();
+      loadDbCustomers();
       setSavedTick(true); setTimeout(()=>setSavedTick(false), 3000);
       return true;
     } catch (e:any) {
@@ -234,7 +218,6 @@ export default function Billing() {
 
   const saveNow = () => { persistInvoice(); };
 
-  // Any edit to invoice content invalidates the saved copy → must re-save.
   const contentKey = useMemo(
     () => JSON.stringify({ items, client, biz, date, invNo, discType, discVal, taxPct, notes, warranty, advance, payMethod }),
     [items, client, biz, date, invNo, discType, discVal, taxPct, notes, warranty, advance, payMethod]
@@ -256,7 +239,6 @@ export default function Billing() {
 
   const saveBiz = () => { saveBizToStorage(biz); setBizSaved(true); setTimeout(()=>setBizSaved(false),2000); };
 
-  // ── Download PDF — full A4 portrait, one bill per sheet (needs saved bill) ─
   const download = () => {
     if (!savedInv) return;
     const printedNo = savedInv.invNo;
@@ -277,7 +259,6 @@ export default function Billing() {
     w.document.write(html); w.document.close();
   };
 
-  // ── Email (needs saved bill) ────────────────────────────────────────────────
   const openMail = () => {
     if (!savedInv) return;
     setMailErr(""); setMailSent(""); setMailTo(client.email||"");
@@ -294,11 +275,9 @@ export default function Billing() {
     } catch(e:any) {
       console.error("[billing] POST /api/invoices/email failed", e?.response?.status, e?.response?.data || e);
       setMailErr(e?.response?.data?.message||"Couldn't send.");
-    }
-    finally { setMailBusy(false); }
+    } finally { setMailBusy(false); }
   };
 
-  // ── WhatsApp (needs saved bill; reuses its PDF link) ────────────────────────
   const openWA = () => {
     if (!savedInv) return;
     setWaErr(""); setWaSent(""); setWaTo(client.phone||"");
@@ -322,16 +301,13 @@ export default function Billing() {
     setTimeout(()=>{ setWaOpen(false); setWaSent(""); },1500);
   };
 
-  // Save button style — turns green once the invoice is saved.
   const saveBtnStyle: React.CSSProperties = savedInv
     ? { ...btnSt.save, background:"#e8f6ee", borderColor:"#bfe3cd", color:GREEN }
     : btnSt.save;
 
-  // ═══════════════════════════════════════════════════════ RENDER ════════════
   return (
     <div style={{ fontFamily:SANS, color:INK, minWidth:0, maxWidth:"100%" }}>
 
-      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", gap:20, flexWrap:"wrap", marginBottom:22 }}>
         <div>
           <h1 style={{ fontSize:26, fontWeight:800, margin:0, letterSpacing:-.6, color:INK }}>Invoice maker</h1>
@@ -344,7 +320,7 @@ export default function Billing() {
             </span>
           )}
           <button className="bl-toolbar" style={btnSt.ghost} onClick={resetBilling}><Icon name="reset" size={15}/> New invoice</button>
-          <button className="bl-toolbar-save" style={saveBtnStyle} onClick={()=>withCustomer(saveNow)} disabled={!hasLines||savingNow}>
+          <button className="bl-toolbar-save" style={saveBtnStyle} onClick={saveNow} disabled={!hasLines||savingNow||customerNeeded}>
             <Icon name={savedInv?"check":"save"} size={15}/>{savingNow?"Saving…":(savedInv?"Saved ✓":"Save invoice")}
           </button>
           <button className="bl-toolbar" style={btnSt.ghost} onClick={openMail} disabled={!canExport}><Icon name="mail" size={15}/> Send by email</button>
@@ -353,7 +329,6 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* ── Save error banner ─────────────────────────────────────────────── */}
       {saveErr && (
         <div style={{ display:"flex", alignItems:"flex-start", gap:10, marginBottom:16, padding:"12px 15px", background:"#fdecea", border:"1px solid #f3cfc2", color:"#8a2f16", fontSize:13, lineHeight:1.55 }}>
           <span style={{ marginTop:1, flexShrink:0 }}><Icon name="warn" size={16}/></span>
@@ -369,14 +344,25 @@ export default function Billing() {
         </div>
       )}
 
-      {/* ── State hints ───────────────────────────────────────────────────── */}
       {!hasLines && (
         <div style={{ marginBottom:16, padding:"11px 15px", background:"#fbf3e3", border:"1px solid #efdcb2", fontSize:12.5, color:"#8a6a1c", lineHeight:1.55 }}>
           Add a line item below to begin.
         </div>
       )}
 
-      {hasLines && !savedInv && (
+      {hasLines && customerNeeded && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, padding:"11px 15px", background:"#fdecea", border:"1px solid #f3cfc2", fontSize:12.5, color:"#8a2f16", lineHeight:1.55 }}>
+          <span style={{ flexShrink:0 }}><Icon name="warn" size={15}/></span>
+          <span style={{ flex:1 }}>
+            Customer <b>{client.name}</b> is not in the database. Add them first to save the invoice.
+          </span>
+          <button className="bl-toolbar" style={{ ...btnSt.ghost, padding:"6px 14px", fontSize:12, background:"#d9542f", color:"#fff", borderColor:"#d9542f" }} onClick={openAddCustomer}>
+            + Add Customer
+          </button>
+        </div>
+      )}
+
+      {hasLines && !savedInv && !customerNeeded && (
         <div style={{ marginBottom:16, padding:"11px 15px", background:"#fbf3e3", border:"1px solid #efdcb2", fontSize:12.5, color:"#8a6a1c", lineHeight:1.55 }}>
           Press <b>Save invoice</b> to store it and consume stock. Download PDF, WhatsApp and Send by email unlock right after.
         </div>
@@ -398,7 +384,6 @@ export default function Billing() {
         </div>
       )}
 
-      {/* ── Two-column layout ────────────────────────────────────────────── */}
       <div className="bl-layout" style={{ display:"grid", gridTemplateColumns:"minmax(0,1.35fr) minmax(0,1fr)", gap:18, alignItems:"start" }}>
         <BillingForm
           biz={biz} client={client} invNo={invNo} date={date}
@@ -414,6 +399,7 @@ export default function Billing() {
           onNotesChange={setNotes} onWarrantyChange={setWarranty}
           onAdvanceChange={setAdvance} onPayMethodChange={setPayMethod}
           onCatFilterChange={setCatFilter} onSaveBiz={saveBiz}
+          onAddCustomer={openAddCustomer}
         />
         <BillingPreview
           biz={biz} client={client} invNo={invNo} date={date}
@@ -423,7 +409,6 @@ export default function Billing() {
         />
       </div>
 
-      {/* ── Modals ──────────────────────────────────────────────────────── */}
       {mailOpen && (
         <EmailModal invNo={savedInv?.invNo || invNo} bizName={biz.name} total={totals.total}
           itemCount={items.filter(it=>it.desc.trim()||num(it.rate)>0).length}
