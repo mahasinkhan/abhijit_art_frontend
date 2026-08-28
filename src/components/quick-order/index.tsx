@@ -11,7 +11,7 @@ import LedgerDrill      from "./LedgerDrill";
 import OrderDetailDrawer from "./OrderDetailDrawer";
 import {
   QuickOrder, LedgerRow, EmployeeRec, PAGE,
-  TERRA, TERRA_DK, INK, MUTE, LINE, IVORY, CARD, GREEN, SANS,
+  TERRA, TERRA_DK, GOLD, INK, MUTE, LINE, IVORY, CARD, GREEN, SANS,
   rupees, todayStr, fmtDate,
 } from "./types";
 
@@ -212,9 +212,11 @@ export default function QuickOrders() {
 
   // ── Summaries ──
   const totalToday   = entries.reduce((s, e) => s + Number(e.amount), 0);
+  const totalLess    = entries.reduce((s, e) => s + Number(e.lessAmount || 0), 0);
   const totalAdv     = entries.reduce((s, e) => s + Number(e.advancePaid), 0);
-  const totalDue     = Math.max(0, totalToday - totalAdv);
+  const totalDue     = Math.max(0, totalToday - totalLess - totalAdv);
   const ledgerTotal  = ledger.reduce((s, r) => s + r.totalAmount, 0);
+  const ledgerLess   = ledger.reduce((s, r) => s + (r.totalLess || 0), 0);
   const ledgerAdv    = ledger.reduce((s, r) => s + r.totalAdvance, 0);
   const ledgerDue    = ledger.reduce((s, r) => s + r.totalDue, 0);
   const ledgerOrders = ledger.reduce((s, r) => s + r.totalOrders, 0);
@@ -256,12 +258,14 @@ export default function QuickOrders() {
         {view === "daily" ? (
           <>
             <Kpi label="Total Billed"      val={rupees(totalToday)}  sub={`${entries.length} order${entries.length !== 1 ? "s" : ""}`} color="#c2974a" />
+            <Kpi label="Total Less"        val={totalLess > 0 ? `−${rupees(totalLess)}` : rupees(0)} sub="Concession given" color={GOLD} />
             <Kpi label="Advance Received"  val={rupees(totalAdv)}    sub="Paid upfront"  color={GREEN} />
             <Kpi label="Balance Due"       val={rupees(totalDue)}    sub="Still owed"    color={totalDue > 0 ? TERRA : GREEN} />
           </>
         ) : (
           <>
             <Kpi label="Total Billed"      val={rupees(ledgerTotal)} sub={`${ledgerOrders} orders · ${ledger.length} customers`} color="#c2974a" />
+            <Kpi label="Total Less"        val={ledgerLess > 0 ? `−${rupees(ledgerLess)}` : rupees(0)} sub="Concession given" color={GOLD} />
             <Kpi label="Advance Received"  val={rupees(ledgerAdv)}   sub="Paid upfront"  color={GREEN} />
             <Kpi label="Balance Due"       val={rupees(ledgerDue)}   sub="Outstanding"   color={ledgerDue > 0 ? TERRA : GREEN} />
           </>
@@ -382,7 +386,7 @@ const st: Record<string, React.CSSProperties> = {
   alltimeOn:   { background: INK, color: "#fff", borderColor: INK },
   showing:     { fontSize: 12.5, color: MUTE, fontWeight: 600 },
   add:         { marginLeft: "auto", background: TERRA, color: "#fff", border: "none", padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: SANS },
-  kpiStrip:    { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 1, background: LINE, border: `1px solid ${LINE}`, marginBottom: 18 },
+  kpiStrip:    { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, background: LINE, border: `1px solid ${LINE}`, marginBottom: 18 },
   kpi:         { background: CARD, padding: "18px 20px" },
   kpiL:        { fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: MUTE, marginBottom: 8 },
   kpiN:        { fontSize: 26, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums" },

@@ -46,6 +46,7 @@ export default function EntryDrawer({ editEntry, onClose, onSaved, employees = [
   const [showItems,   setShowItems]   = useState(false);
   const [desc,        setDesc]        = useState("");
   const [amount,      setAmount]      = useState("");
+  const [less,        setLess]        = useState("");   // NEW — concession
   const [advance,     setAdvance]     = useState("");
   const [payMethod,   setPayMethod]   = useState<"cash" | "online">("cash");
   const [entryDate,   setEntryDate]   = useState(todayStr());
@@ -94,6 +95,7 @@ export default function EntryDrawer({ editEntry, onClose, onSaved, employees = [
     setDesc(editEntry.description || "");
     setAmount(String(editEntry.amount || ""));
     setAdvance(editEntry.advancePaid ? String(editEntry.advancePaid) : "");
+    setLess((editEntry as any).lessAmount ? String((editEntry as any).lessAmount) : "");
     setPayMethod(editEntry.paymentMethod);
     setEntryDate(editEntry.entryDate.slice(0, 10));
     setExistingImgs(editEntry.images || []);
@@ -128,8 +130,9 @@ export default function EntryDrawer({ editEntry, onClose, onSaved, employees = [
   }, [stock]);
 
   const amtNum  = parseFloat(amount) || 0;
+  const lessNum = parseFloat(less) || 0;
   const advNum  = parseFloat(advance) || 0;
-  const dueNum  = Math.max(0, amtNum - advNum);
+  const dueNum  = Math.max(0, amtNum - lessNum - advNum);
   const canSave = !!(custSel?.name.trim() && workDetails.trim() && amtNum > 0);
 
   // ── Item helpers ──
@@ -185,6 +188,7 @@ export default function EntryDrawer({ editEntry, onClose, onSaved, employees = [
       fd.append("description",   desc);
       fd.append("amount",        String(amtNum));
       fd.append("advancePaid",   String(advNum));
+      fd.append("lessAmount",    String(lessNum));
       fd.append("paymentMethod", payMethod);
       fd.append("entryDate",     entryDate);
       if (items.length) fd.append("items", JSON.stringify(items.filter(it => it.desc.trim()).map(it => ({ itemId: it.itemId, desc: it.desc, qty: it.qty, rate: it.rate, unit: it.unit }))));
@@ -369,10 +373,14 @@ export default function EntryDrawer({ editEntry, onClose, onSaved, employees = [
           {/* ── Payment ── */}
           <div style={st.fieldset}>
             <div style={st.fsL}>Payment</div>
-            <div style={st.twoCol}>
+            <div style={{ ...st.twoCol, gridTemplateColumns: "1fr 1fr 1fr" }}>
               <div>
                 <label style={st.lbl}>Total Amount (₹) *</label>
                 <input style={st.inp} type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 2500" />
+              </div>
+              <div>
+                <label style={st.lbl}><span style={{ color: GOLD }}>Less (₹)</span> <span style={st.hint}>· concession</span></label>
+                <input style={{ ...st.inp, borderColor: lessNum > 0 ? GOLD : LINE }} type="number" min="0" value={less} onChange={(e) => setLess(e.target.value)} placeholder="0" />
               </div>
               <div>
                 <label style={st.lbl}>Advance Received (₹)</label>
@@ -380,8 +388,9 @@ export default function EntryDrawer({ editEntry, onClose, onSaved, employees = [
               </div>
             </div>
             {amtNum > 0 && (
-              <div style={{ marginTop: 10, padding: "8px 12px", background: IVORY, border: `1px solid ${LINE}`, display: "flex", gap: 20, fontSize: 13 }}>
+              <div style={{ marginTop: 10, padding: "8px 12px", background: IVORY, border: `1px solid ${LINE}`, display: "flex", gap: 20, fontSize: 13, flexWrap: "wrap" }}>
                 <span>Total: <b>{rupees(amtNum)}</b></span>
+                {lessNum > 0 && <span>Less: <b style={{ color: GOLD }}>−{rupees(lessNum)}</b></span>}
                 <span>Advance: <b style={{ color: GREEN }}>{rupees(advNum)}</b></span>
                 <span>Balance: <b style={{ color: dueNum > 0 ? TERRA : GREEN }}>{dueNum > 0 ? rupees(dueNum) : "✓ Fully paid"}</b></span>
               </div>

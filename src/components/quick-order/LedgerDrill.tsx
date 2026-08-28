@@ -36,20 +36,25 @@ export default function LedgerDrill({
   }) : entries;
 
   const stmtTotal = stmtEntries.reduce((s, e) => s + Number(e.amount), 0);
+  const stmtLess  = stmtEntries.reduce((s, e) => s + Number(e.lessAmount || 0), 0);
   const stmtPaid  = stmtEntries.reduce((s, e) => s + Number(e.advancePaid), 0);
-  const stmtDue   = Math.max(0, stmtTotal - stmtPaid);
+  const stmtDue   = Math.max(0, stmtTotal - stmtLess - stmtPaid);
 
   function applyFilter() { setFiltered(true); }
   function clearFilter()  { setFromDate(""); setToDate(""); setFiltered(false); }
 
   function printStatement() {
     const rows = stmtEntries.map((e, i) => {
-      const amt = Number(e.amount), adv = Number(e.advancePaid), due = Math.max(0, amt - adv);
+      const amt  = Number(e.amount);
+      const less = Number(e.lessAmount || 0);
+      const adv  = Number(e.advancePaid);
+      const due  = Math.max(0, amt - less - adv);
       return `<tr style="background:${i % 2 === 0 ? "#fff" : "#fafafa"}">
         <td>${fmtDate(e.entryDate)}</td>
         <td>${e.title || "—"}</td>
         <td style="max-width:220px;white-space:pre-line">${e.workDetails || "—"}</td>
         <td style="text-align:right;font-weight:700">&#8377;${amt.toLocaleString("en-IN")}</td>
+        <td style="text-align:right;color:#b8741f">${less > 0 ? "&#8722;&#8377;" + less.toLocaleString("en-IN") : "&#8212;"}</td>
         <td style="text-align:right;color:#16a34a">&#8377;${adv.toLocaleString("en-IN")}</td>
         <td style="text-align:right;color:${due > 0 ? "#c56a3a" : "#16a34a"};font-weight:700">${due > 0 ? "&#8377;" + due.toLocaleString("en-IN") : "Paid"}</td>
       </tr>`;
@@ -69,7 +74,7 @@ export default function LedgerDrill({
       th { background:#f3f4f6; text-align:left; padding:8px 10px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; border-bottom:2px solid #e5e7eb; }
       td { padding:8px 10px; border-bottom:1px solid #f3f4f6; vertical-align:top; font-size:12.5px; }
       tfoot td { font-weight:800; background:#f9fafb; border-top:2px solid #e5e7eb; }
-      .summary { margin-top:24px; display:flex; gap:32px; }
+      .summary { margin-top:24px; display:flex; gap:32px; flex-wrap:wrap; }
       .sum-item label { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; display:block; margin-bottom:4px; }
       .sum-item span  { font-size:18px; font-weight:800; }
       @media print { body { padding:16px; } }
@@ -83,6 +88,7 @@ export default function LedgerDrill({
       <thead><tr>
         <th>Date</th><th>Title</th><th>Work Details</th>
         <th style="text-align:right">Amount</th>
+        <th style="text-align:right">Less</th>
         <th style="text-align:right">Paid</th>
         <th style="text-align:right">Due</th>
       </tr></thead>
@@ -90,12 +96,14 @@ export default function LedgerDrill({
       <tfoot><tr>
         <td colspan="3" style="text-align:right">Total</td>
         <td style="text-align:right">&#8377;${stmtTotal.toLocaleString("en-IN")}</td>
+        <td style="text-align:right;color:#b8741f">${stmtLess > 0 ? "&#8722;&#8377;" + stmtLess.toLocaleString("en-IN") : "&#8212;"}</td>
         <td style="text-align:right;color:#16a34a">&#8377;${stmtPaid.toLocaleString("en-IN")}</td>
         <td style="text-align:right;color:${stmtDue > 0 ? "#c56a3a" : "#16a34a"}">${stmtDue > 0 ? "&#8377;" + stmtDue.toLocaleString("en-IN") : "Cleared"}</td>
       </tr></tfoot>
     </table>
     <div class="summary">
       <div class="sum-item"><label>Total Billed</label><span>&#8377;${stmtTotal.toLocaleString("en-IN")}</span></div>
+      ${stmtLess > 0 ? `<div class="sum-item"><label>Total Less</label><span style="color:#b8741f">&#8722;&#8377;${stmtLess.toLocaleString("en-IN")}</span></div>` : ""}
       <div class="sum-item"><label>Total Received</label><span style="color:#16a34a">&#8377;${stmtPaid.toLocaleString("en-IN")}</span></div>
       <div class="sum-item"><label>Balance Due</label><span style="color:${stmtDue > 0 ? "#c56a3a" : "#16a34a"}">${stmtDue > 0 ? "&#8377;" + stmtDue.toLocaleString("en-IN") : "Cleared"}</span></div>
     </div>
@@ -126,9 +134,12 @@ export default function LedgerDrill({
           <button className="qo-close" style={st.close} onClick={onClose}>×</button>
         </div>
 
-        {/* ── Stats ── */}
-        <div style={st.stats}>
+        {/* ── Stats — 4 cols if less > 0, else 3 ── */}
+        <div style={{ ...st.stats, gridTemplateColumns: row.totalLess > 0 ? "repeat(4,1fr)" : "repeat(3,1fr)" }}>
           <div style={st.stat}><div style={st.statL}>Total Billed</div><div style={st.statV}>{rupees(row.totalAmount)}</div></div>
+          {row.totalLess > 0 && (
+            <div style={st.stat}><div style={st.statL}>Total Less</div><div style={{ ...st.statV, color: GOLD }}>−{rupees(row.totalLess)}</div></div>
+          )}
           <div style={st.stat}><div style={st.statL}>Received</div><div style={{ ...st.statV, color: GREEN }}>{rupees(row.totalAdvance)}</div></div>
           <div style={st.stat}><div style={st.statL}>Balance Due</div><div style={{ ...st.statV, color: row.totalDue > 0 ? TERRA : GREEN }}>{row.totalDue > 0 ? rupees(row.totalDue) : "✓ Cleared"}</div></div>
         </div>
@@ -147,7 +158,9 @@ export default function LedgerDrill({
         {/* ── Filter summary ── */}
         {filtered && (
           <div style={st.filterSummary}>
-            {stmtEntries.length} orders · Billed {rupees(stmtTotal)} · Paid {rupees(stmtPaid)} · Due{" "}
+            {stmtEntries.length} orders · Billed {rupees(stmtTotal)}
+            {stmtLess > 0 && <> · Less <span style={{ color: GOLD }}>−{rupees(stmtLess)}</span></>}
+            {" "}· Paid {rupees(stmtPaid)} · Due{" "}
             <strong style={{ color: stmtDue > 0 ? TERRA : GREEN }}>
               {stmtDue > 0 ? rupees(stmtDue) : "✓ Cleared"}
             </strong>
@@ -162,7 +175,10 @@ export default function LedgerDrill({
             : stmtEntries.length === 0
               ? <div style={st.empty}>No orders for this period.</div>
               : stmtEntries.map((e) => {
-                  const amt = Number(e.amount), adv = Number(e.advancePaid), due = Math.max(0, amt - adv);
+                  const amt  = Number(e.amount);
+                  const less = Number(e.lessAmount || 0);
+                  const adv  = Number(e.advancePaid);
+                  const due  = Math.max(0, amt - less - adv);
                   const task = e.task;
                   const ts = task ? TASK_STATUS[task.status] : null;
                   return (
@@ -177,6 +193,7 @@ export default function LedgerDrill({
                       </div>
                       <div style={st.stmtR}>
                         <div style={st.stmtTotal}>{rupees(amt)}</div>
+                        {less > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: GOLD }}>−{rupees(less)} less</div>}
                         <div style={{ ...st.stmtDue, color: due > 0 ? TERRA : GREEN }}>{due > 0 ? `Due ${rupees(due)}` : "Paid"}</div>
                       </div>
                       {/* work */}
@@ -215,7 +232,7 @@ const st: Record<string, React.CSSProperties> = {
   name:          { fontSize: 19, fontWeight: 800, margin: 0, color: INK },
   phone:         { fontSize: 13, color: MUTE, marginTop: 4 },
   close:         { width: 34, height: 34, border: `1px solid ${LINE}`, background: "#fff", color: "#545a67", fontSize: 22, lineHeight: 1, cursor: "pointer", flexShrink: 0 },
-  stats:         { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 1, background: LINE, border: `1px solid ${LINE}`, marginBottom: 14 },
+  stats:         { display: "grid", gap: 1, background: LINE, border: `1px solid ${LINE}`, marginBottom: 14 },
   stat:          { background: "#fff", padding: "10px 12px" },
   statL:         { fontSize: 10, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: MUTE, marginBottom: 4 },
   statV:         { fontSize: 16, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: INK },

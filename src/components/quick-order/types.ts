@@ -76,6 +76,7 @@ export interface QuickOrder {
   items:         Array<{ itemId?: string | null; desc: string; qty: number; rate: number; unit?: string }>;
   description:   string;
   amount:        number;
+  lessAmount:    number;           // concession — reduces due, tracked separately
   advancePaid:   number;
   paymentMethod: "cash" | "online";
   status:        "unbilled" | "billed";
@@ -95,6 +96,7 @@ export interface LedgerRow {
   totalOrders:    number;
   unbilledCount?: number;
   totalAmount:    number;
+  totalLess:      number;
   totalAdvance:   number;
   totalDue:       number;
 }

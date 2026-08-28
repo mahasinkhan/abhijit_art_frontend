@@ -1,6 +1,6 @@
 // src/components/quick-order/OrdersTable.tsx
 import {
-  QuickOrder, TERRA, INK, MUTE, LINE, IVORY, CARD, GREEN, SANS,
+  QuickOrder, TERRA, GOLD, INK, MUTE, LINE, IVORY, CARD, GREEN, SANS,
   rupees, fmtDate, fmtTimeSec, TASK_STATUS,
 } from "./types";
 
@@ -9,7 +9,7 @@ interface Props {
   visible:    number;
   loading:    boolean;
   date:       string;
-  converting: string | null;
+  converting?: string | null;
   isAdmin:    boolean;
   onShowMore:     () => void;
   onViewDetails:  (e: QuickOrder) => void;   // opens detail drawer
@@ -38,6 +38,7 @@ export default function OrdersTable({
               <th style={st.th}>Customer</th>
               <th style={st.th}>Work Details</th>
               <th style={{ ...st.th, ...st.rgt, width: 110 }}>Amount</th>
+              <th style={{ ...st.th, ...st.rgt, width: 90 }}>Less</th>
               <th style={{ ...st.th, ...st.rgt, width: 110 }}>Due</th>
               <th style={{ ...st.th, ...st.ctr, width: 90 }}>Method</th>
               <th style={{ ...st.th, width: 140 }}>Assignment</th>
@@ -47,7 +48,8 @@ export default function OrdersTable({
           </thead>
           <tbody>
             {rows.map((e) => {
-              const amt = Number(e.amount), adv = Number(e.advancePaid), due = Math.max(0, amt - adv);
+              const amt = Number(e.amount), less = Number(e.lessAmount || 0), adv = Number(e.advancePaid);
+              const due = Math.max(0, amt - less - adv);
               const task = e.task;
               const ts = task ? TASK_STATUS[task.status] : null;
               return (
@@ -68,6 +70,9 @@ export default function OrdersTable({
                   </td>
 
                   <td style={{ ...st.td, ...st.rgt, fontWeight: 700 }}>{rupees(amt)}</td>
+                  <td style={{ ...st.td, ...st.rgt, fontWeight: 700, color: less > 0 ? GOLD : "#c9cdd6" }}>
+                    {less > 0 ? `−${rupees(less)}` : "—"}
+                  </td>
                   <td style={{ ...st.td, ...st.rgt, fontWeight: 700, color: due > 0 ? TERRA : GREEN }}>
                     {due > 0 ? rupees(due) : "✓ Paid"}
                   </td>

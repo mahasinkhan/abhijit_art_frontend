@@ -92,6 +92,11 @@ export default function EmployeeDashboard() {
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [orderNotes,    setOrderNotes]    = useState("");
   const [orderBusy,     setOrderBusy]     = useState(false);
+  const [payAmt,        setPayAmt]        = useState("");
+  const [payMethod,     setPayMethod]     = useState<"cash"|"online">("cash");
+  const [payNote,       setPayNote]       = useState("");
+  const [payBusy,       setPayBusy]       = useState(false);
+  const [payErr,        setPayErr]        = useState("");
 
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
@@ -103,7 +108,7 @@ export default function EmployeeDashboard() {
 
   // Sync notes when active order changes
   const activeOrder = orders.find(o => o.id === activeOrderId) || null;
-  useEffect(() => { setOrderNotes(activeOrder?.task?.notes || ""); }, [activeOrderId]); // eslint-disable-line
+  useEffect(() => { setOrderNotes(activeOrder?.task?.notes || ""); setPayAmt(""); setPayNote(""); setPayErr(""); }, [activeOrderId]); // eslint-disable-line
 
   async function claimOrder(id: string) {
     if (!confirm("Claim this order? It will appear in your Tasks.")) return;
@@ -152,6 +157,21 @@ export default function EmployeeDashboard() {
     finally { setOrderBusy(false); }
   }
 
+  async function recordPayment() {
+    if (!activeOrder) return;
+    const n = parseFloat(payAmt);
+    if (!n || n <= 0) { setPayErr("Enter a valid amount."); return; }
+    setPayBusy(true); setPayErr("");
+    try {
+      const { data } = await api.post(`/api/quick-orders/${activeOrder.id}/payment`, {
+        amount: n, method: payMethod, note: payNote,
+      });
+      setOrders(prev => prev.map(o => o.id === activeOrder.id ? { ...o, ...data } : o));
+      setPayAmt(""); setPayNote("");
+    } catch (err: any) { setPayErr(err.response?.data?.message || "Failed to record payment"); }
+    finally { setPayBusy(false); }
+  }
+
   // filtered order lists
   const unassignedOrders = useMemo(() => orders.filter(o => !o.task && o.status !== "billed"), [orders]);
   const myOrders         = useMemo(() => orders.filter(o => o.task?.assignedTo?.id === userId), [orders, userId]);
@@ -163,6 +183,17 @@ export default function EmployeeDashboard() {
     if (tab === "delivered") return tasks.filter((t) => !!t.deliveredAt).sort((a, b) => new Date(b.deliveredAt!).getTime() - new Date(a.deliveredAt!).getTime());
     return tasks.filter((t) => t.status === tab && !t.deliveredAt);
   }, [tasks, tab]);
+
+  // Tab counts — MUST mirror the `displayed` filter above so the number on each
+  // tab matches the number of cards shown. pending/in_progress/completed exclude
+  // delivered tasks (those live under the Delivered tab).
+  const tabCounts = useMemo(() => ({
+    all:         tasks.length,
+    pending:     tasks.filter((t) => t.status === "pending"     && !t.deliveredAt).length,
+    in_progress: tasks.filter((t) => t.status === "in_progress" && !t.deliveredAt).length,
+    completed:   tasks.filter((t) => t.status === "completed"   && !t.deliveredAt).length,
+    delivered:   tasks.filter((t) => !!t.deliveredAt).length,
+  }), [tasks]);
 
   const selected = tasks.find((t) => t.id === selectedId) || null;
   useEffect(() => { setNotesDraft(selected?.notes || ""); }, [selectedId]); // eslint-disable-line
@@ -525,11 +556,11 @@ export default function EmployeeDashboard() {
             <>
               <div className="ep-tabs">
                 {([
-                  { id: "all",         label: "All",         n: stats.total       },
-                  { id: "pending",     label: "Pending",     n: stats.pending     },
-                  { id: "in_progress", label: "In progress", n: stats.in_progress },
-                  { id: "completed",   label: "Completed",   n: stats.completed   },
-                  { id: "delivered",   label: "Delivered",   n: tasks.filter(t => !!t.deliveredAt).length },
+                  { id: "all",         label: "All",         n: tabCounts.all         },
+                  { id: "pending",     label: "Pending",     n: tabCounts.pending     },
+                  { id: "in_progress", label: "In progress", n: tabCounts.in_progress },
+                  { id: "completed",   label: "Completed",   n: tabCounts.completed   },
+                  { id: "delivered",   label: "Delivered",   n: tabCounts.delivered   },
                 ] as { id: Tab; label: string; n: number }[]).map((t) => (
                   <button key={t.id} className={`ep-tab${tab === t.id ? " on" : ""}`} onClick={() => setTab(t.id)}>
                     {t.label} <span className="c">({t.n})</span>
@@ -588,7 +619,7 @@ export default function EmployeeDashboard() {
                     {/* Order list */}
                     <div className="qo-board">
                       {shownOrders.map((o) => {
-                        const amt = Number(o.amount), adv = Number(o.advancePaid), due = Math.max(0, amt - adv);
+                        const amt = Number(o.amount), less = Number((o as any).lessAmount || 0), adv = Number(o.advancePaid), due = Math.max(0, amt - less - adv);
                         const isMyOrder = o.task?.assignedTo?.id === userId;
                         const ts = o.task ? STATUS_META[o.task.status] : null;
                         const isClaiming = claiming === o.id;
@@ -630,9 +661,10 @@ export default function EmployeeDashboard() {
                             <div className="qo-card-meta">
                               <span className="qo-chip">{o.paymentMethod === "cash" ? "💵 Cash" : "📱 Online"}</span>
                               <span className={`qo-amount ${due > 0 ? "qo-due" : "qo-paid-lbl"}`}>
-                                {rupStr(amt)}{due > 0 ? ` · Due ${rupStr(due)}` : " · Paid"}
+                                {rupStr(amt)}{less > 0 ? ` · Less ${rupStr(less)}` : ""}{due > 0 ? ` · Due ${rupStr(due)}` : " · Paid"}
                               </span>
                               <span className="qo-date">{fmtShort(o.entryDate)}</span>
+                              {o.task && <span style={{ fontSize: ".72rem", fontWeight: 600, color: isMyOrder ? "#c2974a" : "#8a8378" }}>👷 {o.task.assignedTo.name}{isMyOrder ? " (You)" : ""}</span>}
                             </div>
                           </div>
                         );
@@ -640,8 +672,15 @@ export default function EmployeeDashboard() {
                     </div>
 
                     {/* Detail panel — only for my orders */}
-                    {activeOrder && activeOrder.task?.assignedTo?.id === userId && (
+                    {activeOrder && (() => {
+                      const _amt  = Number(activeOrder.amount);
+                      const _less = Number((activeOrder as any).lessAmount || 0);
+                      const _adv  = Number(activeOrder.advancePaid);
+                      const _due  = Math.max(0, _amt - _less - _adv);
+                      const _ts   = activeOrder.task ? STATUS_META[activeOrder.task.status] : null;
+                      return (
                       <div className="qo-detail">
+                        {/* Header */}
                         <div className="qo-d-head">
                           <div>
                             <div className="qo-d-name">{activeOrder.customerName}</div>
@@ -650,79 +689,132 @@ export default function EmployeeDashboard() {
                           <button className="ep-close" onClick={() => setActiveOrderId(null)}><IcoClose /></button>
                         </div>
 
-                        <div className="qo-d-body">
-                          {/* Work details */}
-                          <div className="qo-d-sec">
-                            <div className="qo-d-sec-l">Work Details</div>
-                            <div className="qo-d-work">{activeOrder.workDetails}</div>
+                        {/* Assigned employee badge */}
+                        {activeOrder.task && (
+                          <div style={{ padding: "6px 16px", background: activeOrder.task.assignedTo.id === userId ? "#fef3c7" : "#f3f4f6", borderBottom: "1px solid #f1ece3", fontSize: ".78rem", fontWeight: 600, color: activeOrder.task.assignedTo.id === userId ? "#92400e" : "#8a8378" }}>
+                            👷 {activeOrder.task.assignedTo.name}{activeOrder.task.assignedTo.id === userId ? " (You)" : ""}
+                            {_ts && <span style={{ marginLeft: 8, padding: "1px 7px", borderRadius: 3, fontSize: ".7rem", fontWeight: 700, background: _ts.bg, color: _ts.color }}>{_ts.label}</span>}
+                          </div>
+                        )}
+
+                        <div className="qo-d-body" style={{ padding: "12px 16px" }}>
+
+                          {/* ── Due / Paid banner ── */}
+                          <div style={{ background: _due > 0 ? "#fef2ee" : "#eaf6ec", border: `1px solid ${_due > 0 ? "#f3c9ba" : "#bfe3c6"}`, borderRadius: 6, padding: "10px 14px", textAlign: "center", marginBottom: 10 }}>
+                            <div style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: _due > 0 ? "#b8421f" : "#2f7a3f", marginBottom: 3 }}>
+                              {_due > 0 ? "Balance Due" : "Fully Paid"}
+                            </div>
+                            <div style={{ fontSize: "1.4rem", fontWeight: 900, color: _due > 0 ? "#d9542f" : "#2f7a3f", lineHeight: 1 }}>
+                              {_due > 0 ? rupStr(_due) : "✓"}
+                            </div>
+                            <div style={{ fontSize: ".72rem", color: "#8a8378", marginTop: 5, display: "flex", justifyContent: "center", gap: 14 }}>
+                              <span>Bill: {rupStr(_amt)}</span>
+                              {_less > 0 && <span style={{ color: "#c2974a" }}>Less: −{rupStr(_less)}</span>}
+                              <span style={{ color: "#2f7a3f" }}>Paid: {rupStr(_adv)}</span>
+                            </div>
                           </div>
 
-                          {/* Reference images */}
+                          {/* ── Record Payment — only if due > 0 ── */}
+                          {_due > 0 && (
+                            <div style={{ background: "#fdf8f3", border: "1px solid #e7e1d7", borderRadius: 6, padding: "12px 14px", marginBottom: 10 }}>
+                              <div style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 7 }}>Collect Payment</div>
+                              {payErr && <div style={{ color: "#d9542f", fontSize: ".8rem", marginBottom: 8 }}>{payErr}</div>}
+                              <input
+                                style={{ width: "100%", padding: "9px 12px", border: "1px solid #e7e1d7", borderRadius: 5, fontSize: ".9rem", fontFamily: "inherit", marginBottom: 6, boxSizing: "border-box" as const, fontWeight: 700 }}
+                                type="number" min="1" max={_due}
+                                value={payAmt}
+                                onChange={e => setPayAmt(e.target.value)}
+                                placeholder={`₹ Amount (max ${rupStr(_due)})`}
+                              />
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+                                {(["cash","online"] as const).map(m => (
+                                  <button key={m}
+                                    style={{ padding: "8px 0", border: payMethod === m ? "2px solid #d9542f" : "1px solid #e7e1d7", borderRadius: 6, fontFamily: "inherit", fontSize: ".9rem", fontWeight: 700, cursor: "pointer", background: payMethod === m ? "#fef2ee" : "#fff", color: payMethod === m ? "#d9542f" : "#8a8378", transition: "all .12s" }}
+                                    onClick={() => setPayMethod(m)}>
+                                    {m === "cash" ? "💵 Cash" : "📱 Online"}
+                                  </button>
+                                ))}
+                              </div>
+                              <input
+                                style={{ width: "100%", padding: "7px 12px", border: "1px solid #e7e1d7", borderRadius: 5, fontSize: ".82rem", fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" as const }}
+                                value={payNote}
+                                onChange={e => setPayNote(e.target.value)}
+                                placeholder="Note (optional)"
+                              />
+                              <button
+                                style={{ width: "100%", padding: "10px", background: "#d9542f", color: "#fff", border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: ".88rem", fontWeight: 800, cursor: payBusy ? "not-allowed" : "pointer", opacity: payBusy ? .6 : 1, letterSpacing: ".02em" }}
+                                disabled={payBusy} onClick={recordPayment}>
+                                {payBusy ? "Recording…" : `Record ₹${payAmt || "0"} Payment`}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* ── Status ── */}
+                          <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 6 }}>Status</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+                              {STATUS_FLOW.map((st) => {
+                                const sm = STATUS_META[st];
+                                const isOn = activeOrder.task?.status === st;
+                                return (
+                                  <button key={st}
+                                    style={{ padding: "9px 6px", border: isOn ? "none" : "1px solid #e7e1d7", borderRadius: 6, fontSize: ".8rem", fontWeight: 700, cursor: "pointer", background: isOn ? sm.color : "#fff", color: isOn ? "#fff" : "#8a8378", fontFamily: "inherit", transition: "all .12s" }}
+                                    disabled={orderBusy || activeOrder.task?.assignedTo?.id !== userId}
+                                    onClick={() => updateOrderTaskStatus(st)}
+                                    title={activeOrder.task?.assignedTo?.id !== userId ? "Only assigned employee can change status" : ""}>
+                                    {sm.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div style={{ fontSize: ".72rem", color: "#2f7a3f", display: "flex", alignItems: "center", gap: 5, marginTop: 8 }}>
+                              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#2f7a3f", display: "inline-block" }} />
+                              Admin sees this in real time
+                            </div>
+                          </div>
+
+                          {/* ── Work Details ── */}
+                          <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 6 }}>Work Details</div>
+                            <div style={{ fontSize: ".84rem", lineHeight: 1.5, whiteSpace: "pre-line" as const, background: "#faf8f3", borderLeft: "3px solid #c2974a", padding: "8px 11px", borderRadius: "0 5px 5px 0" }}>
+                              {activeOrder.workDetails || "—"}
+                            </div>
+                          </div>
+
+                          {/* ── Reference images ── */}
                           {activeOrder.images && activeOrder.images.length > 0 && (
-                            <div className="qo-d-sec">
-                              <div className="qo-d-sec-l">Reference Images</div>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 6 }}>Reference Images</div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
                                 {activeOrder.images.map((img, i) => (
                                   <a key={i} href={`${API_BASE}${img}`} target="_blank" rel="noreferrer">
-                                    <img src={`${API_BASE}${img}`} alt="" style={{ width: 80, height: 80, objectFit: "cover", border: "1px solid #e7e1d7", borderRadius: 3, cursor: "zoom-in" }} />
+                                    <img src={`${API_BASE}${img}`} alt="" style={{ width: 60, height: 60, objectFit: "cover" as const, border: "1px solid #e7e1d7", borderRadius: 6, cursor: "zoom-in" }} />
                                   </a>
                                 ))}
                               </div>
                             </div>
                           )}
 
-                          {/* Billing summary */}
-                          <div className="qo-d-sec">
-                            <div className="qo-d-sec-l">Payment</div>
-                            <div className="qo-d-kv"><span className="k">Total</span><span className="v">{rupStr(Number(activeOrder.amount))}</span></div>
-                            <div className="qo-d-kv"><span className="k">Advance</span><span className="v" style={{ color: GREEN }}>{rupStr(Number(activeOrder.advancePaid))}</span></div>
-                            {Number(activeOrder.amount) > Number(activeOrder.advancePaid) && (
-                              <div className="qo-d-kv"><span className="k">Balance Due</span><span className="v" style={{ color: ACCENT }}>{rupStr(Number(activeOrder.amount) - Number(activeOrder.advancePaid))}</span></div>
-                            )}
-                          </div>
-
-                          {/* Status update */}
-                          <div className="qo-d-sec">
-                            <div className="qo-d-sec-l">Progress</div>
-                            <div className="qo-statusctl">
-                              {STATUS_FLOW.map((s) => {
-                                const sm = STATUS_META[s];
-                                const isOn = activeOrder.task?.status === s;
-                                return (
-                                  <button key={s}
-                                    className={`qo-sc${isOn ? " on" : ""}`}
-                                    style={isOn ? { background: sm.color } : {}}
-                                    disabled={orderBusy}
-                                    onClick={() => updateOrderTaskStatus(s)}>
-                                    {sm.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div className="qo-realtime-hint">
-                              <span className="qo-realtime-dot" />
-                              Admin sees this update in real time
-                            </div>
-                          </div>
-
-                          {/* Notes */}
-                          <div className="qo-d-sec">
-                            <div className="qo-d-sec-l">Your Notes</div>
+                          {/* ── Notes (compact) ── */}
+                          <div>
+                            <div style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 8 }}>Notes</div>
                             <textarea
                               className="ep-ta"
+                              style={{ minHeight: 56, fontSize: ".84rem" }}
                               value={orderNotes}
                               onChange={e => setOrderNotes(e.target.value)}
-                              placeholder="Add progress notes, issues, or anything the admin should know…"
-                              rows={4}
+                              placeholder="Progress notes…"
+                              rows={3}
                             />
-                            <button className="qo-save-notes" disabled={orderBusy} onClick={saveOrderNotes}>
+                            <button className="qo-save-notes" style={{ marginTop: 6 }} disabled={orderBusy} onClick={saveOrderNotes}>
                               {orderBusy ? "Saving…" : "Save Notes"}
                             </button>
                           </div>
+
                         </div>
                       </div>
-                    )}
-                  </div>
+                      );
+                    })()}                  </div>
                 )}
             </>
           )}

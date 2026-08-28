@@ -22,8 +22,9 @@ export default function OrderDetailDrawer({
   order, isAdmin, onClose, onEdit, onDelete, onAssign, onUnassign, onUpdated,
 }: Props) {
   const amt = Number(order.amount);
+  const less = Number(order.lessAmount || 0);
   const adv = Number(order.advancePaid);
-  const due = Math.max(0, amt - adv);
+  const due = Math.max(0, amt - less - adv);
   const task = order.task;
   const ts = task ? TASK_STATUS[task.status] : null;
 
@@ -135,6 +136,12 @@ export default function OrderDetailDrawer({
                   </div>
                 </div>
               </div>
+              {less > 0 && (
+                <div style={st.lessLine}>
+                  <span>Concession (Less)</span>
+                  <span style={{ color: GOLD, fontWeight: 800 }}>−{rupees(less)}</span>
+                </div>
+              )}
               <div style={st.metaLine}>
                 {order.paymentMethod === "cash" ? "💵 Cash" : "📱 Online"} · {fmtDate(order.entryDate)}
               </div>
@@ -282,6 +289,7 @@ const st: Record<string, React.CSSProperties> = {
   payLbl:      { fontSize: 10, color: MUTE, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 3 },
   payVal:      { fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: INK },
   metaLine:    { fontSize: 11, color: MUTE, marginTop: 5 },
+  lessLine:    { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, fontWeight: 700, color: INK, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${LINE}` },
 
   empAvatar:   { width: 28, height: 28, borderRadius: "50%", background: TERRA, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 },
   statusChip:  { display: "inline-block", padding: "1px 7px", borderRadius: 2, fontSize: 10.5, fontWeight: 700, marginTop: 3 },
