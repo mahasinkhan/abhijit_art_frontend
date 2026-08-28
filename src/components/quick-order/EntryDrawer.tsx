@@ -1,57 +1,69 @@
 // src/components/quick-order/EntryDrawer.tsx
-// ── New / edit order — customer search + inventory-linked item picker ──────
+// ── New / edit order — title + whatsapp + workDetails + items optional ─────
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import api from "../../api";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 import {
-  OrderItem, KhataEntry, CustomerRec, InvStockItem,
-  TERRA, TERRA_DK, GOLD, INK, MUTE, LINE, IVORY, CARD, GREEN, SANS,
+  OrderItem, QuickOrder, CustomerRec, InvStockItem, EmployeeRec,
+  TERRA, TERRA_DK, GOLD, INK, MUTE, LINE, IVORY, CARD, GREEN, WA, SANS,
   rupees, todayStr, isRealEmail, EMPTY_ITEM,
 } from "./types";
 
 const CUSTOM = "__custom__";
 
 interface Props {
-  editEntry: KhataEntry | null;
-  onClose: () => void;
-  onSaved: () => void;
+  editEntry:  QuickOrder | null;
+  onClose:    () => void;
+  onSaved:    () => void;
+  employees?: EmployeeRec[];
 }
 
-export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
+export default function EntryDrawer({ editEntry, onClose, onSaved, employees = [] }: Props) {
   const isEdit = !!editEntry;
 
-  // customer
-  const [custSel, setCustSel]       = useState<CustomerRec | null>(null);
-  const [custQuery, setCustQuery]   = useState("");
+  // ── Customer ──
+  const [custSel,     setCustSel]     = useState<CustomerRec | null>(null);
+  const [custQuery,   setCustQuery]   = useState("");
   const [custResults, setCustResults] = useState<CustomerRec[]>([]);
-  const [custDdOpen, setCustDdOpen] = useState(false);
-  const [custPhone, setCustPhone]   = useState("");
+  const [custDdOpen,  setCustDdOpen]  = useState(false);
+  const [custPhone,   setCustPhone]   = useState("");
+  const [custWa,      setCustWa]      = useState("");   // WhatsApp number
   const searchTimer = useRef<any>(null);
 
-  // add-customer popup
+  // ── Add-customer popup ──
   const [showAddCust, setShowAddCust] = useState(false);
-  const [newCust, setNewCust]         = useState({ name: "", phone: "", email: "", address: "" });
-  const [addingCust, setAddingCust]   = useState(false);
-  const [addCustErr, setAddCustErr]   = useState("");
+  const [newCust,     setNewCust]     = useState({ name: "", phone: "", email: "", address: "" });
+  const [addingCust,  setAddingCust]  = useState(false);
+  const [addCustErr,  setAddCustErr]  = useState("");
 
-  // inventory items for the stock dropdown
+  // ── Inventory ──
   const [stock, setStock] = useState<InvStockItem[]>([]);
 
-  // form
-  const [items, setItems]         = useState<OrderItem[]>([EMPTY_ITEM()]);
-  const [desc, setDesc]           = useState("");
-  const [advance, setAdvance]     = useState("");
-  const [payMethod, setPayMethod] = useState<"cash" | "online">("cash");
-  const [entryDate, setEntryDate] = useState(todayStr());
-  const [saving, setSaving]       = useState(false);
+  // ── Form ──
+  const [title,       setTitle]       = useState("");       // NEW — short order label
+  const [workDetails, setWorkDetails] = useState("");
+  const [items,       setItems]       = useState<OrderItem[]>([]);
+  const [showItems,   setShowItems]   = useState(false);
+  const [desc,        setDesc]        = useState("");
+  const [amount,      setAmount]      = useState("");
+  const [advance,     setAdvance]     = useState("");
+  const [payMethod,   setPayMethod]   = useState<"cash" | "online">("cash");
+  const [entryDate,   setEntryDate]   = useState(todayStr());
+  const [assignToId,  setAssignToId]  = useState("");
+  const [saving,      setSaving]      = useState(false);
+  const [errMsg,      setErrMsg]      = useState("");
+  const [images,      setImages]      = useState<File[]>([]);
+  const [existingImgs,setExistingImgs]= useState<string[]>([]);
+  const [removeImgs,  setRemoveImgs]  = useState<string[]>([]);
+  const imgRef = useRef<HTMLInputElement>(null);
 
-  // ── Load inventory once ──
+  // ── Load inventory ──
   useEffect(() => {
     api.get("/api/inventory/items")
       .then(r => setStock(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   }, []);
 
-  // once stock is loaded, backfill category for any linked item missing it (edit mode)
   useEffect(() => {
     if (!stock.length) return;
     setItems(prev => {
@@ -59,7 +71,7 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
       const next = prev.map(it => {
         if (it.itemId && !it.category) {
           const s = stock.find(x => x.id === it.itemId);
-          if (s) { changed = true; return { ...it, category: (s.category || "Uncategorised").trim() || "Uncategorised", unit: it.unit || s.unit }; }
+          if (s) { changed = true; return { ...it, category: (s.category || "Uncategorised").trim(), unit: it.unit || s.unit }; }
         }
         return it;
       });
@@ -69,30 +81,32 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
 
   // ── Prefill on edit ──
   useEffect(() => {
-    if (editEntry) {
-      setCustSel({ id: editEntry.customerId || "", name: editEntry.customerName, phone: editEntry.customerPhone, email: editEntry.customerEmail });
-      setCustPhone(editEntry.customerPhone || "");
-      setItems(editEntry.items.length
-        ? editEntry.items.map(it => ({
-            itemId: it.itemId ?? null,
-            category: "",   // resolved from stock once loaded (effect below)
-            desc: it.desc, qty: Number(it.qty), rate: Number(it.rate), unit: it.unit,
-            custom: !it.itemId,
-          }))
-        : [EMPTY_ITEM()]);
-      setDesc(editEntry.description || "");
-      setAdvance(editEntry.advancePaid ? String(editEntry.advancePaid) : "");
-      setPayMethod(editEntry.paymentMethod);
-      setEntryDate(editEntry.entryDate.slice(0, 10));
-    }
+    if (!editEntry) return;
+    setCustSel({ id: editEntry.customerId || "", name: editEntry.customerName, phone: editEntry.customerPhone, email: editEntry.customerEmail });
+    setCustPhone(editEntry.customerPhone || "");
+    setCustWa(editEntry.whatsapp || "");
+    setTitle(editEntry.title || "");
+    setWorkDetails(editEntry.workDetails || "");
+    setItems(editEntry.items.length
+      ? editEntry.items.map(it => ({ itemId: it.itemId ?? null, category: "", desc: it.desc, qty: Number(it.qty), rate: Number(it.rate), unit: it.unit, custom: !it.itemId }))
+      : []);
+    setShowItems(editEntry.items.length > 0);
+    setDesc(editEntry.description || "");
+    setAmount(String(editEntry.amount || ""));
+    setAdvance(editEntry.advancePaid ? String(editEntry.advancePaid) : "");
+    setPayMethod(editEntry.paymentMethod);
+    setEntryDate(editEntry.entryDate.slice(0, 10));
+    setExistingImgs(editEntry.images || []);
+    setImages([]);
   }, [editEntry]);
 
-  // ── Customer search (debounced, server-side) ──
+  // ── Customer search ──
   const runSearch = useCallback((q: string) => {
-    api.get(`/api/khata/customers?q=${encodeURIComponent(q)}`)
+    api.get(`/api/quick-orders/customers?q=${encodeURIComponent(q)}`)
       .then(r => setCustResults(Array.isArray(r.data) ? r.data : []))
       .catch(() => setCustResults([]));
   }, []);
+
   useEffect(() => {
     if (custSel) return;
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -100,7 +114,7 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
     return () => searchTimer.current && clearTimeout(searchTimer.current);
   }, [custQuery, custSel, runSearch]);
 
-  // stock grouped by category → { categories: string[], byCat: Map }
+  // ── Stock by category ──
   const { categories, byCat } = useMemo(() => {
     const m = new Map<string, InvStockItem[]>();
     stock.forEach(it => {
@@ -113,33 +127,31 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
     return { categories: cats, byCat: m };
   }, [stock]);
 
-  const calcAmount = useMemo(() => items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0), [items]);
-  const advNum = parseFloat(advance) || 0;
-  const dueNum = Math.max(0, calcAmount - advNum);
+  const amtNum  = parseFloat(amount) || 0;
+  const advNum  = parseFloat(advance) || 0;
+  const dueNum  = Math.max(0, amtNum - advNum);
+  const canSave = !!(custSel?.name.trim() && workDetails.trim() && amtNum > 0);
 
   // ── Item helpers ──
-  function addItem() { setItems(p => [...p, EMPTY_ITEM()]); }
+  function addItem()   { setItems(p => [...p, EMPTY_ITEM()]); }
   function removeItem(i: number) { setItems(p => p.filter((_, idx) => idx !== i)); }
   function patchItem(i: number, patch: Partial<OrderItem>) {
     setItems(p => p.map((it, idx) => idx === i ? { ...it, ...patch } : it));
   }
   function onCategorySelect(i: number, value: string) {
-    if (value === CUSTOM) {
-      patchItem(i, { custom: true, category: "", itemId: null, desc: "", unit: undefined });
-    } else {
-      // pick category → reset item choice, wait for item dropdown
-      patchItem(i, { custom: false, category: value, itemId: null, desc: "", unit: undefined, rate: 0 });
-    }
+    if (value === CUSTOM) patchItem(i, { custom: true, category: "", itemId: null, desc: "", unit: undefined });
+    else                  patchItem(i, { custom: false, category: value, itemId: null, desc: "", unit: undefined, rate: 0 });
   }
   function onItemSelect(i: number, value: string) {
     const s = stock.find(x => x.id === value);
     if (s) patchItem(i, { custom: false, itemId: s.id, desc: s.name, rate: parseFloat(s.sellPrice || "0") || 0, unit: s.unit });
-    else patchItem(i, { itemId: null, desc: "", unit: undefined, rate: 0 });
+    else   patchItem(i, { itemId: null, desc: "", unit: undefined, rate: 0 });
   }
 
   // ── Customer helpers ──
   function selectCustomer(c: CustomerRec) { setCustSel(c); setCustDdOpen(false); setCustQuery(""); setCustPhone(c.phone || ""); }
-  function openAddCustomer(name: string) { setNewCust({ name: name.trim(), phone: "", email: "", address: "" }); setAddCustErr(""); setCustDdOpen(false); setShowAddCust(true); }
+  function openAddCustomer(name: string)  { setNewCust({ name: name.trim(), phone: "", email: "", address: "" }); setAddCustErr(""); setCustDdOpen(false); setShowAddCust(true); }
+
   async function saveNewCustomer() {
     setAddCustErr("");
     if (!newCust.name.trim()) { setAddCustErr("Full name is required."); return; }
@@ -157,29 +169,36 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
     } finally { setAddingCust(false); }
   }
 
-  const canSave = !!(custSel && items.some(it => it.desc.trim()) && calcAmount > 0);
-
+  // ── Save ──
   async function saveEntry() {
     if (!canSave || !custSel) return;
-    setSaving(true);
+    setErrMsg(""); setSaving(true);
     try {
-      const payload = {
-        customerId:    custSel.id || null,
-        customerName:  custSel.name,
-        customerPhone: custPhone.trim(),
-        customerEmail: custSel.email,
-        items:         items.filter(it => it.desc.trim()).map(it => ({ itemId: it.itemId, desc: it.desc, qty: it.qty, rate: it.rate, unit: it.unit })),
-        description:   desc,
-        amount:        calcAmount,
-        advancePaid:   advNum,
-        paymentMethod: payMethod,
-        entryDate,
-      };
-      if (isEdit) await api.patch(`/api/khata/${editEntry!.id}`, payload);
-      else        await api.post("/api/khata", payload);
+      const fd = new FormData();
+      fd.append("customerId",    custSel.id || "");
+      fd.append("customerName",  custSel.name);
+      fd.append("customerPhone", custPhone.trim());
+      fd.append("customerEmail", custSel.email || "");
+      fd.append("whatsapp",      custWa.trim() || "");
+      fd.append("title",         title.trim() || "");
+      fd.append("workDetails",   workDetails.trim());
+      fd.append("description",   desc);
+      fd.append("amount",        String(amtNum));
+      fd.append("advancePaid",   String(advNum));
+      fd.append("paymentMethod", payMethod);
+      fd.append("entryDate",     entryDate);
+      if (items.length) fd.append("items", JSON.stringify(items.filter(it => it.desc.trim()).map(it => ({ itemId: it.itemId, desc: it.desc, qty: it.qty, rate: it.rate, unit: it.unit }))));
+      if (!isEdit && assignToId) fd.append("assignToId", assignToId);
+      // keep existing images minus removed ones
+      const kept = existingImgs.filter(img => !removeImgs.includes(img));
+      fd.append("existingImages", JSON.stringify(kept));
+      images.forEach(f => fd.append("images", f));
+
+      if (isEdit) await api.patch(`/api/quick-orders/${editEntry!.id}`, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      else        await api.post("/api/quick-orders", fd, { headers: { "Content-Type": "multipart/form-data" } });
       onSaved();
     } catch (err: any) {
-      alert(err.response?.data?.error || "Failed to save order");
+      setErrMsg(err.response?.data?.message || err.response?.data?.error || "Failed to save order");
     } finally { setSaving(false); }
   }
 
@@ -192,25 +211,41 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
         .qo-save:hover:not(:disabled) { background:${TERRA_DK}; }
         .qo-chip-chg:hover { background:${IVORY}; }
         .qo-pmbtn { transition:all .12s; }
+        .qo-toggle:hover { background:${IVORY}; }
       `}</style>
 
       <div style={st.modal}>
         <button style={st.close} onClick={onClose}>×</button>
         <div style={st.title}>{isEdit ? "Edit Order" : "New Order"}</div>
+        {errMsg && <div style={st.err}>{errMsg}</div>}
 
         <div style={st.grid}>
+
           {/* ── Customer ── */}
           <div style={st.fieldset}>
             <div style={st.fsL}>Customer</div>
             {custSel ? (
               <>
                 <div style={st.chip}>
-                  <div><b style={{ fontSize: 14 }}>{custSel.name}</b><div style={st.chipSub}>{isRealEmail(custSel.email) ? custSel.email : "Walk-in customer"}</div></div>
-                  <button className="qo-chip-chg" style={st.chipChg} onClick={() => { setCustSel(null); setCustPhone(""); setCustQuery(""); }}>Change</button>
+                  <div>
+                    <b style={{ fontSize: 14 }}>{custSel.name}</b>
+                    <div style={st.chipSub}>{isRealEmail(custSel.email) ? custSel.email : "Walk-in customer"}</div>
+                  </div>
+                  <button className="qo-chip-chg" style={st.chipChg} onClick={() => { setCustSel(null); setCustPhone(""); setCustWa(""); setCustQuery(""); }}>Change</button>
                 </div>
-                <div style={{ marginTop: 12 }}>
-                  <label style={st.lbl}>Phone <span style={st.hint}>· prints on the invoice</span></label>
-                  <input style={st.inp} value={custPhone} inputMode="tel" autoComplete="off" onChange={(e) => setCustPhone(e.target.value)} placeholder="e.g. 9876543210" />
+                {/* Phone + WhatsApp side by side */}
+                <div style={{ ...st.twoCol, marginTop: 12 }}>
+                  <div>
+                    <label style={st.lbl}>Phone <span style={st.hint}>· prints on invoice</span></label>
+                    <input style={st.inp} value={custPhone} inputMode="tel" autoComplete="off" onChange={(e) => setCustPhone(e.target.value)} placeholder="9876543210" />
+                  </div>
+                  <div>
+                    <label style={st.lbl}>
+                      <span style={{ color: WA }}>WhatsApp</span>
+                      <span style={st.hint}> · if different from phone</span>
+                    </label>
+                    <input style={{ ...st.inp, borderColor: custWa ? WA : LINE }} value={custWa} inputMode="tel" autoComplete="off" onChange={(e) => setCustWa(e.target.value)} placeholder="Same as phone if blank" />
+                  </div>
                 </div>
               </>
             ) : (
@@ -228,7 +263,8 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
                   <div style={st.cpDd}>
                     {custResults.map((c) => (
                       <div key={c.id} className="qo-cp-item" style={st.cpItem} onMouseDown={() => selectCustomer(c)}>
-                        <b style={{ fontSize: 13.5 }}>{c.name}</b>{c.phone && <span style={st.cpPhone}>{c.phone}</span>}
+                        <b style={{ fontSize: 13.5 }}>{c.name}</b>
+                        {c.phone && <span style={st.cpPhone}>{c.phone}</span>}
                       </div>
                     ))}
                     <div className="qo-cp-add" style={st.cpAdd} onMouseDown={() => openAddCustomer(custQuery)}>
@@ -240,66 +276,94 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
             )}
           </div>
 
-          {/* ── Items (inventory-linked) ── */}
+          {/* ── Title (NEW) ── */}
           <div style={st.fieldset}>
-            <div style={st.fsL}>Items <span style={st.hint}>· pick from stock or add custom</span></div>
-            <div style={st.itemHead}>
-              <span>Category</span><span>Item</span><span>Qty</span><span>Rate (₹)</span><span />
+            <div style={st.fsL}>Order Title <span style={{ fontWeight: 400, color: MUTE, textTransform: "none", letterSpacing: 0 }}>· optional short label</span></div>
+            <input
+              style={st.inp}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Flex Banner Order, Visiting Cards Batch 2…"
+            />
+          </div>
+
+          {/* ── Work Details (REQUIRED) ── */}
+          <div style={st.fieldset}>
+            <div style={st.fsL}>Work Details <span style={{ color: TERRA, fontWeight: 900 }}>*</span></div>
+            <label style={st.lbl}>Describe what needs to be made <span style={st.hint}>· in any language, shorthand is fine</span></label>
+            <textarea
+              style={{ ...st.inp, minHeight: 100, resize: "vertical" }}
+              value={workDetails}
+              onChange={(e) => setWorkDetails(e.target.value)}
+              placeholder={"e.g. Rohit ka flex banner 5×3 ft, white background\nAur 50 pcs visiting card bhi chahiye"}
+              autoFocus={!isEdit}
+            />
+            {isEdit && (
+              <div style={{ fontSize: 11.5, color: "#6b7280", marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ color: GREEN }}>●</span>
+                Saving updates Work Details for the assigned employee in real time.
+              </div>
+            )}
+          </div>
+
+          {/* ── Items (OPTIONAL, collapsed) ── */}
+          <div style={st.fieldset}>
+            <div
+              className="qo-toggle"
+              role="button" tabIndex={0}
+              style={{ ...st.fsL as any, cursor: "pointer", userSelect: "none", marginBottom: showItems ? 12 : 0 }}
+              onClick={() => setShowItems(v => !v)}
+              onKeyDown={(e) => e.key === "Enter" && setShowItems(v => !v)}>
+              Items (optional) <span style={{ fontWeight: 400, color: MUTE, textTransform: "none", letterSpacing: 0 }}>· add later when billing</span>
+              <span style={{ marginLeft: 8, fontSize: 12 }}>{showItems ? "▲" : "▼"}</span>
             </div>
-            {items.map((it, i) => {
-              const s = it.itemId ? stock.find(x => x.id === it.itemId) : null;
-              const avail = s ? parseFloat(s.quantity) : null;
-              const catItems = it.category ? (byCat.get(it.category) || []) : [];
-              return (
-                <div key={i} style={{ marginBottom: 8 }}>
-                  <div style={st.itemRow}>
-                    {/* 1) Category */}
-                    <select
-                      style={st.inp}
-                      value={it.custom ? CUSTOM : (it.category || "")}
-                      onChange={(e) => onCategorySelect(i, e.target.value)}
-                    >
-                      <option value="">Category…</option>
-                      {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                      <option value={CUSTOM}>✏️ Custom</option>
-                    </select>
-
-                    {/* 2) Item — depends on category, or free-text if custom */}
-                    {it.custom ? (
-                      <input style={st.inp} value={it.desc} onChange={(e) => patchItem(i, { desc: e.target.value })} placeholder="Custom item / service…" autoFocus />
-                    ) : (
-                      <select
-                        style={{ ...st.inp, opacity: it.category ? 1 : .55 }}
-                        value={it.itemId || ""}
-                        disabled={!it.category}
-                        onChange={(e) => onItemSelect(i, e.target.value)}
-                      >
-                        <option value="">{it.category ? "Select item…" : "Pick category first"}</option>
-                        {catItems.map(s2 => (
-                          <option key={s2.id} value={s2.id}>
-                            {s2.name} — {parseFloat(s2.quantity)} {s2.unit}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-                    <input style={st.inp} type="number" min="0" step="0.001" value={it.qty} onChange={(e) => patchItem(i, { qty: Number(e.target.value) })} />
-                    <input style={st.inp} type="number" min="0" step="0.01" value={it.rate} onChange={(e) => patchItem(i, { rate: Number(e.target.value) })} />
-                    {items.length > 1 && <button style={st.rm} onClick={() => removeItem(i)}>×</button>}
-                  </div>
-                  {/* stock hint */}
-                  {s && (
-                    <div style={st.stockHint}>
-                      {avail !== null && avail < it.qty
-                        ? <span style={{ color: TERRA, fontWeight: 700 }}>⚠️ Only {avail} {s.unit} in stock — will go negative on invoice</span>
-                        : <span style={{ color: GREEN }}>✓ {avail} {s.unit} available · rate auto-filled from sell price</span>}
-                    </div>
-                  )}
+            {showItems && (
+              <>
+                <div style={st.itemHead}>
+                  <span>Category</span><span>Item</span><span>Qty</span><span>Rate (₹)</span><span />
                 </div>
-              );
-            })}
-            <button className="qo-add-item" style={st.addItem} onClick={addItem}>+ Add item</button>
-            <div style={{ marginTop: 10, fontWeight: 700, fontSize: 15, textAlign: "right" }}>Total: {rupees(calcAmount)}</div>
+                {items.map((it, i) => {
+                  const s = it.itemId ? stock.find(x => x.id === it.itemId) : null;
+                  const avail = s ? parseFloat(s.quantity) : null;
+                  const catItems = it.category ? (byCat.get(it.category) || []) : [];
+                  return (
+                    <div key={i} style={{ marginBottom: 8 }}>
+                      <div style={st.itemRow}>
+                        <select style={st.inp} value={it.custom ? CUSTOM : (it.category || "")} onChange={(e) => onCategorySelect(i, e.target.value)}>
+                          <option value="">Category…</option>
+                          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                          <option value={CUSTOM}>✏️ Custom</option>
+                        </select>
+                        {it.custom ? (
+                          <input style={st.inp} value={it.desc} onChange={(e) => patchItem(i, { desc: e.target.value })} placeholder="Custom item / service…" />
+                        ) : (
+                          <select style={{ ...st.inp, opacity: it.category ? 1 : .55 }} value={it.itemId || ""} disabled={!it.category} onChange={(e) => onItemSelect(i, e.target.value)}>
+                            <option value="">{it.category ? "Select item…" : "Pick category first"}</option>
+                            {catItems.map(s2 => <option key={s2.id} value={s2.id}>{s2.name} — {parseFloat(s2.quantity)} {s2.unit}</option>)}
+                          </select>
+                        )}
+                        <input style={st.inp} type="number" min="0" step="0.001" value={it.qty} onChange={(e) => patchItem(i, { qty: Number(e.target.value) })} />
+                        <input style={st.inp} type="number" min="0" step="0.01"  value={it.rate} onChange={(e) => patchItem(i, { rate: Number(e.target.value) })} />
+                        {items.length > 0 && <button style={st.rm} onClick={() => removeItem(i)}>×</button>}
+                      </div>
+                      {s && (
+                        <div style={st.stockHint}>
+                          {avail !== null && avail < it.qty
+                            ? <span style={{ color: TERRA, fontWeight: 700 }}>⚠️ Only {avail} {s.unit} in stock</span>
+                            : <span style={{ color: GREEN }}>✓ {avail} {s.unit} available</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <button className="qo-add-item" style={st.addItem} onClick={addItem}>+ Add item</button>
+              </>
+            )}
+            {!showItems && (
+              <button className="qo-toggle" style={{ ...st.addItem, marginTop: 8 }} onClick={() => { setShowItems(true); if (!items.length) addItem(); }}>
+                + Add items (optional)
+              </button>
+            )}
           </div>
 
           {/* ── Payment ── */}
@@ -307,18 +371,25 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
             <div style={st.fsL}>Payment</div>
             <div style={st.twoCol}>
               <div>
+                <label style={st.lbl}>Total Amount (₹) *</label>
+                <input style={st.inp} type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 2500" />
+              </div>
+              <div>
                 <label style={st.lbl}>Advance Received (₹)</label>
                 <input style={st.inp} type="number" min="0" value={advance} onChange={(e) => setAdvance(e.target.value)} placeholder="0" />
               </div>
-              <div>
-                <label style={st.lbl}>Balance Due</label>
-                <input style={{ ...st.inp, color: dueNum > 0 ? TERRA : GREEN, fontWeight: 700 }} value={dueNum > 0 ? `₹${Math.round(dueNum).toLocaleString("en-IN")}` : "✓ Fully paid"} readOnly />
-              </div>
             </div>
+            {amtNum > 0 && (
+              <div style={{ marginTop: 10, padding: "8px 12px", background: IVORY, border: `1px solid ${LINE}`, display: "flex", gap: 20, fontSize: 13 }}>
+                <span>Total: <b>{rupees(amtNum)}</b></span>
+                <span>Advance: <b style={{ color: GREEN }}>{rupees(advNum)}</b></span>
+                <span>Balance: <b style={{ color: dueNum > 0 ? TERRA : GREEN }}>{dueNum > 0 ? rupees(dueNum) : "✓ Fully paid"}</b></span>
+              </div>
+            )}
             <div style={{ marginTop: 12 }}>
               <label style={st.lbl}>Payment Method</label>
               <div style={st.pm}>
-                <button className="qo-pmbtn" style={{ ...st.pmBtn, ...(payMethod === "cash" ? st.pmOn : {}) }} onClick={() => setPayMethod("cash")}>💵 Cash</button>
+                <button className="qo-pmbtn" style={{ ...st.pmBtn, ...(payMethod === "cash"   ? st.pmOn : {}) }} onClick={() => setPayMethod("cash")}>💵 Cash</button>
                 <button className="qo-pmbtn" style={{ ...st.pmBtn, ...(payMethod === "online" ? st.pmOn : {}) }} onClick={() => setPayMethod("online")}>📱 Online / UPI</button>
               </div>
             </div>
@@ -327,7 +398,7 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
           {/* ── Note + date ── */}
           <div style={st.twoCol}>
             <div>
-              <label style={st.lbl}>Note (optional)</label>
+              <label style={st.lbl}>Extra note (optional)</label>
               <input style={st.inp} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Any special instruction…" />
             </div>
             <div>
@@ -336,14 +407,62 @@ export default function EntryDrawer({ editEntry, onClose, onSaved }: Props) {
             </div>
           </div>
 
-          <button className="qo-save" style={{ ...st.save, opacity: (saving || !canSave) ? .5 : 1 }} disabled={saving || !canSave} onClick={saveEntry}>
+          {/* ── Assign ── */}
+          {!isEdit && employees.length > 0 && (
+            <div>
+              <label style={st.lbl}>Assign to employee (optional)</label>
+              <select style={st.inp} value={assignToId} onChange={(e) => setAssignToId(e.target.value)}>
+                <option value="">— Don't assign yet —</option>
+                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+              </select>
+              {assignToId && <div style={{ fontSize: 11.5, color: GREEN, marginTop: 5 }}>✓ A task will be created for this employee.</div>}
+            </div>
+          )}
+
+          {/* ── Reference Images ── */}
+          <div style={st.fieldset}>
+            <div style={st.fsL}>Reference Images <span style={{ fontWeight: 400, color: MUTE, textTransform: "none", letterSpacing: 0 }}>· employee will see these</span></div>
+            {/* Existing images */}
+            {existingImgs.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                {existingImgs.map((img, i) => (
+                  <div key={i} style={{ position: "relative", width: 80, height: 80 }}>
+                    <img src={`${API_BASE}${img}`} alt="" style={{ width: 80, height: 80, objectFit: "cover", border: `1px solid ${LINE}`, opacity: removeImgs.includes(img) ? .3 : 1 }} />
+                    <button onClick={() => setRemoveImgs(p => p.includes(img) ? p.filter(x => x !== img) : [...p, img])}
+                      style={{ position: "absolute", top: 2, right: 2, background: removeImgs.includes(img) ? GREEN : TERRA, color: "#fff", border: "none", width: 20, height: 20, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {removeImgs.includes(img) ? "↩" : "×"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* New image previews */}
+            {images.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                {images.map((f, i) => (
+                  <div key={i} style={{ position: "relative", width: 80, height: 80 }}>
+                    <img src={URL.createObjectURL(f)} alt="" style={{ width: 80, height: 80, objectFit: "cover", border: `1px solid ${LINE}` }} />
+                    <button onClick={() => setImages(p => p.filter((_, idx) => idx !== i))}
+                      style={{ position: "absolute", top: 2, right: 2, background: TERRA, color: "#fff", border: "none", width: 20, height: 20, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input ref={imgRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { const f = Array.from(e.target.files || []); setImages(p => [...p, ...f].slice(0, 8)); e.target.value = ""; }} />
+            <button style={{ ...st.addItem, marginTop: 0 }} onClick={() => imgRef.current?.click()}>📎 Attach images (max 8)</button>
+          </div>
+
+          <button className="qo-save"
+            style={{ ...st.save, opacity: (saving || !canSave) ? .5 : 1 }}
+            disabled={saving || !canSave}
+            onClick={saveEntry}>
             {saving ? "Saving…" : isEdit ? "Save Changes" : "Save Order"}
           </button>
-          {!canSave && <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}>Select a customer and add at least one item with an amount.</div>}
+          {!canSave && <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center" }}>Customer name, work details, and total amount are required.</div>}
         </div>
       </div>
 
-      {/* Add-customer popup */}
+      {/* ── Add-customer popup ── */}
       {showAddCust && (
         <div style={st.ov2} onClick={(e) => e.target === e.currentTarget && setShowAddCust(false)}>
           <div style={st.modal2}>
@@ -372,9 +491,9 @@ const st: Record<string, React.CSSProperties> = {
   grid:      { display: "grid", gap: 13 },
   twoCol:    { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 13 },
   fieldset:  { border: `1px solid ${LINE}`, padding: 16 },
-  fsL:       { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: TERRA, marginBottom: 12 },
+  fsL:       { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: TERRA, marginBottom: 12 } as React.CSSProperties,
   lbl:       { display: "block", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: MUTE, marginBottom: 5 },
-  hint:      { fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9ca3af" },
+  hint:      { fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#9ca3af" } as React.CSSProperties,
   inp:       { width: "100%", padding: "9px 12px", border: `1px solid ${LINE}`, fontSize: 14, fontFamily: SANS, color: INK, background: "#fff", outline: "none", boxSizing: "border-box" },
   itemHead:  { display: "grid", gridTemplateColumns: "1fr 2.8fr 70px 110px 32px", gap: 8, marginBottom: 4 },
   itemRow:   { display: "grid", gridTemplateColumns: "1fr 2.8fr 70px 110px 32px", gap: 8, alignItems: "center" },

@@ -5,12 +5,12 @@ import {
 } from "./types";
 
 interface Props {
-  rows: LedgerRow[];
-  visible: number;
-  loading: boolean;
+  rows:       LedgerRow[];
+  visible:    number;
+  loading:    boolean;
   ledgerDate: string;
   onShowMore: () => void;
-  onDrill: (row: LedgerRow) => void;
+  onDrill:    (row: LedgerRow) => void;
 }
 
 export default function LedgerTable({ rows, visible, loading, ledgerDate, onShowMore, onDrill }: Props) {
