@@ -1,6 +1,4 @@
 // src/components/quick-order/types.ts
-// ── Shared types, design tokens, and pure helpers for Quick Orders ─────────
-
 export const TERRA    = "#d9542f";
 export const TERRA_DK = "#b8421f";
 export const GOLD     = "#c2974a";
@@ -45,46 +43,39 @@ export interface LinkedTask {
   createdAt:    string;
 }
 
-/** A manual payment recorded against this order. */
 export interface OrderPayment {
-  id:        string;
-  amount:    number;
-  method:    "cash" | "online";
-  note?:     string;
-  createdAt: string;
-}
-
-export interface OrderPayment {
-  id:        string;
-  amount:    number;
-  method:    "cash" | "online";
-  note:      string;
-  createdBy?: { id: string; name: string } | null;
-  createdAt: string;
+  id:          string;
+  amount:      number;
+  method:      "cash" | "online";
+  note:        string;
+  createdBy?:  { id: string; name: string } | null;
+  createdAt:   string;
 }
 
 export interface QuickOrder {
-  id:            string;
-  title?:        string;           // short label / order title
-  customerId?:   string;
-  customerName:  string;
-  customerPhone: string;
-  customerEmail: string;
-  whatsapp?:     string;           // separate WhatsApp number
-  workDetails:   string;
-  images:        string[];
-  items:         Array<{ itemId?: string | null; desc: string; qty: number; rate: number; unit?: string }>;
-  description:   string;
-  amount:        number;
-  lessAmount:    number;           // concession — reduces due, tracked separately
-  advancePaid:   number;
-  paymentMethod: "cash" | "online";
-  status:        "unbilled" | "billed";
-  invoiceNo?:    string;
-  task?:         LinkedTask | null;
-  payments?:     OrderPayment[];
-  entryDate:     string;
-  createdAt:     string;
+  id:               string;
+  title?:           string;
+  customerId?:      string;
+  customerName:     string;
+  customerPhone:    string;
+  customerEmail:    string;
+  whatsapp?:        string;
+  workDetails:      string;
+  images:           string[];
+  items:            Array<{ itemId?: string | null; desc: string; qty: number; rate: number; unit?: string }>;
+  description:      string;
+  amount:           number;
+  lessAmount:       number;
+  advancePaid:      number;
+  paymentMethod:    "cash" | "online";
+  status:           "unbilled" | "billed";
+  invoiceNo?:       string;
+  quantity?:        string;
+  expectedDelivery?: string;
+  task?:            LinkedTask | null;
+  payments?:        OrderPayment[];
+  entryDate:        string;
+  createdAt:        string;
 }
 
 export type KhataEntry = QuickOrder;
@@ -101,7 +92,7 @@ export interface LedgerRow {
   totalDue:       number;
 }
 
-export interface CustomerRec { id: string; name: string; phone: string; email: string; }
+export interface CustomerRec  { id: string; name: string; phone: string; email: string; }
 export interface EmployeeRec  { id: string; name: string; role: string; }
 
 export interface InvStockItem {

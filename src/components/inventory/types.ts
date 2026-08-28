@@ -47,7 +47,9 @@ export interface Movement {
 }
 
 export interface KPIs {
-  totalItems: number; stockValue: string; lowStockCount: number; outOfStockCount: number;
+  totalItems: number; stockValue: string;
+  lowCount: number; outCount: number;
+  lowStockCount?: number; outOfStockCount?: number;
 }
 
 export interface CatSummary { name: string; count: number; value: number; low: number; }

@@ -187,12 +187,12 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
   const [fYear,  setFYear]  = useState("");
   const [fType,  setFType]  = useState<"all"|"purchase"|"payment">("all");
 
-  const [stockItems, setStockItems] = useState<{id:string;name:string;unit:string;sku:string;category:string}[]>([]);
+  const [stockItems, setStockItems] = useState<{id:string;name:string;unit:string;sku:string;category:string;quantity?:any}[]>([]);
   useEffect(() => {
     api.get("/api/inventory/items").then(r => {
       const rows = Array.isArray(r.data) ? r.data : [];
       setStockItems(rows.map((it:any) => ({
-        id: it.id, name: it.name, unit: it.unit, sku: it.sku,
+        id: it.id, name: it.name, unit: it.unit, sku: it.sku, quantity: it.quantity,
         category: (it.category || "Uncategorised").trim() || "Uncategorised",
       })));
     }).catch(()=>{});
@@ -686,7 +686,7 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
       {/* ═══════════════════ PURCHASE MODAL ════════════════════════════════ */}
       {purOpen && (
         <div style={sharedSt.backdrop} onClick={() => !purBusy && setPurOpen(false)}>
-          <div style={{ ...sharedSt.drawer, maxWidth:680 }} onClick={e=>e.stopPropagation()}>
+          <div style={{ ...sharedSt.drawer, maxWidth:900 }} onClick={e=>e.stopPropagation()}>
             <div style={sharedSt.dHead}>
               <h3 style={sharedSt.dTitle}>Record purchase from {s.name}</h3>
               <button style={sharedSt.closeBtn} onClick={()=>setPurOpen(false)}><Icon name="x" size={18}/></button>
@@ -721,7 +721,7 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                         }}>
                           <option value="">— select item —</option>
                           {stockItems.filter(si => si.category === l.category).map(si => (
-                            <option key={si.id} value={si.id}>{si.name} ({si.sku})</option>
+                            <option key={si.id} value={si.id}>{si.name} - {si.quantity ?? 0} {si.unit}</option>
                           ))}
                         </select>
                       ) : (

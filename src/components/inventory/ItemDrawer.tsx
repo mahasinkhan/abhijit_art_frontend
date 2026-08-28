@@ -25,7 +25,7 @@ const st: Record<string, React.CSSProperties> = {
     zIndex: 2000, backdropFilter: "blur(2px)",
   },
   box: {
-    background: CARD, width: "min(540px, 94vw)", maxHeight: "92vh",
+    background: CARD, width: "min(720px, 94vw)", maxHeight: "92vh",
     overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,.18)",
     display: "flex", flexDirection: "column", fontFamily: SANS, color: INK,
     animation: "inv-scaleIn .18s ease",

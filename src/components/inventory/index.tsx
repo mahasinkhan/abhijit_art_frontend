@@ -15,7 +15,6 @@ import SupplierDrawer   from "./SupplierDrawer";
 import { InventoryItem, Supplier, KPIs, buildCatSummary, dec, TERRA, TERRA_DK, GOLD, LINE, IVORY, CARD, MUTE, BODY, SANS } from "./types";
 
 export default function Inventory() {
-  // ── Remote data ───────────────────────────────────────────────────────────
   const [items,     setItems]     = useState<InventoryItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [kpis,      setKpis]      = useState<KPIs | null>(null);
@@ -23,23 +22,19 @@ export default function Inventory() {
   const [suppLoaded,  setSuppLoaded]  = useState(false);
   const [suppLoading, setSuppLoading] = useState(false);
 
-  // ── Filter state ──────────────────────────────────────────────────────────
   const [selCat,     setSelCat]     = useState("");
   const [lowOnly,    setLowOnly]    = useState(false);
   const [activeView, setActiveView] = useState<"overview"|"items"|"suppliers">("overview");
   const [ovFilter,   setOvFilter]   = useState<OverviewFilter>({ gran:"month", from:"", to:"" });
   const [stmtActions, setStmtActions] = useState<{ onPurchase:()=>void; onPayment:()=>void; canPay:boolean } | null>(null);
 
-  // ── Drawer state ──────────────────────────────────────────────────────────
   const [itemDrawer, setItemDrawer] = useState<InventoryItem | "new" | null>(null);
   const [moveDrawer, setMoveDrawer] = useState<InventoryItem | null>(null);
   const [histDrawer, setHistDrawer] = useState<InventoryItem | null>(null);
   const [suppDrawer, setSuppDrawer] = useState<Supplier | "new" | null>(null);
 
-  // ── Derived (needed by KPIs, category dropdown, colors) ────────────────────
   const catSummary = useMemo(() => buildCatSummary(items), [items]);
 
-  // ── Load items + KPIs on mount ────────────────────────────────────────────
   useEffect(() => {
     Promise.allSettled([
       api.get("/api/inventory/items"),
@@ -50,13 +45,20 @@ export default function Inventory() {
     }).finally(() => setLoading(false));
   }, []);
 
-  // ── Auto-load suppliers when item drawer opens (supplier dropdown needs it) ──
   useEffect(() => {
     if (itemDrawer !== null) loadSuppliers();
   }, [itemDrawer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSuppliers = () => {
     if (suppLoaded) return;
+    setSuppLoading(true);
+    api.get("/api/inventory/suppliers")
+      .then(r => { setSuppliers(Array.isArray(r.data) ? r.data : []); setSuppLoaded(true); })
+      .catch(() => setSuppLoaded(true))
+      .finally(() => setSuppLoading(false));
+  };
+
+  const reloadSuppliers = () => {
     setSuppLoading(true);
     api.get("/api/inventory/suppliers")
       .then(r => { setSuppliers(Array.isArray(r.data) ? r.data : []); setSuppLoaded(true); })
@@ -72,14 +74,14 @@ export default function Inventory() {
       });
   };
 
-  // ── Handlers passed to drawers ────────────────────────────────────────────
   const afterSave = () => {
     setItemDrawer(null); setMoveDrawer(null);
     setHistDrawer(null); setSuppDrawer(null);
-    setSuppLoaded(false); refresh();
+    refresh();
+    // Force reload suppliers immediately so new/edited supplier shows without tab switch
+    reloadSuppliers();
   };
 
-  // ── CSV export ────────────────────────────────────────────────────────────
   const exportCSV = () => {
     const visible = items.filter(it =>
       (!selCat || (it.category||"Uncategorised") === selCat) &&
@@ -98,11 +100,9 @@ export default function Inventory() {
     a.download = `inventory-${new Date().toISOString().slice(0,10)}.csv`; a.click();
   };
 
-  // ═════════════════════════════════════════════════════════════════ RENDER ══
   return (
     <div style={st.shell}>
       <div style={st.mainWrap}>
-        {/* ── View toggle strip ───────────────────────────────────────────── */}
         <div style={st.viewStrip}>
           <div style={st.viewTabs}>
             {(["overview","items","suppliers"] as const).map(v => (
@@ -150,7 +150,7 @@ export default function Inventory() {
               loading   = {suppLoading}
               onAdd     = {() => setSuppDrawer("new")}
               onEdit    = {s  => setSuppDrawer(s)}
-              onRefresh = {() => { setSuppLoaded(false); setSuppLoading(false); loadSuppliers(); }}
+              onRefresh = {() => { setSuppLoaded(false); reloadSuppliers(); }}
               onStatementActions = {setStmtActions}
             />
           : <InventoryTable
@@ -174,7 +174,6 @@ export default function Inventory() {
         }
       </div>
 
-      {/* ── Drawers ───────────────────────────────────────────────────────── */}
       {itemDrawer !== null && (
         <ItemDrawer
           item       = {itemDrawer === "new" ? null : itemDrawer}
@@ -222,18 +221,15 @@ export default function Inventory() {
 }
 
 const st: Record<string, React.CSSProperties> = {
-  shell:     { display:"flex", minHeight:"calc(100vh - 64px)", fontFamily:SANS, background:IVORY, color:"#1a1d27", overflow:"hidden" },
-  mainWrap:  { flex:1, minWidth:0, display:"flex", flexDirection:"column", overflowY:"auto" },
-  viewStrip: { display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, borderBottom:`1px solid ${LINE}`, background:"#ffffff", flexShrink:0, padding:"0 12px 0 4px", flexWrap:"wrap" },
-  viewTabs:  { display:"flex", gap:0 },
+  shell:      { display:"flex", minHeight:"calc(100vh - 64px)", fontFamily:SANS, background:IVORY, color:"#1a1d27", overflow:"hidden" },
+  mainWrap:   { flex:1, minWidth:0, display:"flex", flexDirection:"column", overflowY:"auto" },
+  viewStrip:  { display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, borderBottom:`1px solid ${LINE}`, background:"#ffffff", flexShrink:0, padding:"0 12px 0 4px", flexWrap:"wrap" },
+  viewTabs:   { display:"flex", gap:0 },
   viewFilters:{ display:"flex", alignItems:"center", padding:"7px 0", marginLeft:"auto" },
   viewActions:{ display:"flex", alignItems:"center", gap:8, padding:"7px 0", marginLeft:"auto" },
   hdrGhost:   { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 14px", background:CARD, border:`1px solid ${LINE}`, color:"#1a1d27", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS },
   hdrCta:     { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 16px", background:TERRA, border:"none", color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS },
   hdrCtaOff:  { background:"#e6e2da", color:"#a8a49c", cursor:"not-allowed" },
-  viewBtn:   { padding:"12px 20px",
-               borderTopWidth:0, borderRightWidth:0, borderLeftWidth:0, borderBottomWidth:2,
-               borderStyle:"solid", borderColor:"transparent",
-               background:"transparent", color:MUTE, fontFamily:SANS, fontWeight:700, fontSize:13.5, cursor:"pointer", transition:"color .18s, border-color .18s" },
-  viewBtnOn: { color:TERRA, borderColor:TERRA },
+  viewBtn:    { padding:"12px 20px", borderTopWidth:0, borderRightWidth:0, borderLeftWidth:0, borderBottomWidth:2, borderStyle:"solid", borderColor:"transparent", background:"transparent", color:MUTE, fontFamily:SANS, fontWeight:700, fontSize:13.5, cursor:"pointer", transition:"color .18s, border-color .18s" },
+  viewBtnOn:  { color:TERRA, borderColor:TERRA },
 };

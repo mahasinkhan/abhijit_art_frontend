@@ -34,7 +34,7 @@ export default function QuickOrders() {
   // drawers
   const [entryOpen,      setEntryOpen]      = useState(false);
   const [editEntry,      setEditEntry]      = useState<QuickOrder | null>(null);
-  const [detailOrder,    setDetailOrder]    = useState<QuickOrder | null>(null); // View Details
+  const [detailOrder,    setDetailOrder]    = useState<QuickOrder | null>(null);
   const [drillRow,       setDrillRow]       = useState<LedgerRow | null>(null);
   const [drillEntries,   setDrillEntries]   = useState<QuickOrder[]>([]);
   const [drillLoading,   setDrillLoading]   = useState(false);
@@ -80,6 +80,8 @@ export default function QuickOrders() {
     setEntries(upd);
     setDrillEntries(upd);
     if (detailOrder?.id === updated.id) setDetailOrder(updated);
+    // also refresh ledger row totals
+    loadLedger();
   }
 
   // ── Patch just the task inside an order (from socket events) ──
@@ -98,13 +100,10 @@ export default function QuickOrders() {
     );
   }
 
-  // ── Socket.IO — listen for real-time task updates from employees ──
+  // ── Socket.IO ──
   useSocket({
     "task:updated": (task: any) => { patchTaskInOrder(task); },
-    "task:created": (task: any) => {
-      // When employee claims an order, task gets created — reload to get fresh data
-      if (task.quickOrderId) loadEntries();
-    },
+    "task:created": (task: any) => { if (task.quickOrderId) loadEntries(); },
     "task:deleted": ({ id }: { id: string }) => {
       const upd = (arr: QuickOrder[]) => arr.map(e => e.task?.id === id ? { ...e, task: null } : e);
       setEntries(upd); setDrillEntries(upd);
@@ -224,14 +223,14 @@ export default function QuickOrders() {
   return (
     <div style={st.wrap}>
       <style>{`
-        .qo-tab { transition:all .15s; }
-        .qo-tab:hover:not(.on) { background:${IVORY}; color:${TERRA}; }
-        .qo-add:hover { background:${TERRA_DK}; }
-        .qo-alltime:hover:not(.on) { background:${IVORY}; }
-        .qo-trow:hover td { background:#fdf8f2; }
-        .qo-abtn:hover { background:${IVORY}; }
-        .qo-showmore:hover { background:#f3efe8; color:${TERRA}; }
-        * { box-sizing:border-box; }
+        .qo-tab{transition:all .15s}
+        .qo-tab:hover:not(.on){background:${IVORY};color:${TERRA}}
+        .qo-add:hover{background:${TERRA_DK}}
+        .qo-alltime:hover:not(.on){background:${IVORY}}
+        .qo-trow:hover td{background:#fdf8f2}
+        .qo-abtn:hover{background:${IVORY}}
+        .qo-showmore:hover{background:#f3efe8;color:${TERRA}}
+        *{box-sizing:border-box}
       `}</style>
 
       {/* Topbar */}
@@ -241,12 +240,12 @@ export default function QuickOrders() {
           <button className={`qo-tab${view === "ledger" ? " on" : ""}`} style={{ ...st.tab, ...(view === "ledger" ? st.tabOn : {}) }} onClick={() => { setView("ledger"); setDrillRow(null); }}>Customer Ledger</button>
         </div>
         {view === "daily" && (
-          <input type="date" style={st.date} value={date} onChange={(e) => setDate(e.target.value)} />
+          <input type="date" style={st.date} value={date} onChange={e => setDate(e.target.value)} />
         )}
         {view === "ledger" && (
           <>
             <button className={`qo-alltime${ledgerDate === "" ? " on" : ""}`} style={{ ...st.alltime, ...(ledgerDate === "" ? st.alltimeOn : {}) }} onClick={() => setLedgerDate("")}>All Time</button>
-            <input type="date" style={st.date} value={ledgerDate} onChange={(e) => setLedgerDate(e.target.value)} />
+            <input type="date" style={st.date} value={ledgerDate} onChange={e => setLedgerDate(e.target.value)} />
             {ledgerDate && <span style={st.showing}>Showing {fmtDate(ledgerDate + "T00:00:00")}</span>}
           </>
         )}
@@ -257,17 +256,17 @@ export default function QuickOrders() {
       <div style={st.kpiStrip}>
         {view === "daily" ? (
           <>
-            <Kpi label="Total Billed"      val={rupees(totalToday)}  sub={`${entries.length} order${entries.length !== 1 ? "s" : ""}`} color="#c2974a" />
-            <Kpi label="Total Less"        val={totalLess > 0 ? `−${rupees(totalLess)}` : rupees(0)} sub="Concession given" color={GOLD} />
-            <Kpi label="Advance Received"  val={rupees(totalAdv)}    sub="Paid upfront"  color={GREEN} />
-            <Kpi label="Balance Due"       val={rupees(totalDue)}    sub="Still owed"    color={totalDue > 0 ? TERRA : GREEN} />
+            <Kpi label="Total Billed"     val={rupees(totalToday)} sub={`${entries.length} order${entries.length !== 1 ? "s" : ""}`} color="#c2974a" />
+            <Kpi label="Total Less"       val={totalLess > 0 ? `−${rupees(totalLess)}` : rupees(0)} sub="Concession given" color={GOLD} />
+            <Kpi label="Advance Received" val={rupees(totalAdv)}   sub="Paid upfront"  color={GREEN} />
+            <Kpi label="Balance Due"      val={rupees(totalDue)}   sub="Still owed"    color={totalDue > 0 ? TERRA : GREEN} />
           </>
         ) : (
           <>
-            <Kpi label="Total Billed"      val={rupees(ledgerTotal)} sub={`${ledgerOrders} orders · ${ledger.length} customers`} color="#c2974a" />
-            <Kpi label="Total Less"        val={ledgerLess > 0 ? `−${rupees(ledgerLess)}` : rupees(0)} sub="Concession given" color={GOLD} />
-            <Kpi label="Advance Received"  val={rupees(ledgerAdv)}   sub="Paid upfront"  color={GREEN} />
-            <Kpi label="Balance Due"       val={rupees(ledgerDue)}   sub="Outstanding"   color={ledgerDue > 0 ? TERRA : GREEN} />
+            <Kpi label="Total Billed"     val={rupees(ledgerTotal)} sub={`${ledgerOrders} orders · ${ledger.length} customers`} color="#c2974a" />
+            <Kpi label="Total Less"       val={ledgerLess > 0 ? `−${rupees(ledgerLess)}` : rupees(0)} sub="Concession given" color={GOLD} />
+            <Kpi label="Advance Received" val={rupees(ledgerAdv)}   sub="Paid upfront"  color={GREEN} />
+            <Kpi label="Balance Due"      val={rupees(ledgerDue)}   sub="Outstanding"   color={ledgerDue > 0 ? TERRA : GREEN} />
           </>
         )}
       </div>
@@ -275,23 +274,13 @@ export default function QuickOrders() {
       {/* Content */}
       {view === "daily" ? (
         <OrdersTable
-          entries={entries}
-          visible={dailyVisible}
-          loading={loading}
-          date={date}
-          isAdmin={isAdmin}
+          entries={entries} visible={dailyVisible} loading={loading} date={date} isAdmin={isAdmin}
           onShowMore={() => setDailyVisible(v => v + PAGE)}
-          onViewDetails={openDetail}
-          onAssign={openAssign}
-          onClaim={claimOrder}
-          onUnassign={unassignOrder}
+          onViewDetails={openDetail} onAssign={openAssign} onClaim={claimOrder} onUnassign={unassignOrder}
         />
       ) : (
         <LedgerTable
-          rows={ledger}
-          visible={ledgerVisible}
-          loading={loading}
-          ledgerDate={ledgerDate}
+          rows={ledger} visible={ledgerVisible} loading={loading} ledgerDate={ledgerDate}
           onShowMore={() => setLedgerVisible(v => v + PAGE)}
           onDrill={openDrill}
         />
@@ -307,16 +296,13 @@ export default function QuickOrders() {
         />
       )}
 
-      {/* Order Detail Drawer — right-side slide-in */}
+      {/* Order Detail Drawer */}
       {detailOrder && (
         <OrderDetailDrawer
-          order={detailOrder}
-          isAdmin={isAdmin}
+          order={detailOrder} isAdmin={isAdmin}
           onClose={() => setDetailOrder(null)}
-          onEdit={openEdit}
-          onDelete={deleteEntry}
-          onAssign={openAssign}
-          onUnassign={unassignOrder}
+          onEdit={openEdit} onDelete={deleteEntry}
+          onAssign={openAssign} onUnassign={unassignOrder}
           onUpdated={patchOrder}
         />
       )}
@@ -324,16 +310,12 @@ export default function QuickOrders() {
       {/* Ledger drill */}
       {drillRow && (
         <LedgerDrill
-          row={drillRow}
-          entries={drillEntries}
-          loading={drillLoading}
-          ledgerDate={ledgerDate}
-          isAdmin={isAdmin}
+          row={drillRow} entries={drillEntries} loading={drillLoading}
+          ledgerDate={ledgerDate} isAdmin={isAdmin}
           onClose={() => setDrillRow(null)}
-          onEdit={openEdit}
-          onAssign={openAssign}
-          onClaim={claimOrder}
-          onUnassign={unassignOrder}
+          onEdit={openEdit} onAssign={openAssign}
+          onClaim={claimOrder} onUnassign={unassignOrder}
+          onUpdated={patchOrder}
         />
       )}
 
@@ -342,18 +324,18 @@ export default function QuickOrders() {
         <div style={st.ov} onClick={() => setAssignTarget(null)}>
           <div style={st.assignModal} onClick={e => e.stopPropagation()}>
             <div style={st.assignTitle}>Assign Order</div>
-            <div style={{ fontSize: 13, color: MUTE, marginBottom: 16 }}>
+            <div style={{ fontSize:13, color:MUTE, marginBottom:16 }}>
               <b>{assignTarget.customerName}</b> — {(assignTarget.workDetails || "").slice(0, 80)}{(assignTarget.workDetails || "").length > 80 ? "…" : ""}
             </div>
             {assignErr && <div style={st.err}>{assignErr}</div>}
-            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: MUTE, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>Assign to</label>
-            <select style={{ ...st.inp, marginBottom: 16 }} value={assignEmpId} onChange={e => setAssignEmpId(e.target.value)}>
+            <label style={{ display:"block", fontSize:11, fontWeight:700, color:MUTE, marginBottom:6, textTransform:"uppercase", letterSpacing:".05em" }}>Assign to</label>
+            <select style={{ ...st.inp, marginBottom:16 }} value={assignEmpId} onChange={e => setAssignEmpId(e.target.value)}>
               <option value="">Select employee…</option>
               {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
             </select>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button style={{ flex: 1, padding: 10, border: `1px solid ${LINE}`, background: "#fff", cursor: "pointer", fontFamily: SANS, fontWeight: 700, fontSize: 13 }} onClick={() => setAssignTarget(null)}>Cancel</button>
-              <button style={{ flex: 1, padding: 10, border: "none", background: assignEmpId ? TERRA : "#ccc", color: "#fff", cursor: assignEmpId ? "pointer" : "not-allowed", fontFamily: SANS, fontWeight: 700, fontSize: 13 }}
+            <div style={{ display:"flex", gap:10 }}>
+              <button style={{ flex:1, padding:10, border:`1px solid ${LINE}`, background:"#fff", cursor:"pointer", fontFamily:SANS, fontWeight:700, fontSize:13 }} onClick={() => setAssignTarget(null)}>Cancel</button>
+              <button style={{ flex:1, padding:10, border:"none", background:assignEmpId ? TERRA : "#ccc", color:"#fff", cursor:assignEmpId ? "pointer" : "not-allowed", fontFamily:SANS, fontWeight:700, fontSize:13 }}
                 disabled={!assignEmpId || assignBusy} onClick={confirmAssign}>
                 {assignBusy ? "Assigning…" : "Assign"}
               </button>
@@ -376,24 +358,24 @@ function Kpi({ label, val, sub, color }: { label: string; val: string; sub: stri
 }
 
 const st: Record<string, React.CSSProperties> = {
-  wrap:        { fontFamily: SANS, color: INK, fontVariantNumeric: "tabular-nums" },
-  topbar:      { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 18 },
-  tabs:        { display: "flex", border: `1px solid ${LINE}` },
-  tab:         { padding: "9px 20px", border: "none", background: CARD, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: SANS, color: MUTE },
-  tabOn:       { background: TERRA, color: "#fff" },
-  date:        { padding: "9px 12px", border: `1px solid ${LINE}`, fontSize: 13, fontFamily: SANS, background: CARD, color: INK },
-  alltime:     { padding: "9px 14px", border: `1px solid ${LINE}`, background: CARD, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: SANS, color: MUTE },
-  alltimeOn:   { background: INK, color: "#fff", borderColor: INK },
-  showing:     { fontSize: 12.5, color: MUTE, fontWeight: 600 },
-  add:         { marginLeft: "auto", background: TERRA, color: "#fff", border: "none", padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: SANS },
-  kpiStrip:    { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, background: LINE, border: `1px solid ${LINE}`, marginBottom: 18 },
-  kpi:         { background: CARD, padding: "18px 20px" },
-  kpiL:        { fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: MUTE, marginBottom: 8 },
-  kpiN:        { fontSize: 26, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums" },
-  kpiSub:      { fontSize: 11, color: MUTE, marginTop: 6 },
-  ov:          { position: "fixed", inset: 0, background: "rgba(31,36,48,.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
-  assignModal: { background: "#fff", width: "100%", maxWidth: 400, padding: 26, fontFamily: SANS, color: INK },
-  assignTitle: { fontSize: 16, fontWeight: 800, marginBottom: 12, color: INK },
-  inp:         { width: "100%", padding: "9px 12px", border: `1px solid ${LINE}`, fontSize: 14, fontFamily: SANS, color: INK, background: "#fff", outline: "none", boxSizing: "border-box" },
-  err:         { background: "#fef2ee", border: "1px solid #f5c4bb", color: "#b23c1c", padding: "9px 12px", fontSize: 13, marginBottom: 12 },
+  wrap:        { fontFamily:SANS, color:INK, fontVariantNumeric:"tabular-nums" },
+  topbar:      { display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:18 },
+  tabs:        { display:"flex", border:`1px solid ${LINE}` },
+  tab:         { padding:"9px 20px", border:"none", background:CARD, fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS, color:MUTE },
+  tabOn:       { background:TERRA, color:"#fff" },
+  date:        { padding:"9px 12px", border:`1px solid ${LINE}`, fontSize:13, fontFamily:SANS, background:CARD, color:INK },
+  alltime:     { padding:"9px 14px", border:`1px solid ${LINE}`, background:CARD, fontSize:12.5, fontWeight:700, cursor:"pointer", fontFamily:SANS, color:MUTE },
+  alltimeOn:   { background:INK, color:"#fff", borderColor:INK },
+  showing:     { fontSize:12.5, color:MUTE, fontWeight:600 },
+  add:         { marginLeft:"auto", background:TERRA, color:"#fff", border:"none", padding:"10px 20px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS },
+  kpiStrip:    { display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1, background:LINE, border:`1px solid ${LINE}`, marginBottom:18 },
+  kpi:         { background:CARD, padding:"18px 20px" },
+  kpiL:        { fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:".08em", color:MUTE, marginBottom:8 },
+  kpiN:        { fontSize:26, fontWeight:900, lineHeight:1, fontVariantNumeric:"tabular-nums" },
+  kpiSub:      { fontSize:11, color:MUTE, marginTop:6 },
+  ov:          { position:"fixed", inset:0, background:"rgba(31,36,48,.5)", zIndex:2000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 },
+  assignModal: { background:"#fff", width:"100%", maxWidth:400, padding:26, fontFamily:SANS, color:INK },
+  assignTitle: { fontSize:16, fontWeight:800, marginBottom:12, color:INK },
+  inp:         { width:"100%", padding:"9px 12px", border:`1px solid ${LINE}`, fontSize:14, fontFamily:SANS, color:INK, background:"#fff", outline:"none", boxSizing:"border-box" },
+  err:         { background:"#fef2ee", border:"1px solid #f5c4bb", color:"#b23c1c", padding:"9px 12px", fontSize:13, marginBottom:12 },
 };

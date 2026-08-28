@@ -95,8 +95,8 @@ export default function InventoryTable({
         {[
           { label:"Total items",  val: loading?"…":String(kpis?.totalItems ?? items.length), sub:"Active in catalogue",  accent: GOLD   },
           { label:"Stock value",  val: loading?"…":rfmt(dec(kpis?.stockValue)),               sub:"At cost price",        accent: TERRA  },
-          { label:"Low stock",    val: loading?"…":String(kpis?.lowStockCount ?? 0),           sub:"At or below reorder",  accent:(kpis?.lowStockCount??0)>0?"#b45309":MUTE },
-          { label:"Out of stock", val: loading?"…":String(kpis?.outOfStockCount ?? 0),         sub:"Needs restocking",     accent:(kpis?.outOfStockCount??0)>0?RED:MUTE    },
+          { label:"Low stock",    val: loading?"…":String(kpis?.lowCount ?? kpis?.lowStockCount ?? 0),           sub:"At or below reorder",  accent:(kpis?.lowCount??kpis?.lowStockCount??0)>0?"#b45309":MUTE },
+          { label:"Out of stock", val: loading?"…":String(kpis?.outCount ?? kpis?.outOfStockCount ?? 0),         sub:"Needs restocking",     accent:(kpis?.outCount??kpis?.outOfStockCount??0)>0?RED:MUTE    },
         ].map(k => (
           <div key={k.label} style={st.kpiCard}>
             <div style={{ fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, marginBottom:8 }}>{k.label}</div>
@@ -150,9 +150,9 @@ export default function InventoryTable({
         >
           <Icon name="warning" size={13} color={lowOnly ? TERRA : MUTE} />
           Low stock
-          {(kpis?.lowStockCount ?? 0) > 0 && (
+          {((kpis?.lowCount ?? kpis?.lowStockCount ?? 0) + (kpis?.outCount ?? kpis?.outOfStockCount ?? 0)) > 0 && (
             <span style={{ ...st.badge, background: lowOnly ? TERRA : "#f0e6dc", color: lowOnly ? "#fff" : "#9a6a3a" }}>
-              {kpis?.lowStockCount}
+              {(kpis?.lowCount ?? kpis?.lowStockCount ?? 0) + (kpis?.outCount ?? kpis?.outOfStockCount ?? 0)}
             </span>
           )}
         </button>

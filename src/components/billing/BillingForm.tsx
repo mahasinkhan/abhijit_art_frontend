@@ -114,8 +114,7 @@ export default function BillingForm(p: Props) {
   const pickStock = (rowId: string, stockId: string) => {
     if (!stockId) { setItem(rowId, { itemId: undefined, unit: undefined, desc: "", rate: "" }); return; }
     const s = stockById.get(stockId); if (!s) return;
-    const price = dec(s.sellPrice) > 0 ? dec(s.sellPrice) : dec(s.costPrice);
-    setItem(rowId, { itemId: s.id, desc: s.name, rate: String(price || ""), unit: s.unit });
+    setItem(rowId, { itemId: s.id, desc: s.name, rate: "", unit: s.unit });
   };
   const addItem = () => p.onItemsChange([...p.items, { id: uid(), desc: "", qty: "1", rate: "" }]);
   const removeItem = (id: string) => { if (p.items.length === 1) return; p.onItemsChange(p.items.filter(it => it.id !== id)); setRowCat(m => { const n = { ...m }; delete n[id]; return n; }); };
@@ -317,7 +316,21 @@ export default function BillingForm(p: Props) {
                 <div style={{ fontSize:11, marginTop:4, paddingLeft:2, color: after < 0 ? TERRA : MUTE }}>
                   {after < 0
                     ? `⚠️ Only ${avail} ${linked.unit} in stock — this will go ${Math.abs(after)} below zero`
-                    : `${avail} ${linked.unit} available${dec(linked.sellPrice) > 0 ? ` · sell ${rupee(dec(linked.sellPrice))}/${linked.unit}` : ""}`}
+                    : (
+                      <span>
+                        {avail} {linked.unit} available
+                        {dec(linked.costPrice) > 0 && (
+                          <span style={{ marginLeft:8, color:"#92400e", fontWeight:700, background:"#fef3c7", padding:"1px 6px", borderRadius:2 }}>
+                            Buy ₹{dec(linked.costPrice).toLocaleString("en-IN", {minimumFractionDigits:2})}/{linked.unit}
+                          </span>
+                        )}
+                        {dec(linked.sellPrice) > 0 && (
+                          <span style={{ marginLeft:4, color:"#15803d", fontWeight:700 }}>
+                            · Sell ₹{dec(linked.sellPrice).toLocaleString("en-IN", {minimumFractionDigits:2})}/{linked.unit}
+                          </span>
+                        )}
+                      </span>
+                    )}
                 </div>
               )}
             </div>

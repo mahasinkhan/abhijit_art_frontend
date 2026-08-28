@@ -53,7 +53,7 @@ export default function SupplierDrawer({ supplier, onClose, onSaved }: Props) {
 
   return (
     <div style={sharedSt.backdrop} onClick={() => !busy && onClose()}>
-      <div style={{ ...sharedSt.drawer, maxWidth:440 }} onClick={e => e.stopPropagation()}>
+      <div style={{ ...sharedSt.drawer, maxWidth: 640 }} onClick={e => e.stopPropagation()}>
         <div style={sharedSt.dHead}>
           <h3 style={sharedSt.dTitle}>{supplier === "new" ? "Add supplier" : "Edit supplier"}</h3>
           <button style={sharedSt.closeBtn} onClick={onClose}><Icon name="x" size={18}/></button>

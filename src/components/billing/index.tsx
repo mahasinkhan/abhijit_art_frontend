@@ -162,7 +162,7 @@ export default function Billing() {
 
   const clientIsRegistered = () => {
     const np = normPhone(client.phone.trim()); const nm = client.name.trim().toLowerCase();
-    if (!np && !nm) return true; // empty = no customer needed
+    if (!np && !nm) return true;
     return dbCustomers.some(c => {
       const cp = normPhone(c.phone);
       if (np && cp && np === cp) return true;
@@ -301,8 +301,11 @@ export default function Billing() {
     setTimeout(()=>{ setWaOpen(false); setWaSent(""); },1500);
   };
 
+  // ── Save button styling ────────────────────────────────────────────────────
   const saveBtnStyle: React.CSSProperties = savedInv
-    ? { ...btnSt.save, background:"#e8f6ee", borderColor:"#bfe3cd", color:GREEN }
+    ? { ...btnSt.save, background:"#fff", border:"1px solid #bfe3cd", color:GREEN, fontWeight:700 }
+    : savingNow
+    ? { ...btnSt.save, opacity:0.7 }
     : btnSt.save;
 
   return (
@@ -314,14 +317,15 @@ export default function Billing() {
           <p style={{ color:MUTE, fontSize:13.5, margin:"6px 0 0" }}>Save the invoice, then download / WhatsApp / email it.</p>
         </div>
         <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
-          {savedTick && (
-            <span style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"8px 13px", fontSize:12.5, fontWeight:700, color:GREEN, background:"#e8f6ee", border:"1px solid #bfe3cd" }}>
-              <Icon name="check" size={14}/> Saved
-            </span>
-          )}
           <button className="bl-toolbar" style={btnSt.ghost} onClick={resetBilling}><Icon name="reset" size={15}/> New invoice</button>
-          <button className="bl-toolbar-save" style={saveBtnStyle} onClick={saveNow} disabled={!hasLines||savingNow||customerNeeded}>
-            <Icon name={savedInv?"check":"save"} size={15}/>{savingNow?"Saving…":(savedInv?"Saved ✓":"Save invoice")}
+          <button
+            className="bl-toolbar-save"
+            style={saveBtnStyle}
+            onClick={saveNow}
+            disabled={!hasLines || savingNow || customerNeeded}
+          >
+            <Icon name={savedInv ? "check" : "save"} size={15}/>
+            {savingNow ? "Saving…" : savedInv ? "Saved" : "Save invoice"}
           </button>
           <button className="bl-toolbar" style={btnSt.ghost} onClick={openMail} disabled={!canExport}><Icon name="mail" size={15}/> Send by email</button>
           <button className="bl-toolbar-wa" style={btnSt.ghost} onClick={openWA} disabled={!canExport}><span style={{color:WA,display:"inline-flex"}}><Icon name="whatsapp" size={16}/></span> WhatsApp</button>

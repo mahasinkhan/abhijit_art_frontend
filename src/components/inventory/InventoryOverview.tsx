@@ -21,7 +21,7 @@ interface RecentMove     {
   supplierName?: string; invoiceNo?: string;
 }
 interface DashData {
-  kpis: { totalItems: number; stockValue: string; lowStockCount: number; outOfStockCount: number; totalPurchased: string; totalConsumed: string; totalWastage: string; };
+  kpis: { totalItems: number; stockValue: string; lowCount: number; outCount: number; lowStockCount?: number; outOfStockCount?: number; totalPurchased: string; totalConsumed: string; totalWastage: string; };
   trend:      TrendBucket[];
   categories: CategoryBucket[];
   topByValue: TopItem[];
@@ -255,8 +255,8 @@ export default function InventoryOverview({ filter }: { filter?: OverviewFilter 
           { label:"Total purchased",val: loading?null:rfmt(totalPurchased),      sub:kpiSub,                accent:GREEN,  bg:GREEN_LT  },
           { label:"Total consumed", val: loading?null:rfmt(totalConsumed),       sub:kpiSub,                accent:AMBER,  bg:"#fef3c7" },
           { label:"Wastage",        val: loading?null:rfmt(totalWastage),        sub:kpiSub,                accent:MUTE,   bg:IVORY     },
-          { label:"Low stock",      val: loading?null:String(k?.lowStockCount??0),    sub:"At or below reorder", accent:(k?.lowStockCount??0)>0?AMBER:MUTE, bg:(k?.lowStockCount??0)>0?"#fef3c7":IVORY },
-          { label:"Out of stock",   val: loading?null:String(k?.outOfStockCount??0),  sub:"Needs restocking",    accent:(k?.outOfStockCount??0)>0?RED:MUTE,  bg:(k?.outOfStockCount??0)>0?RED_LT:IVORY  },
+          { label:"Low stock",      val: loading?null:String(k?.lowCount??k?.lowStockCount??0),    sub:"At or below reorder", accent:(k?.lowCount??k?.lowStockCount??0)>0?AMBER:MUTE, bg:(k?.lowCount??k?.lowStockCount??0)>0?"#fef3c7":IVORY },
+          { label:"Out of stock",   val: loading?null:String(k?.outCount??k?.outOfStockCount??0),  sub:"Needs restocking",    accent:(k?.outCount??k?.outOfStockCount??0)>0?RED:MUTE,  bg:(k?.outCount??k?.outOfStockCount??0)>0?RED_LT:IVORY  },
         ].map(kc => (
           <div key={kc.label} style={{ ...st.kpiCard, background:kc.bg, borderColor:`${kc.accent}22` }}>
             <div style={{ fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, marginBottom:8 }}>{kc.label}</div>
