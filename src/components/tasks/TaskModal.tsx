@@ -5,41 +5,41 @@ import type { Employee }            from "../../services/employee.api";
 import type { Invoice }             from "../../hooks/useTasks";
 import { PRIORITY_META }            from "./TaskStats";
 
-const API_BASE  = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const ACCENT    = "#d9542f";
-const ACCENT_DK = "#b8421f";
-const INK       = "#2a231d";
-const MUTED     = "#8a8378";
-const FAINT     = "#b3ab9f";
-const LINE      = "#e7e1d7";
-const LINE_SOFT = "#f1ece3";
-const WASH      = "#faf8f3";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const FAINT    = "#b3ab9f";
 
 const rupees = (n?: number) => `₹${(n || 0).toLocaleString("en-IN")}`;
 const money  = (v: string | number) => Math.round(parseFloat(String(v ?? "0")) || 0);
 
-interface ItemAssign { assignedToId: string; instruction: string; removed: boolean; }
+export interface ItemAssign { assignedToId: string; instruction: string; removed: boolean; }
 
 interface Props {
   editTask:    Task | null;
   employees:   Employee[];
   invoices:    Invoice[];
   saving:      boolean;
+  /** employee currently in focus in the Team strip — pre-selected for new items */
+  defaultAssignee?: string;
   onGoToBilling?: () => void;
-  onSaveCreate: (jobs: { it: Invoice["items"][0]; a: ItemAssign }[], form: any, images: File[]) => Promise<void>;
-  onSaveEdit:   (id: string, form: any, images: File[], removeImages: string[]) => Promise<void>;
-  onClose:      () => void;
+  onSaveCreate: (
+    jobs: { it: Invoice["items"][0]; a: ItemAssign }[],
+    form: any,
+    images: File[],
+    bill: Invoice,
+  ) => Promise<void>;
+  onSaveEdit: (id: string, form: any, images: File[], removeImages: string[]) => Promise<void>;
+  onClose:    () => void;
 }
 
 export function TaskModal({
-  editTask, employees, invoices, saving,
+  editTask, employees, invoices, saving, defaultAssignee,
   onGoToBilling, onSaveCreate, onSaveEdit, onClose,
 }: Props) {
   const mbodyRef = useRef<HTMLDivElement | null>(null);
 
   const [form, setForm] = useState({
     title: editTask?.title || "",
-    assignedToId: editTask?.assignedTo.id || employees[0]?.id || "",
+    assignedToId: editTask?.assignedTo.id || defaultAssignee || employees[0]?.id || "",
     priority: (editTask?.priority || "medium") as TaskPriority,
     deadline:  editTask?.deadline  ? editTask.deadline.slice(0, 10)  : "",
     orderDate: editTask?.orderDate ? editTask.orderDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
@@ -58,7 +58,7 @@ export function TaskModal({
   const [billDdOpen, setBillDdOpen] = useState(false);
   const [itemAssign, setItemAssign] = useState<ItemAssign[]>([]);
 
-  // lock scroll
+  // lock scroll + route the wheel into the modal body
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -85,13 +85,18 @@ export function TaskModal({
 
   function selectBill(inv: Invoice) {
     setBillSel(inv);
-    setItemAssign((inv.items || []).map(() => ({ assignedToId: "", instruction: "", removed: false })));
+    // pre-fill every line with the person already in focus, if any
+    const preset = defaultAssignee || "";
+    setItemAssign((inv.items || []).map(() => ({ assignedToId: preset, instruction: "", removed: false })));
     setBillDdOpen(false); setBillQuery("");
     setForm((f) => ({ ...f, orderDate: inv.date ? inv.date.slice(0, 10) : f.orderDate }));
   }
 
   function updateItem(i: number, patch: Partial<ItemAssign>) {
     setItemAssign((p) => p.map((a, idx) => idx === i ? { ...a, ...patch } : a));
+  }
+  function assignAll(empId: string) {
+    setItemAssign((p) => p.map((a) => a.removed ? a : { ...a, assignedToId: empId }));
   }
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -103,7 +108,6 @@ export function TaskModal({
       r.readAsDataURL(f);
     });
   }
-
   function toggleRemoveExisting(img: string) {
     setRemoveImages((p) => p.includes(img) ? p.filter((x) => x !== img) : [...p, img]);
   }
@@ -237,7 +241,7 @@ export function TaskModal({
           <>
             <div className="tk-mhead">
               <div className="tk-mtitle">New task order</div>
-              <div className="tk-msub">Pick a bill, then assign each item to an employee.</div>
+              <div className="tk-msub">Pick a bill, then assign each item to an employee. One task is created per assigned item.</div>
             </div>
             <div className="tk-mbody" ref={mbodyRef}>
               <div className="tk-grid">
@@ -296,7 +300,18 @@ export function TaskModal({
                 {/* Step 2: Item assignment */}
                 {billSel && (
                   <div className="tk-fieldset">
-                    <div className="tk-fs-l"><span className="tk-fs-num">2</span>Assign each item</div>
+                    <div className="tk-fs-l">
+                      <span className="tk-fs-num">2</span>Assign each item
+                      {employees.length > 0 && (billSel.items || []).length > 1 && (
+                        <span className="tk-fs-right">
+                          Everything to:
+                          <select defaultValue="" onChange={(e) => { if (e.target.value) assignAll(e.target.value); }}>
+                            <option value="">— pick —</option>
+                            {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                          </select>
+                        </span>
+                      )}
+                    </div>
                     {(billSel.items || []).length === 0 ? (
                       <div style={{ fontSize: ".82rem", color: FAINT }}>This bill has no line items.</div>
                     ) : (billSel.items || []).map((it, i) => {
@@ -314,11 +329,14 @@ export function TaskModal({
                             <b>{qty} × {it.desc || "Item"}</b>
                             <div className="r">
                               <span className="amt">{rupees(qty * rate)}</span>
-                              <button className="tk-item-x" onClick={() => updateItem(i, { removed: true })}>×</button>
+                              <button className="tk-item-x" title="Skip this item"
+                                onClick={() => updateItem(i, { removed: true })}>×</button>
                             </div>
                           </div>
                           <div className="tk-item-2">
-                            <select value={a.assignedToId}
+                            <select
+                              className={a.assignedToId ? "" : "empty"}
+                              value={a.assignedToId}
                               onChange={(e) => updateItem(i, { assignedToId: e.target.value })}>
                               <option value="">— Assign to —</option>
                               {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -333,7 +351,7 @@ export function TaskModal({
                     <div className={`tk-createcount${jobsToCreate.length === 0 ? " zero" : ""}`}>
                       {jobsToCreate.length === 0
                         ? "Assign at least one item to an employee."
-                        : `${jobsToCreate.length} task${jobsToCreate.length > 1 ? "s" : ""} will be created.`}
+                        : `${jobsToCreate.length} task${jobsToCreate.length > 1 ? "s" : ""} will be created — one per assigned item.`}
                     </div>
                   </div>
                 )}
@@ -401,12 +419,13 @@ export function TaskModal({
                 )}
 
                 <button className="tk-save" disabled={saving || !canCreate}
-                  onClick={() => onSaveCreate(jobsToCreate, form, formImages)}>
+                  onClick={() => billSel && onSaveCreate(jobsToCreate, form, formImages, billSel)}>
                   {saving ? "Creating…" : jobsToCreate.length > 1 ? `Assign ${jobsToCreate.length} tasks` : "Assign task"}
                 </button>
                 {!canCreate && (
                   <div className="tk-hint">
-                    {!billSel ? "Select a bill first." : "Assign at least one item to an employee."}
+                    {!billSel ? "Select a bill first — make one in the Billing tab if it doesn't exist."
+                              : "Assign at least one item to an employee."}
                   </div>
                 )}
               </div>

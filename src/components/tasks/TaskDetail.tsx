@@ -1,18 +1,13 @@
 // src/components/tasks/TaskDetail.tsx
 import type { Task, TaskStatus } from "../../services/task.api";
 import type { Invoice }          from "../../hooks/useTasks";
-import { STATUS_META, PRIORITY_META } from "./TaskStats";
+import { STATUS_META, PRIORITY_META, initials } from "./TaskStats";
 import { deadlineInfo } from "./TaskList";
 
-const API_BASE   = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const INK        = "#2a231d";
-const MUTED      = "#8a8378";
-const FAINT      = "#b3ab9f";
-const LINE       = "#e7e1d7";
-const LINE_SOFT  = "#f1ece3";
-const WASH       = "#faf8f3";
-const ACCENT     = "#d9542f";
-const GOLD       = "#c2974a";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const INK      = "#2a231d";
+const FAINT    = "#b3ab9f";
+const GREEN    = "#2f7a3f";
 
 const rupees = (n?: number) => `₹${(n || 0).toLocaleString("en-IN")}`;
 const money  = (v: string | number) => Math.round(parseFloat(String(v ?? "0")) || 0);
@@ -73,13 +68,17 @@ export function TaskDetail({ task, bill, onEdit, onDelete, onStatus, onImage }: 
         <div className="tk-d-headmain">
           <div className="tk-d-title">{task.title}</div>
           <div className="tk-d-sub">
-            <span>Assigned to <b>{task.assignedTo.name}</b></span>
+            <span className="tk-who">
+              <span className="tk-av sm">{initials(task.assignedTo.name)}</span>
+              <b>{task.assignedTo.name}</b>
+            </span>
             <span className="tk-chip" style={{ background: `${pm.color}18`, color: pm.color }}>
               <span className="tk-chip-dot" style={{ background: pm.color }} />{pm.label}
             </span>
+            <span className={`tk-dl ${dl.tone}`}>{dl.text}</span>
             {delivered && (
-              <span className="tk-chip" style={{ background: "#e5f2e8", color: "#2f7a3f" }}>
-                <span className="tk-chip-dot" style={{ background: "#2f7a3f" }} />
+              <span className="tk-chip" style={{ background: "#e5f2e8", color: GREEN }}>
+                <span className="tk-chip-dot" style={{ background: GREEN }} />
                 Delivered{task.deliveredBy ? ` · ${task.deliveredBy.name}` : ""}
               </span>
             )}
@@ -107,6 +106,63 @@ export function TaskDetail({ task, bill, onEdit, onDelete, onStatus, onImage }: 
           </div>
         </div>
 
+        {/* Progress — horizontal, no long scroll */}
+        <div className="tk-sec">
+          <div className="tk-sec-l">Progress</div>
+          <div className={`tk-htl${cancelled ? " c3" : ""}`}>
+            <div className="tk-hstep">
+              <div className="tk-hstep-t"><span className="tk-hdot done" />Assigned</div>
+              <div className="tk-hstep-w">{fmtDateTime(assigned)}</div>
+              <div className="tk-hstep-d">by {task.createdBy.name}</div>
+            </div>
+
+            <div className={`tk-hstep${started ? "" : " pending"}`}>
+              <div className="tk-hstep-t" style={{ color: started ? INK : FAINT }}>
+                <span className={`tk-hdot ${started ? "done" : cancelled ? "cancel" : ""}`} />Started
+              </div>
+              {started ? (
+                <>
+                  <div className="tk-hstep-w">{fmtDateTime(started)}</div>
+                  {respDur !== null && <div className="tk-hstep-d">Picked up {fmtDuration(respDur)} after assigning</div>}
+                </>
+              ) : <div className="tk-hstep-w">Not started yet</div>}
+            </div>
+
+            <div className={`tk-hstep${completed || cancelled ? "" : " pending"}`}>
+              <div className="tk-hstep-t" style={{ color: completed || cancelled ? INK : FAINT }}>
+                <span className={`tk-hdot ${completed ? "done" : task.status === "in_progress" ? "active" : cancelled ? "cancel" : ""}`} />
+                {cancelled ? "Cancelled" : "Completed"}
+              </div>
+              {completed ? (
+                <>
+                  <div className="tk-hstep-w">{fmtDateTime(completed)}</div>
+                  {workDur !== null && <div className="tk-hstep-d">Took {fmtDuration(workDur)}</div>}
+                </>
+              ) : cancelled
+                ? <div className="tk-hstep-w">This task was cancelled</div>
+                : task.status === "in_progress" && workDur !== null
+                  ? <div className="tk-hstep-w">Running · {fmtDuration(workDur)} so far</div>
+                  : <div className="tk-hstep-w">Not completed yet</div>}
+            </div>
+
+            {!cancelled && (
+              <div className={`tk-hstep${delivered ? "" : " pending"}`}>
+                <div className="tk-hstep-t" style={{ color: delivered ? INK : FAINT }}>
+                  <span className={`tk-hdot ${delivered ? "done" : ""}`} />Delivered
+                </div>
+                {delivered ? (
+                  <>
+                    <div className="tk-hstep-w">{fmtDateTime(task.deliveredAt)}</div>
+                    {task.deliveredBy && <div className="tk-hstep-d">by {task.deliveredBy.name}</div>}
+                  </>
+                ) : completed
+                  ? <div className="tk-hstep-w">Ready — hand over to the customer</div>
+                  : <div className="tk-hstep-w">Awaiting completion</div>}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Order cards */}
         {hasOrder && (
           <div className="tk-sec">
@@ -118,7 +174,6 @@ export function TaskDetail({ task, bill, onEdit, onDelete, onStatus, onImage }: 
                 {task.customerEmail && <div className="tk-cust-line dim">{task.customerEmail}</div>}
                 {task.invoiceNo     && <div className="tk-invpill">{task.invoiceNo}</div>}
                 <div className="tk-dates">Order: {fmtDate(task.orderDate)} · Delivery: {fmtDate(task.deadline)}</div>
-                <div className={`tk-dl ${dl.tone}`} style={{ marginTop: 3 }}>{dl.text}</div>
               </div>
               <div className="tk-card">
                 <div className="tk-card-l">Billing</div>
@@ -135,78 +190,6 @@ export function TaskDetail({ task, bill, onEdit, onDelete, onStatus, onImage }: 
             </div>
           </div>
         )}
-
-        {/* Timeline */}
-        <div className="tk-sec">
-          <div className="tk-sec-l">Progress timeline</div>
-          <div className="tk-tl">
-            {/* Assigned */}
-            <div className="tk-tl-step">
-              <div className="tk-tl-rail">
-                <div className="tk-tl-dot done"/>
-                <div className={`tk-tl-line${started || completed ? " done" : ""}`}/>
-              </div>
-              <div className="tk-tl-body">
-                <div className="tk-tl-t">Assigned</div>
-                <div className="tk-tl-when">{fmtDateTime(assigned)} · by {task.createdBy.name}</div>
-              </div>
-            </div>
-            {/* Started */}
-            <div className="tk-tl-step">
-              <div className="tk-tl-rail">
-                <div className={`tk-tl-dot ${started ? "done" : cancelled ? "cancel" : ""}`}/>
-                <div className={`tk-tl-line${completed ? " done" : ""}`}/>
-              </div>
-              <div className="tk-tl-body">
-                <div className="tk-tl-t" style={{ color: started ? INK : FAINT }}>Started</div>
-                {started ? (
-                  <>
-                    <div className="tk-tl-when">{fmtDateTime(started)}</div>
-                    {respDur !== null && <div className="tk-tl-dur">Picked up {fmtDuration(respDur)} after assignment</div>}
-                  </>
-                ) : <div className="tk-tl-when">Not started yet</div>}
-              </div>
-            </div>
-            {/* Completed */}
-            <div className="tk-tl-step">
-              <div className="tk-tl-rail">
-                <div className={`tk-tl-dot ${completed ? "done" : task.status === "in_progress" ? "active" : cancelled ? "cancel" : ""}`}/>
-                {!cancelled && <div className={`tk-tl-line${delivered ? " done" : ""}`}/>}
-              </div>
-              <div className="tk-tl-body">
-                <div className="tk-tl-t" style={{ color: completed ? INK : FAINT }}>
-                  {cancelled ? "Cancelled" : "Completed"}
-                </div>
-                {completed ? (
-                  <>
-                    <div className="tk-tl-when">{fmtDateTime(completed)}</div>
-                    {workDur !== null && <div className="tk-tl-dur">Took {fmtDuration(workDur)} to finish</div>}
-                  </>
-                ) : cancelled
-                  ? <div className="tk-tl-when">This task was cancelled</div>
-                  : task.status === "in_progress" && workDur !== null
-                    ? <div className="tk-tl-when">In progress · {fmtDuration(workDur)} elapsed</div>
-                    : <div className="tk-tl-when">Not completed yet</div>}
-              </div>
-            </div>
-            {/* Delivered */}
-            {!cancelled && (
-              <div className="tk-tl-step">
-                <div className="tk-tl-rail">
-                  <div className={`tk-tl-dot ${delivered ? "done" : ""}`}/>
-                </div>
-                <div className="tk-tl-body">
-                  <div className="tk-tl-t" style={{ color: delivered ? INK : FAINT }}>Delivered</div>
-                  {delivered
-                    ? <div className="tk-tl-when">{fmtDateTime(task.deliveredAt)}{task.deliveredBy ? ` · by ${task.deliveredBy.name}` : ""}</div>
-                    : completed
-                      ? <div className="tk-tl-when">Not delivered yet</div>
-                      : <div className="tk-tl-when" style={{ color: FAINT }}>Awaiting completion</div>}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Description */}
         {task.description && (

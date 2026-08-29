@@ -1,10 +1,9 @@
 // src/pages/EmployeeDashboard.tsx
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { useMyTasks, fmtDate, taskCue, rupees } from "../hooks/useMyTasks";
-import { employeeTaskApi, type TaskStatus } from "../services/employee-task.api";
-import { TaskCard }   from "../components/employees/TaskCard";
+import { useMyTasks, fmtDate, taskCue } from "../hooks/useMyTasks";
+import { employeeTaskApi, type Task, type TaskStatus } from "../services/employee-task.api";
 import { TaskDetail } from "../components/employees/TaskDetail";
 import { TeamView }   from "../components/employees/TeamView";
 import api from "../api";
@@ -13,7 +12,7 @@ import api from "../api";
 const IcoDash    = () => (<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>);
 const IcoTasks   = () => (<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1z"/><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 12l2 2 4-4"/></svg>);
 const IcoTeam    = () => (<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>);
-const IcoOrders  = () => (<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>);
+const IcoOrders  = () => (<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>);
 const IcoChevron = ({ open }: { open: boolean }) => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? "none" : "rotate(180deg)", transition: "transform .2s" }}><path d="M15 18l-6-6 6-6"/></svg>);
 const IcoArrow   = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>);
 const IcoClose   = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);
@@ -31,13 +30,40 @@ const LINE_SOFT = "#f1ece3";
 const WASH      = "#faf8f3";
 const PAGE      = "#f6f2ea";
 const GREEN     = "#2f7a3f";
+const BLUE      = "#1e5fa8";
+const AMBER     = "#9a6a12";
 
-const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  pending:     { label: "Pending",     color: "#9a6a12", bg: "#fbf1dd" },
-  in_progress: { label: "In Progress", color: "#1e5fa8", bg: "#e6eff9" },
-  completed:   { label: "Completed",   color: GREEN,     bg: "#e5f2e8" },
-  cancelled:   { label: "Cancelled",   color: "#7c766c", bg: "#f0ede7" },
+/**
+ * ONE vocabulary everywhere — dashboard, tabs, cards and chips all use these
+ * exact words, so "Completed" never means two different things again.
+ *   To do  →  Working  →  Ready to deliver  →  Delivered
+ */
+type Stage = "todo" | "working" | "ready" | "delivered" | "cancelled";
+
+const STAGE_META: Record<Stage, { label: string; color: string; bg: string }> = {
+  todo:      { label: "To do",            color: AMBER,     bg: "#fbf1dd" },
+  working:   { label: "Working",          color: BLUE,      bg: "#e6eff9" },
+  ready:     { label: "Ready to deliver", color: ACCENT,    bg: "#fdeae2" },
+  delivered: { label: "Delivered",        color: GREEN,     bg: "#e5f2e8" },
+  cancelled: { label: "Cancelled",        color: "#7c766c", bg: "#f0ede7" },
 };
+
+function stageOf(t: Task): Stage {
+  if (t.deliveredAt)              return "delivered";
+  if (t.status === "cancelled")   return "cancelled";
+  if (t.status === "completed")   return "ready";
+  if (t.status === "in_progress") return "working";
+  return "todo";
+}
+
+/** The single next thing this person should do to this job. */
+function nextStep(t: Task): { label: string; tone: "blue" | "go" | "primary" } | null {
+  const s = stageOf(t);
+  if (s === "todo")    return { label: "Start work",       tone: "blue" };
+  if (s === "working") return { label: "Mark complete",    tone: "go" };
+  if (s === "ready")   return { label: "Mark as delivered", tone: "primary" };
+  return null;
+}
 
 // Quick Order types
 interface QOTask {
@@ -58,9 +84,13 @@ interface QuickOrder {
   entryDate: string; createdAt: string;
 }
 
-type View = "dashboard" | "tasks" | "team" | "orders";
-type Tab  = "all" | "pending" | "in_progress" | "completed" | "delivered";
+type View = "today" | "tasks" | "team" | "orders";
+type Tab  = "all" | "todo" | "working" | "ready" | "delivered";
 type OTab = "unassigned" | "mine" | "all";
+
+const QO_STAGE: Record<string, Stage> = {
+  pending: "todo", in_progress: "working", completed: "ready", cancelled: "cancelled",
+};
 
 export default function EmployeeDashboard() {
   const { user, logout } = useAuth();
@@ -69,26 +99,23 @@ export default function EmployeeDashboard() {
   const firstName = (user?.name || "there").split(" ")[0];
   const initial   = (user?.name || "S").trim().charAt(0).toUpperCase();
 
-  const {
-    tasks, loading, live, stats,
-    needsAttention, recentDelivered, applyUpdated,
-  } = useMyTasks(userId);
+  const { tasks, loading, live, applyUpdated } = useMyTasks(userId);
 
-  const [view,       setView]       = useState<View>("dashboard");
+  const [view,       setView]       = useState<View>("today");
   const [collapsed,  setCollapsed]  = useState(false);
   const [tab,        setTab]        = useState<Tab>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [busy,       setBusy]       = useState<"" | "status" | "notes" | "deliver">("");
+  const [rowBusy,    setRowBusy]    = useState<string | null>(null);
   const [lightbox,   setLightbox]   = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement | null>(null);
 
   // ── Quick Orders state ────────────────────────────────────────────────────
   const [orders,        setOrders]        = useState<QuickOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [oTab,          setOTab]          = useState<OTab>("unassigned");
   const [claiming,      setClaiming]      = useState<string | null>(null);
-
-  // Selected order for inline detail panel
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [orderNotes,    setOrderNotes]    = useState("");
   const [orderBusy,     setOrderBusy]     = useState(false);
@@ -104,22 +131,24 @@ export default function EmployeeDashboard() {
     catch { /* ignore */ } finally { setOrdersLoading(false); }
   }, []);
 
+  // orders are needed on the Today screen too (claim prompts)
+  useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => { if (view === "orders") loadOrders(); }, [view, loadOrders]);
 
-  // Sync notes when active order changes
   const activeOrder = orders.find(o => o.id === activeOrderId) || null;
-  useEffect(() => { setOrderNotes(activeOrder?.task?.notes || ""); setPayAmt(""); setPayNote(""); setPayErr(""); }, [activeOrderId]); // eslint-disable-line
+  useEffect(() => {
+    setOrderNotes(activeOrder?.task?.notes || "");
+    setPayAmt(""); setPayNote(""); setPayErr("");
+  }, [activeOrderId]); // eslint-disable-line
 
   async function claimOrder(id: string) {
-    if (!confirm("Claim this order? It will appear in your Tasks.")) return;
+    if (!confirm("Claim this order? It moves into your work list.")) return;
     setClaiming(id);
     try {
       const { data } = await api.post(`/api/quick-orders/${id}/claim`);
       setOrders(prev => prev.map(o => o.id === id ? { ...o, task: data.task } : o));
-      // auto-open the detail panel after claiming
       setActiveOrderId(id);
       setOTab("mine");
-      // reload tasks so My Tasks tab shows this new task
       if (data.task) applyUpdated(data.task);
     } catch (err: any) { alert(err.response?.data?.message || "Failed to claim order"); }
     finally { setClaiming(null); }
@@ -130,13 +159,11 @@ export default function EmployeeDashboard() {
     setOrderBusy(true);
     try {
       const updated = await employeeTaskApi.updateStatus(activeOrder.task.id, status, orderNotes);
-      // update the task inside the order locally
       setOrders(prev => prev.map(o =>
         o.id === activeOrderId
           ? { ...o, task: o.task ? { ...o.task, status: updated.status, notes: updated.notes, startedAt: updated.startedAt, completedAt: updated.completedAt } : o.task }
           : o
       ));
-      // also push to My Tasks hook so Team view updates
       applyUpdated(updated);
     } catch (err: any) { alert(err.response?.data?.error || "Failed to update"); }
     finally { setOrderBusy(false); }
@@ -148,9 +175,7 @@ export default function EmployeeDashboard() {
     try {
       const updated = await employeeTaskApi.updateStatus(activeOrder.task.id, activeOrder.task.status as TaskStatus, orderNotes);
       setOrders(prev => prev.map(o =>
-        o.id === activeOrderId
-          ? { ...o, task: o.task ? { ...o.task, notes: updated.notes } : o.task }
-          : o
+        o.id === activeOrderId ? { ...o, task: o.task ? { ...o.task, notes: updated.notes } : o.task } : o
       ));
       applyUpdated(updated);
     } catch (err: any) { alert(err.response?.data?.error || "Failed to save notes"); }
@@ -172,75 +197,151 @@ export default function EmployeeDashboard() {
     finally { setPayBusy(false); }
   }
 
-  // filtered order lists
   const unassignedOrders = useMemo(() => orders.filter(o => !o.task && o.status !== "billed"), [orders]);
   const myOrders         = useMemo(() => orders.filter(o => o.task?.assignedTo?.id === userId), [orders, userId]);
   const shownOrders      = oTab === "unassigned" ? unassignedOrders : oTab === "mine" ? myOrders : orders;
+  const unassignedCount  = unassignedOrders.length;
 
-  // ── Tasks ─────────────────────────────────────────────────────────────────
-  const displayed = useMemo(() => {
-    if (tab === "all")       return tasks;
-    if (tab === "delivered") return tasks.filter((t) => !!t.deliveredAt).sort((a, b) => new Date(b.deliveredAt!).getTime() - new Date(a.deliveredAt!).getTime());
-    return tasks.filter((t) => t.status === tab && !t.deliveredAt);
-  }, [tasks, tab]);
+  // ── Task buckets (one source of truth for both counts and lists) ──────────
+  const buckets = useMemo(() => {
+    const b: Record<Stage, Task[]> = { todo: [], working: [], ready: [], delivered: [], cancelled: [] };
+    tasks.forEach((t) => b[stageOf(t)].push(t));
+    b.delivered.sort((a, z) => new Date(z.deliveredAt!).getTime() - new Date(a.deliveredAt!).getTime());
+    return b;
+  }, [tasks]);
 
-  // Tab counts — MUST mirror the `displayed` filter above so the number on each
-  // tab matches the number of cards shown. pending/in_progress/completed exclude
-  // delivered tasks (those live under the Delivered tab).
-  const tabCounts = useMemo(() => ({
-    all:         tasks.length,
-    pending:     tasks.filter((t) => t.status === "pending"     && !t.deliveredAt).length,
-    in_progress: tasks.filter((t) => t.status === "in_progress" && !t.deliveredAt).length,
-    completed:   tasks.filter((t) => t.status === "completed"   && !t.deliveredAt).length,
-    delivered:   tasks.filter((t) => !!t.deliveredAt).length,
-  }), [tasks]);
+  const counts = {
+    all:       tasks.length,
+    todo:      buckets.todo.length,
+    working:   buckets.working.length,
+    ready:     buckets.ready.length,
+    delivered: buckets.delivered.length,
+  };
+
+  const displayed = useMemo(
+    () => (tab === "all" ? tasks : buckets[tab as Stage]),
+    [tab, tasks, buckets]
+  );
+
+  /** Everything still on this person's plate, most urgent first. */
+  const workQueue = useMemo(() => {
+    const rank: Record<Stage, number> = { ready: 0, working: 1, todo: 2, delivered: 9, cancelled: 9 };
+    return tasks
+      .filter((t) => ["ready", "working", "todo"].includes(stageOf(t)))
+      .sort((a, z) => {
+        const ta = taskCue(a).tone === "over" ? 0 : 1;
+        const tz = taskCue(z).tone === "over" ? 0 : 1;
+        if (ta !== tz) return ta - tz;
+        return rank[stageOf(a)] - rank[stageOf(z)];
+      });
+  }, [tasks]);
 
   const selected = tasks.find((t) => t.id === selectedId) || null;
   useEffect(() => { setNotesDraft(selected?.notes || ""); }, [selectedId]); // eslint-disable-line
 
-  function openTask(id: string) { setSelectedId(id); setTab("all"); setView("tasks"); }
-  function goTasks()            { setView("tasks"); if (!selectedId && tasks[0]) setSelectedId(tasks[0].id); }
-  function doLogout()           { try { logout?.(); } catch { /* ignore */ } navigate("/login"); }
+  // BUGFIX: never leave an open task on screen while its tab says "nothing here".
+  useEffect(() => {
+    if (selectedId && !displayed.some((t) => t.id === selectedId)) setSelectedId(null);
+  }, [tab, displayed, selectedId]);
+
+  function openTask(id: string) {
+    setSelectedId(id); setTab("all"); setView("tasks");
+    setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  }
+  function goTasks(t: Tab = "all") { setTab(t); setView("tasks"); }
+  function doLogout()              { try { logout?.(); } catch { /* ignore */ } navigate("/login"); }
+
+  /** One-tap advance straight from a card — no need to open the task. */
+  async function advance(t: Task) {
+    const stage = stageOf(t);
+    setRowBusy(t.id);
+    try {
+      let updated: Task;
+      if (stage === "todo")         updated = await employeeTaskApi.updateStatus(t.id, "in_progress");
+      else if (stage === "working") updated = await employeeTaskApi.updateStatus(t.id, "completed");
+      else if (stage === "ready")   updated = await employeeTaskApi.deliver(t.id, true);
+      else return;
+      applyUpdated(updated);
+    } catch (err: any) { alert(err.response?.data?.error || "Could not update the task"); }
+    finally { setRowBusy(null); }
+  }
 
   async function handleStatus(status: TaskStatus, kind: "status" | "notes") {
     if (!selected) return;
     setBusy(kind);
-    try {
-      const updated = await employeeTaskApi.updateStatus(selected.id, status, notesDraft);
-      applyUpdated(updated);
-    } catch (err: any) { alert(err.response?.data?.error || "Could not update the task"); }
+    try { applyUpdated(await employeeTaskApi.updateStatus(selected.id, status, notesDraft)); }
+    catch (err: any) { alert(err.response?.data?.error || "Could not update the task"); }
     finally { setBusy(""); }
   }
 
   async function handleDeliver(delivered: boolean) {
     if (!selected) return;
     setBusy("deliver");
-    try {
-      const updated = await employeeTaskApi.deliver(selected.id, delivered);
-      applyUpdated(updated);
-    } catch (err: any) { alert(err.response?.data?.error || "Could not update delivery"); }
+    try { applyUpdated(await employeeTaskApi.deliver(selected.id, delivered)); }
+    catch (err: any) { alert(err.response?.data?.error || "Could not update delivery"); }
     finally { setBusy(""); }
   }
 
-  const unassignedCount = unassignedOrders.length;
-
   const NAV = [
-    { id: "dashboard" as View, label: "Dashboard",    icon: <IcoDash />,   badge: 0,              onClick: () => setView("dashboard") },
-    { id: "tasks"     as View, label: "My tasks",     icon: <IcoTasks />,  badge: stats.total,    onClick: goTasks },
-    { id: "orders"    as View, label: "Quick Orders", icon: <IcoOrders />, badge: unassignedCount, onClick: () => setView("orders") },
-    { id: "team"      as View, label: "Team",         icon: <IcoTeam />,   badge: 0,              onClick: () => setView("team") },
+    { id: "today"  as View, label: "Today",     icon: <IcoDash />,   badge: workQueue.length,  onClick: () => setView("today") },
+    { id: "tasks"  as View, label: "My work",   icon: <IcoTasks />,  badge: counts.all,        onClick: () => goTasks("all") },
+    { id: "orders" as View, label: "Orders",    icon: <IcoOrders />, badge: unassignedCount,   onClick: () => setView("orders") },
+    { id: "team"   as View, label: "Team",      icon: <IcoTeam />,   badge: 0,                 onClick: () => setView("team") },
   ];
 
-  const rupStr      = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
-  const fmtShort    = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-
+  const rupStr   = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+  const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
   const STATUS_FLOW: TaskStatus[] = ["pending", "in_progress", "completed"];
+
+  /* ── one job card, used on Today and My work ── */
+  const JobCard = ({ t, compact = false }: { t: Task; compact?: boolean }) => {
+    const stage = stageOf(t);
+    const sm    = STAGE_META[stage];
+    const cue   = taskCue(t);
+    const step  = nextStep(t);
+    const busyMe = rowBusy === t.id;
+
+    return (
+      <div className={`ep-job${selectedId === t.id ? " sel" : ""}`} style={{ borderLeftColor: sm.color }}>
+        <div className="ep-job-top">
+          <div className="ep-job-main">
+            <div className="ep-job-title">{t.title}</div>
+            <div className="ep-job-sub">
+              {t.customerName || "—"}
+              {t.customerPhone ? ` · ${t.customerPhone}` : ""}
+              {t.invoiceNo ? ` · ${t.invoiceNo}` : ""}
+            </div>
+          </div>
+          <span className="ep-stage" style={{ background: sm.bg, color: sm.color }}>{sm.label}</span>
+        </div>
+
+        <div className={`ep-cue ${cue.tone}`}>{cue.text}</div>
+
+        {!compact && t.description && (
+          <div className="ep-job-desc">{t.description}</div>
+        )}
+
+        <div className="ep-job-foot">
+          {step ? (
+            <button className={`ep-btn ${step.tone} ep-btn-lg`} disabled={busyMe} onClick={() => advance(t)}>
+              {busyMe ? "Saving…" : step.label}
+            </button>
+          ) : (
+            <span className="ep-donetag">✓ Handed over {fmtDate(t.deliveredAt)}</span>
+          )}
+          <button className="ep-btn ghost" onClick={() => openTask(t.id)}>Open details</button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={`ep${collapsed ? " ep-collapsed" : ""}`}>
       <style>{`
         .ep { font-family:'DM Sans',system-ui,sans-serif; color:${INK}; background:${PAGE}; min-height:100vh; display:flex; font-variant-numeric:tabular-nums; }
         .ep * { box-sizing:border-box; }
+
+        /* ── Sidebar ── */
         .ep-side { width:236px; flex-shrink:0; background:#fff; border-right:1px solid ${LINE}; position:sticky; top:0; height:100vh; display:flex; flex-direction:column; transition:width .2s; }
         .ep-collapsed .ep-side { width:70px; }
         .ep-brand { display:flex; align-items:center; gap:11px; padding:20px 18px 18px; border-bottom:1px solid ${LINE_SOFT}; min-height:66px; }
@@ -266,8 +367,9 @@ export default function EmployeeDashboard() {
         .ep-collapse { display:flex; align-items:center; gap:10px; width:100%; padding:9px 12px; border:1px solid ${LINE}; border-radius:6px; background:#fff; color:${MUTED}; font-family:inherit; font-size:.8rem; font-weight:600; cursor:pointer; }
         .ep-collapse:hover { background:${WASH}; }
         .ep-collapsed .ep-collapse { justify-content:center; padding:9px; }
-        .ep-collapse-l { white-space:nowrap; }
         .ep-collapsed .ep-collapse-l { display:none; }
+
+        /* ── Top bar ── */
         .ep-main { flex:1; min-width:0; display:flex; flex-direction:column; }
         .ep-top { display:flex; align-items:center; justify-content:space-between; gap:14px; background:#fff; border-bottom:1px solid ${LINE}; padding:0 26px; height:66px; position:sticky; top:0; z-index:5; }
         .ep-top-title { font-size:1.25rem; font-weight:700; letter-spacing:-.01em; }
@@ -279,23 +381,52 @@ export default function EmployeeDashboard() {
         .ep-uname { font-size:.86rem; font-weight:600; }
         .ep-logout { background:#fff; border:1px solid ${LINE}; color:${INK}; border-radius:6px; padding:7px 14px; font-size:.8rem; font-weight:600; cursor:pointer; font-family:inherit; }
         .ep-logout:hover { background:${WASH}; border-color:#d8cfc0; }
-        .ep-content { padding:26px; width:100%; }
-        .ep-hi { font-size:1.5rem; font-weight:700; letter-spacing:-.01em; }
-        .ep-sub { font-size:.9rem; color:${MUTED}; margin-top:4px; }
-        .ep-sub b { color:${ACCENT}; font-weight:700; }
-        .ep-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:22px 0; }
-        .ep-stat { background:#fff; border:1px solid ${LINE}; border-left-width:3px; border-radius:4px; padding:15px 16px; }
-        .ep-stat-n { font-size:1.7rem; font-weight:700; line-height:1; }
-        .ep-stat-l { font-size:.66rem; text-transform:uppercase; letter-spacing:.08em; color:${MUTED}; margin-top:7px; }
-        .ep-cue { font-size:.78rem; font-weight:600; }
-        .ep-cue.ok{color:${MUTED};} .ep-cue.soon{color:#b45309;} .ep-cue.over{color:${ACCENT};} .ep-cue.done{color:${GREEN};} .ep-cue.ready{color:${ACCENT};}
-        .ep-panel { background:#fff; border:1px solid ${LINE}; border-radius:4px; margin-bottom:16px; overflow:hidden; }
-        .ep-panel-h { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 18px; border-bottom:1px solid ${LINE_SOFT}; }
-        .ep-panel-h b { font-size:.92rem; font-weight:700; }
-        .ep-panel-h .ep-count { font-size:.72rem; color:${MUTED}; }
+        .ep-content { padding:24px 26px 60px; width:100%; max-width:1180px; }
+
+        /* ── Today ── */
+        .ep-hi { font-size:1.45rem; font-weight:700; letter-spacing:-.01em; }
+        .ep-sub { font-size:.92rem; color:${MUTED}; margin-top:4px; }
+        .ep-sub b { color:${INK}; font-weight:700; }
+        .ep-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:20px 0 22px; }
+        .ep-stat { background:#fff; border:1px solid ${LINE}; border-left-width:3px; border-radius:4px; padding:14px 15px; text-align:left; font-family:inherit; cursor:pointer; }
+        .ep-stat:hover { border-color:#d8cfc0; border-left-width:3px; }
+        .ep-stat-n { font-size:1.6rem; font-weight:700; line-height:1; }
+        .ep-stat-l { font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; color:${MUTED}; margin-top:7px; }
+
+        .ep-secline { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:0 0 12px; }
+        .ep-secline h2 { font-size:1.02rem; font-weight:700; margin:0; }
+        .ep-secline span { font-size:.78rem; color:${MUTED}; }
         .ep-viewall { background:none; border:none; color:${ACCENT}; font-family:inherit; font-size:.8rem; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
         .ep-viewall:hover { color:${ACCENT_DK}; }
-        .ep-arow { display:flex; align-items:center; gap:14px; padding:13px 18px; border-bottom:1px solid ${LINE_SOFT}; cursor:pointer; text-align:left; width:100%; background:none; border-left:none; border-right:none; border-top:none; font-family:inherit; }
+
+        /* ── Job card ── */
+        .ep-jobs { display:grid; gap:10px; margin-bottom:26px; }
+        .ep-job { background:#fff; border:1px solid ${LINE}; border-left:4px solid ${LINE}; border-radius:5px; padding:15px 17px; }
+        .ep-job.sel { border-color:${ACCENT}; }
+        .ep-job-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+        .ep-job-main { min-width:0; }
+        .ep-job-title { font-size:1.02rem; font-weight:700; line-height:1.3; }
+        .ep-job-sub { font-size:.82rem; color:${MUTED}; margin-top:3px; }
+        .ep-stage { flex-shrink:0; padding:3px 11px; border-radius:3px; font-size:.74rem; font-weight:700; white-space:nowrap; }
+        .ep-job-desc { font-size:.86rem; line-height:1.55; white-space:pre-line; background:${WASH}; border-left:3px solid ${GOLD}; padding:9px 12px; border-radius:0 4px 4px 0; margin-top:10px; }
+        .ep-job-foot { display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-top:13px; }
+        .ep-cue { font-size:.8rem; font-weight:600; margin-top:8px; }
+        .ep-cue.ok{color:${MUTED};} .ep-cue.soon{color:#b45309;} .ep-cue.over{color:${ACCENT};} .ep-cue.done{color:${GREEN};} .ep-cue.ready{color:${ACCENT};}
+        .ep-donetag { font-size:.84rem; font-weight:700; color:${GREEN}; }
+
+        .ep-btn { border:none; border-radius:5px; padding:9px 16px; font-size:.85rem; font-weight:700; cursor:pointer; font-family:inherit; }
+        .ep-btn-lg { padding:11px 22px; font-size:.9rem; }
+        .ep-btn:disabled { opacity:.55; cursor:not-allowed; }
+        .ep-btn.primary { background:${ACCENT}; color:#fff; } .ep-btn.primary:hover:not(:disabled){ background:${ACCENT_DK}; }
+        .ep-btn.go { background:${GREEN}; color:#fff; }      .ep-btn.go:hover:not(:disabled){ background:#276634; }
+        .ep-btn.blue { background:${BLUE}; color:#fff; }     .ep-btn.blue:hover:not(:disabled){ background:#184e8a; }
+        .ep-btn.ghost { background:#fff; border:1px solid ${LINE}; color:${INK}; } .ep-btn.ghost:hover:not(:disabled){ background:${WASH}; }
+
+        /* ── Panels / rows ── */
+        .ep-panel { background:#fff; border:1px solid ${LINE}; border-radius:4px; margin-bottom:16px; overflow:hidden; }
+        .ep-panel-h { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:13px 17px; border-bottom:1px solid ${LINE_SOFT}; }
+        .ep-panel-h b { font-size:.92rem; font-weight:700; }
+        .ep-arow { display:flex; align-items:center; gap:14px; padding:12px 17px; border-bottom:1px solid ${LINE_SOFT}; cursor:pointer; text-align:left; width:100%; background:none; border-left:none; border-right:none; border-top:none; font-family:inherit; }
         .ep-arow:last-child { border-bottom:none; }
         .ep-arow:hover { background:${WASH}; }
         .ep-arow-main { flex:1; min-width:0; }
@@ -304,95 +435,73 @@ export default function EmployeeDashboard() {
         .ep-arow-r { display:flex; align-items:center; gap:12px; flex-shrink:0; }
         .ep-arow-go { color:${FAINT}; display:flex; }
         .ep-arow:hover .ep-arow-go { color:${ACCENT}; }
-        .ep-empty { padding:30px 18px; text-align:center; color:${FAINT}; font-size:.88rem; line-height:1.6; }
-        .ep-empty b { color:${GREEN}; font-weight:700; display:block; margin-bottom:3px; }
+        .ep-empty { padding:34px 20px; text-align:center; color:${FAINT}; font-size:.9rem; line-height:1.6; }
+        .ep-empty b { color:${GREEN}; font-weight:700; display:block; margin-bottom:3px; font-size:1rem; }
+        .ep-loadempty { background:#fff; border:1px dashed ${LINE}; border-radius:4px; padding:44px 24px; text-align:center; color:${FAINT}; font-size:.92rem; line-height:1.6; }
+
+        /* ── Tabs ── */
         .ep-tabs { display:flex; gap:4px; border-bottom:1px solid ${LINE}; margin-bottom:18px; overflow-x:auto; }
         .ep-tab { background:none; border:none; padding:11px 14px; font-size:.88rem; font-weight:600; color:${MUTED}; cursor:pointer; font-family:inherit; border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap; }
         .ep-tab:hover { color:${INK}; }
         .ep-tab.on { color:${ACCENT}; border-bottom-color:${ACCENT}; }
         .ep-tab .c { color:${FAINT}; font-weight:500; }
         .ep-tab.on .c { color:${ACCENT}; }
-        .ep-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; margin-bottom:22px; }
-        .ep-card { background:#fff; border:1px solid ${LINE}; border-radius:4px; padding:15px 16px; cursor:pointer; text-align:left; font-family:inherit; color:inherit; border-left:3px solid ${LINE}; transition:border-color .12s,box-shadow .12s; }
-        .ep-card:hover { border-color:#d8cfc0; }
-        .ep-card.sel { border-color:${ACCENT}; box-shadow:0 0 0 1px ${ACCENT}; }
-        .ep-card-title { font-size:.98rem; font-weight:700; line-height:1.3; }
-        .ep-card-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:9px; }
-        .ep-card .ep-cue { margin-top:9px; }
-        .ep-detail { background:#fff; border:1px solid ${LINE}; border-radius:4px; }
-        .ep-d-head { display:flex; align-items:flex-start; gap:12px; padding:20px 24px 16px; border-bottom:1px solid ${LINE_SOFT}; }
-        .ep-d-headmain { flex:1; min-width:0; }
-        .ep-d-title { font-size:1.2rem; font-weight:700; line-height:1.3; }
-        .ep-d-meta { font-size:.8rem; color:${MUTED}; margin-top:6px; }
-        .ep-close { background:none; border:none; font-size:1.4rem; line-height:1; cursor:pointer; color:${MUTED}; padding:4px; display:flex; align-items:center; }
-        .ep-close:hover { color:${INK}; }
-        .ep-d-body { padding:20px 24px 24px; }
-        .ep-sec { margin-top:20px; }
-        .ep-sec:first-child { margin-top:0; }
-        .ep-sec-l { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:${MUTED}; margin-bottom:9px; }
-        .ep-ta { width:100%; min-height:96px; resize:vertical; padding:11px 13px; border:1px solid ${LINE}; border-radius:3px; font-size:.9rem; font-family:inherit; color:${INK}; }
+
+        .ep-detailwrap { margin-top:20px; }
+        .ep-ta { width:100%; min-height:96px; resize:vertical; padding:11px 13px; border:1px solid ${LINE}; border-radius:5px; font-size:.9rem; font-family:inherit; color:${INK}; }
         .ep-ta:focus { outline:none; border-color:${ACCENT}; }
-        .ep-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px; }
-        .ep-btn { border:none; border-radius:3px; padding:11px 20px; font-size:.88rem; font-weight:700; cursor:pointer; font-family:inherit; }
-        .ep-btn:disabled { opacity:.55; cursor:not-allowed; }
-        .ep-btn.primary { background:${ACCENT}; color:#fff; }
-        .ep-btn.primary:hover:not(:disabled){ background:${ACCENT_DK}; }
-        .ep-btn.go { background:${GREEN}; color:#fff; }
-        .ep-btn.go:hover:not(:disabled){ background:#276634; }
-        .ep-btn.blue { background:#1e5fa8; color:#fff; }
-        .ep-btn.blue:hover:not(:disabled){ background:#184e8a; }
-        .ep-btn.ghost { background:#fff; border:1px solid ${LINE}; color:${INK}; }
-        .ep-btn.ghost:hover:not(:disabled){ background:${WASH}; }
-        .ep-loadempty { background:#fff; border:1px dashed ${LINE}; border-radius:4px; padding:44px 24px; text-align:center; color:${FAINT}; font-size:.92rem; line-height:1.6; }
+        .ep-close { background:none; border:none; cursor:pointer; color:${MUTED}; padding:4px; display:flex; align-items:center; }
+        .ep-close:hover { color:${INK}; }
         .ep-lb { position:fixed; inset:0; background:rgba(0,0,0,.9); z-index:2000; display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
         .ep-lb img { max-width:92vw; max-height:92vh; object-fit:contain; }
 
-        /* ── Quick Orders board: 2-col layout (list + detail) ── */
-        .qo-layout { display:grid; grid-template-columns:1fr 420px; gap:16px; align-items:start; }
-        .qo-board { display:flex; flex-direction:column; gap:8px; }
-        .qo-card { background:#fff; border:1px solid ${LINE}; border-radius:4px; padding:14px 16px; cursor:pointer; transition:border-color .12s; border-left:3px solid ${LINE}; }
+        /* ── Quick Orders ── */
+        .qo-layout { display:grid; gap:16px; align-items:start; }
+        .qo-board { display:flex; flex-direction:column; gap:10px; }
+        .qo-card { background:#fff; border:1px solid ${LINE}; border-left:4px solid ${LINE}; border-radius:5px; padding:14px 16px; cursor:pointer; }
         .qo-card:hover { border-color:#d8cfc0; }
-        .qo-card.sel { border-left-color:${ACCENT}; box-shadow:0 0 0 1px ${ACCENT}; }
-        .qo-card.mine { border-left-color:${GOLD}; }
+        .qo-card.sel { border-color:${ACCENT}; }
         .qo-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-        .qo-card-name { font-size:.94rem; font-weight:700; color:${INK}; }
-        .qo-card-phone { font-size:.72rem; color:${MUTED}; margin-top:1px; }
-        .qo-status { display:inline-block; padding:2px 9px; border-radius:2px; font-size:.72rem; font-weight:700; }
-        .qo-card-work { font-size:.84rem; line-height:1.5; white-space:pre-line; color:${INK}; margin-top:8px; background:${WASH}; border-left:3px solid ${GOLD}; padding:7px 10px; }
-        .qo-card-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; font-size:.72rem; }
-        .qo-chip { display:inline-flex; align-items:center; gap:3px; background:#f3f4f6; padding:2px 8px; font-size:.72rem; font-weight:700; color:#374151; border-radius:2px; }
-        .qo-amount { font-weight:700; font-variant-numeric:tabular-nums; }
-        .qo-due { color:${ACCENT}; }
-        .qo-paid-lbl { color:${GREEN}; }
-        .qo-date { color:${MUTED}; }
-        .qo-claim { padding:7px 16px; background:${ACCENT}; color:#fff; border:none; font-family:inherit; font-size:.82rem; font-weight:700; cursor:pointer; border-radius:3px; white-space:nowrap; }
+        .qo-card-name { font-size:.96rem; font-weight:700; }
+        .qo-card-phone { font-size:.74rem; color:${MUTED}; margin-top:1px; }
+        .qo-tag { display:inline-block; font-size:.72rem; font-weight:700; color:#8a6b1f; background:#fdf3d9; border:1px solid #f0e0b4; padding:1px 9px; border-radius:3px; margin-top:8px; }
+        .qo-work { font-size:.86rem; line-height:1.5; white-space:pre-line; margin-top:8px; background:${WASH}; border-left:3px solid ${GOLD}; padding:8px 11px; border-radius:0 4px 4px 0; }
+        .qo-meta { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:9px; font-size:.76rem; color:${MUTED}; }
+        .qo-money { font-weight:700; }
+        .qo-money.due { color:${ACCENT}; } .qo-money.paid { color:${GREEN}; }
+        .qo-claim { padding:8px 18px; background:${ACCENT}; color:#fff; border:none; font-family:inherit; font-size:.84rem; font-weight:700; cursor:pointer; border-radius:5px; white-space:nowrap; }
         .qo-claim:hover:not(:disabled) { background:${ACCENT_DK}; }
         .qo-claim:disabled { opacity:.55; cursor:not-allowed; }
-
-        /* ── Order detail panel ── */
-        .qo-detail { background:#fff; border:1px solid ${LINE}; border-radius:4px; position:sticky; top:90px; }
-        .qo-d-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:16px 18px; border-bottom:1px solid ${LINE_SOFT}; }
+        .qo-detail { background:#fff; border:1px solid ${LINE}; border-radius:5px; position:sticky; top:86px; }
+        .qo-d-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:15px 17px; border-bottom:1px solid ${LINE_SOFT}; }
         .qo-d-name { font-size:1.05rem; font-weight:700; }
         .qo-d-phone { font-size:.76rem; color:${MUTED}; margin-top:3px; }
-        .qo-d-body { padding:16px 18px; }
-        .qo-d-sec { margin-top:16px; }
-        .qo-d-sec:first-child { margin-top:0; }
-        .qo-d-sec-l { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:${MUTED}; margin-bottom:8px; }
-        .qo-d-work { font-size:.9rem; line-height:1.6; white-space:pre-line; background:${WASH}; border-left:3px solid ${GOLD}; padding:10px 13px; }
-        .qo-d-kv { display:flex; justify-content:space-between; gap:12px; font-size:.85rem; padding:3px 0; }
-        .qo-d-kv .k { color:${MUTED}; } .qo-d-kv .v { font-weight:600; }
-        .qo-statusctl { display:flex; border:1px solid ${LINE}; border-radius:3px; overflow:hidden; }
-        .qo-sc { flex:1; padding:9px 6px; border:none; border-right:1px solid ${LINE}; font-size:.78rem; font-weight:600; cursor:pointer; background:#fff; font-family:inherit; color:${MUTED}; text-align:center; }
-        .qo-sc:last-child { border-right:none; }
-        .qo-sc:hover:not(.on) { background:${WASH}; color:${INK}; }
-        .qo-sc.on { color:#fff; font-weight:700; }
-        .qo-save-notes { width:100%; padding:9px; border:none; background:${ACCENT}; color:#fff; font-family:inherit; font-size:.84rem; font-weight:700; cursor:pointer; border-radius:3px; margin-top:8px; }
-        .qo-save-notes:hover:not(:disabled) { background:${ACCENT_DK}; }
-        .qo-save-notes:disabled { opacity:.55; cursor:not-allowed; }
-        .qo-realtime-hint { font-size:.72rem; color:${GREEN}; display:flex; align-items:center; gap:5px; margin-top:10px; }
-        .qo-realtime-dot { width:7px; height:7px; border-radius:50%; background:${GREEN}; }
+        .qo-d-body { padding:15px 17px; }
+        .qo-d-l { font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:${MUTED}; margin-bottom:7px; }
+        .qo-owner { padding:7px 17px; border-bottom:1px solid ${LINE_SOFT}; font-size:.78rem; font-weight:600; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        .qo-bal { border-radius:6px; padding:12px 14px; text-align:center; margin-bottom:14px; }
+        .qo-bal.due  { background:#fdf2ee; border:1px solid #f3c9ba; }
+        .qo-bal.paid { background:#eaf6ec; border:1px solid #bfe3c6; }
+        .qo-bal-l { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px; }
+        .qo-bal-n { font-size:1.45rem; font-weight:800; line-height:1; }
+        .qo-bal-sub { font-size:.74rem; color:${MUTED}; margin-top:7px; display:flex; justify-content:center; gap:14px; flex-wrap:wrap; }
+        .qo-pay { background:#fdf8f3; border:1px solid ${LINE}; border-radius:6px; padding:13px 14px; margin-bottom:14px; }
+        .qo-inp { width:100%; padding:9px 12px; border:1px solid ${LINE}; border-radius:5px; font-size:.88rem; font-family:inherit; margin-bottom:7px; }
+        .qo-inp:focus { outline:none; border-color:${ACCENT}; }
+        .qo-pay-methods { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:8px; }
+        .qo-m { padding:9px 0; border:1px solid ${LINE}; border-radius:5px; font-family:inherit; font-size:.86rem; font-weight:700; cursor:pointer; background:#fff; color:${MUTED}; }
+        .qo-m.on { border:2px solid ${ACCENT}; background:#fef2ee; color:${ACCENT}; }
+        .qo-flow { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+        .qo-fbtn { padding:10px 6px; border:1px solid ${LINE}; border-radius:5px; font-size:.8rem; font-weight:700; cursor:pointer; background:#fff; color:${MUTED}; font-family:inherit; }
+        .qo-fbtn:disabled { cursor:not-allowed; opacity:.7; }
+        .qo-hint { font-size:.74rem; color:${GREEN}; display:flex; align-items:center; gap:6px; margin-top:9px; }
+        .qo-hint i { width:7px; height:7px; border-radius:50%; background:${GREEN}; display:inline-block; }
+        .qo-save { width:100%; padding:10px; border:none; background:${ACCENT}; color:#fff; font-family:inherit; font-size:.86rem; font-weight:700; cursor:pointer; border-radius:5px; margin-top:7px; }
+        .qo-save:disabled { opacity:.55; cursor:not-allowed; }
+        .qo-imgs { display:flex; gap:8px; flex-wrap:wrap; }
+        .qo-imgs img { width:62px; height:62px; object-fit:cover; border:1px solid ${LINE}; border-radius:5px; cursor:zoom-in; }
 
-        @media (max-width:900px) { .qo-layout { grid-template-columns:1fr; } .qo-detail { position:static; } }
+        @media (max-width:1000px){ .qo-detail { position:static; } }
         @media (max-width:760px){
           .ep-side { width:70px; }
           .ep-brand-t,.ep-menu-l,.ep-navitem-l,.ep-collapse-l { display:none !important; }
@@ -402,7 +511,7 @@ export default function EmployeeDashboard() {
           .ep-uname { display:none; }
           .ep-top,.ep-content { padding-left:16px; padding-right:16px; }
           .ep-stats { grid-template-columns:repeat(2,1fr); }
-          .ep-cards { grid-template-columns:1fr; }
+          .ep-job-foot .ep-btn-lg { width:100%; }
         }
       `}</style>
 
@@ -436,9 +545,9 @@ export default function EmployeeDashboard() {
       <div className="ep-main">
         <header className="ep-top">
           <div className="ep-top-title">
-            {view === "dashboard" ? "Dashboard"
-              : view === "tasks"   ? "My tasks"
-              : view === "orders"  ? "Quick Orders"
+            {view === "today" ? "Today"
+              : view === "tasks"  ? "My work"
+              : view === "orders" ? "Orders"
               : "Team"}
           </div>
           <div className="ep-top-r">
@@ -456,370 +565,348 @@ export default function EmployeeDashboard() {
 
         <div className="ep-content">
 
-          {/* ── Dashboard ── */}
-          {view === "dashboard" && (
+          {/* ══════════ TODAY ══════════ */}
+          {view === "today" && (
             <>
               <div className="ep-hi">Good day, {firstName}!</div>
               <div className="ep-sub">
                 {loading ? "Loading your work…"
-                  : stats.total === 0 ? "No tasks assigned to you yet."
-                  : <>You have <b>{stats.total}</b> task{stats.total > 1 ? "s" : ""}
-                    {stats.ready > 0 && <> · <b>{stats.ready}</b> ready to deliver</>}
-                    {unassignedCount > 0 && <> · <b>{unassignedCount}</b> order{unassignedCount > 1 ? "s" : ""} available to claim</>}.</>}
+                  : workQueue.length === 0
+                    ? "Nothing pending right now."
+                    : <>You have <b>{workQueue.length}</b> job{workQueue.length > 1 ? "s" : ""} to finish.</>}
               </div>
 
               <div className="ep-stats">
                 {([
-                  { key: "pending",     color: STATUS_META.pending.color,     label: "Pending"          },
-                  { key: "in_progress", color: STATUS_META.in_progress.color, label: "In progress"      },
-                  { key: "ready",       color: ACCENT,                         label: "Ready to deliver" },
-                  { key: "completed",   color: STATUS_META.completed.color,   label: "Completed"        },
-                ] as { key: keyof typeof stats; color: string; label: string }[]).map(({ key, color, label }) => (
-                  <div key={key} className="ep-stat" style={{ borderLeftColor: color }}>
-                    <div className="ep-stat-n" style={{ color }}>{stats[key]}</div>
-                    <div className="ep-stat-l">{label}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Available orders */}
-              {unassignedCount > 0 && (
-                <div className="ep-panel" style={{ borderLeftColor: GOLD, borderLeftWidth: 3 }}>
-                  <div className="ep-panel-h">
-                    <b>📋 Orders available to claim</b>
-                    <button className="ep-viewall" onClick={() => { setView("orders"); setOTab("unassigned"); }}>View all <IcoArrow /></button>
-                  </div>
-                  {unassignedOrders.slice(0, 3).map((o) => (
-                    <button key={o.id} className="ep-arow" onClick={() => { setView("orders"); setOTab("unassigned"); setActiveOrderId(o.id); }}>
-                      <div className="ep-arow-main">
-                        <div className="ep-arow-t">{o.customerName}</div>
-                        <div className="ep-arow-sub">{o.workDetails.slice(0, 70)}{o.workDetails.length > 70 ? "…" : ""}</div>
-                      </div>
-                      <div className="ep-arow-r">
-                        <span style={{ fontSize: ".78rem", fontWeight: 700, color: GOLD }}>{rupStr(Number(o.amount))}</span>
-                        <span className="ep-arow-go"><IcoArrow /></span>
-                      </div>
-                    </button>
-                  ))}
-                  {unassignedCount > 3 && <div style={{ padding: "10px 18px", fontSize: ".78rem", color: MUTED }}>{unassignedCount - 3} more available…</div>}
-                </div>
-              )}
-
-              {/* Needs attention */}
-              <div className="ep-panel">
-                <div className="ep-panel-h">
-                  <b>Needs your attention</b>
-                  <span className="ep-count">{needsAttention.length} item{needsAttention.length !== 1 ? "s" : ""}</span>
-                </div>
-                {needsAttention.length === 0 ? (
-                  <div className="ep-empty"><b>All caught up</b>Nothing overdue.</div>
-                ) : needsAttention.map(({ t, cue }) => (
-                  <button key={t.id} className="ep-arow" onClick={() => openTask(t.id)}>
-                    <div className="ep-arow-main">
-                      <div className="ep-arow-t">{t.title}</div>
-                      <div className="ep-arow-sub">{t.customerName ? `${t.customerName} · ` : ""}{t.invoiceNo || ""}</div>
-                    </div>
-                    <div className="ep-arow-r">
-                      <span className={`ep-cue ${cue.tone}`}>{cue.text}</span>
-                      <span className="ep-arow-go"><IcoArrow /></span>
-                    </div>
+                  { key: "todo"      as Tab, n: counts.todo,      label: "To do",            color: AMBER },
+                  { key: "working"   as Tab, n: counts.working,   label: "Working",          color: BLUE  },
+                  { key: "ready"     as Tab, n: counts.ready,     label: "Ready to deliver", color: ACCENT },
+                  { key: "delivered" as Tab, n: counts.delivered, label: "Delivered",        color: GREEN },
+                ]).map((s) => (
+                  <button key={s.key} className="ep-stat" style={{ borderLeftColor: s.color }}
+                    onClick={() => goTasks(s.key)}>
+                    <div className="ep-stat-n" style={{ color: s.n === 0 ? FAINT : s.color }}>{s.n}</div>
+                    <div className="ep-stat-l">{s.label}</div>
                   </button>
                 ))}
               </div>
 
-              {/* Recently delivered */}
-              <div className="ep-panel">
-                <div className="ep-panel-h">
-                  <b>Recently delivered</b>
-                  {stats.total > 0 && <button className="ep-viewall" onClick={goTasks}>View all <IcoArrow /></button>}
+              {/* Orders waiting to be picked up */}
+              {unassignedCount > 0 && (
+                <div className="ep-panel">
+                  <div className="ep-panel-h">
+                    <b>{unassignedCount} order{unassignedCount > 1 ? "s" : ""} nobody has taken</b>
+                    <button className="ep-viewall" onClick={() => { setView("orders"); setOTab("unassigned"); }}>
+                      See all <IcoArrow />
+                    </button>
+                  </div>
+                  {unassignedOrders.slice(0, 3).map((o) => (
+                    <div key={o.id} className="ep-arow" style={{ cursor: "default" }}>
+                      <div className="ep-arow-main">
+                        <div className="ep-arow-t">{o.customerName}</div>
+                        <div className="ep-arow-sub">{o.workDetails?.slice(0, 70)}{(o.workDetails?.length || 0) > 70 ? "…" : ""}</div>
+                      </div>
+                      <div className="ep-arow-r">
+                        <span style={{ fontSize: ".82rem", fontWeight: 700, color: GOLD }}>{rupStr(Number(o.amount))}</span>
+                        <button className="qo-claim" disabled={claiming === o.id} onClick={() => claimOrder(o.id)}>
+                          {claiming === o.id ? "Taking…" : "Take this"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                {recentDelivered.length === 0
-                  ? <div className="ep-empty">No deliveries yet.</div>
-                  : recentDelivered.map((t) => (
+              )}
+
+              {/* The actual work — biggest thing on the screen */}
+              <div className="ep-secline">
+                <h2>Do this next</h2>
+                <span>{workQueue.length} job{workQueue.length !== 1 ? "s" : ""}</span>
+              </div>
+
+              {loading ? (
+                <div className="ep-loadempty">Loading…</div>
+              ) : workQueue.length === 0 ? (
+                <div className="ep-panel"><div className="ep-empty"><b>All caught up</b>Nothing waiting on you.</div></div>
+              ) : (
+                <div className="ep-jobs">
+                  {workQueue.map((t) => <JobCard key={t.id} t={t} />)}
+                </div>
+              )}
+
+              {/* Delivered — small, out of the way */}
+              {buckets.delivered.length > 0 && (
+                <div className="ep-panel">
+                  <div className="ep-panel-h">
+                    <b>Finished &amp; delivered</b>
+                    <button className="ep-viewall" onClick={() => goTasks("delivered")}>See all <IcoArrow /></button>
+                  </div>
+                  {buckets.delivered.slice(0, 4).map((t) => (
                     <button key={t.id} className="ep-arow" onClick={() => openTask(t.id)}>
                       <div className="ep-arow-main">
                         <div className="ep-arow-t">{t.title}</div>
                         <div className="ep-arow-sub">{t.customerName ? `${t.customerName} · ` : ""}Delivered {fmtDate(t.deliveredAt)}</div>
                       </div>
                       <div className="ep-arow-r">
-                        <span className="ep-cue done">Delivered</span>
+                        <span className="ep-cue done" style={{ margin: 0 }}>Delivered</span>
                         <span className="ep-arow-go"><IcoArrow /></span>
                       </div>
                     </button>
                   ))}
-              </div>
+                </div>
+              )}
             </>
           )}
 
-          {/* ── My Tasks ── */}
+          {/* ══════════ MY WORK ══════════ */}
           {view === "tasks" && (
             <>
               <div className="ep-tabs">
                 {([
-                  { id: "all",         label: "All",         n: tabCounts.all         },
-                  { id: "pending",     label: "Pending",     n: tabCounts.pending     },
-                  { id: "in_progress", label: "In progress", n: tabCounts.in_progress },
-                  { id: "completed",   label: "Completed",   n: tabCounts.completed   },
-                  { id: "delivered",   label: "Delivered",   n: tabCounts.delivered   },
+                  { id: "all",       label: "All",              n: counts.all       },
+                  { id: "todo",      label: "To do",            n: counts.todo      },
+                  { id: "working",   label: "Working",          n: counts.working   },
+                  { id: "ready",     label: "Ready to deliver", n: counts.ready     },
+                  { id: "delivered", label: "Delivered",        n: counts.delivered },
                 ] as { id: Tab; label: string; n: number }[]).map((t) => (
                   <button key={t.id} className={`ep-tab${tab === t.id ? " on" : ""}`} onClick={() => setTab(t.id)}>
                     {t.label} <span className="c">({t.n})</span>
                   </button>
                 ))}
               </div>
-              {loading ? <div className="ep-loadempty">Loading…</div>
-                : displayed.length === 0 ? <div className="ep-loadempty">No tasks found.</div>
-                : <div className="ep-cards">
-                    {displayed.map((t) => (
-                      <TaskCard key={t.id} task={t} selected={selectedId === t.id} onClick={() => setSelectedId(t.id)} />
-                    ))}
-                  </div>}
+
+              {loading ? (
+                <div className="ep-loadempty">Loading…</div>
+              ) : displayed.length === 0 ? (
+                <div className="ep-loadempty">
+                  {tab === "all" ? "No work assigned to you yet."
+                    : `Nothing in "${{ todo: "To do", working: "Working", ready: "Ready to deliver", delivered: "Delivered" }[tab as Exclude<Tab, "all">]}" right now.`}
+                </div>
+              ) : (
+                <div className="ep-jobs">
+                  {displayed.map((t) => <JobCard key={t.id} t={t} compact />)}
+                </div>
+              )}
+
               {selected && (
-                <TaskDetail
-                  task={selected} isMe={selected.deliveredBy?.id === userId}
-                  notesDraft={notesDraft} setNotesDraft={setNotesDraft}
-                  busy={busy} onClose={() => setSelectedId(null)}
-                  onStatus={handleStatus} onDeliver={handleDeliver}
-                  onImage={(src) => setLightbox(src)}
-                />
+                <div className="ep-detailwrap" ref={detailRef}>
+                  <TaskDetail
+                    task={selected} isMe={selected.deliveredBy?.id === userId}
+                    notesDraft={notesDraft} setNotesDraft={setNotesDraft}
+                    busy={busy} onClose={() => setSelectedId(null)}
+                    onStatus={handleStatus} onDeliver={handleDeliver}
+                    onImage={(src) => setLightbox(src)}
+                  />
+                </div>
               )}
             </>
           )}
 
-          {/* ── Quick Orders Board ── */}
+          {/* ══════════ ORDERS ══════════ */}
           {view === "orders" && (
             <>
-              {/* sub-tabs */}
-              <div className="ep-tabs" style={{ marginBottom: 16 }}>
+              <div className="ep-tabs">
                 {([
-                  { id: "unassigned", label: "Available to claim", n: unassignedOrders.length },
-                  { id: "mine",       label: "My orders",          n: myOrders.length },
-                  { id: "all",        label: "All orders",         n: orders.length },
+                  { id: "unassigned", label: "Free to take", n: unassignedOrders.length },
+                  { id: "mine",       label: "Mine",         n: myOrders.length },
+                  { id: "all",        label: "Everything",   n: orders.length },
                 ] as { id: OTab; label: string; n: number }[]).map((t) => (
                   <button key={t.id} className={`ep-tab${oTab === t.id ? " on" : ""}`}
                     onClick={() => { setOTab(t.id); setActiveOrderId(null); }}>
                     {t.label} <span className="c">({t.n})</span>
                   </button>
                 ))}
-                <button style={{ marginLeft: "auto", alignSelf: "center", background: "none", border: "none", color: MUTED, fontSize: ".78rem", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}
-                  onClick={loadOrders}>↻ Refresh</button>
+                <button className="ep-viewall" style={{ marginLeft: "auto", alignSelf: "center" }} onClick={loadOrders}>
+                  ↻ Refresh
+                </button>
               </div>
 
               {ordersLoading ? <div className="ep-loadempty">Loading orders…</div>
                 : shownOrders.length === 0 ? (
                   <div className="ep-loadempty">
-                    {oTab === "unassigned" ? "No unassigned orders right now."
-                      : oTab === "mine" ? "You haven't claimed any orders yet."
+                    {oTab === "unassigned" ? "No free orders right now."
+                      : oTab === "mine" ? "You haven't taken any orders yet."
                       : "No orders found."}
                   </div>
                 ) : (
-                  <div className={`qo-layout${activeOrder ? "" : ""}`}
-                    style={{ gridTemplateColumns: activeOrder ? "1fr 420px" : "1fr" }}>
+                  <div className="qo-layout" style={{ gridTemplateColumns: activeOrder ? "minmax(0,1fr) 400px" : "minmax(0,1fr)" }}>
 
-                    {/* Order list */}
+                    {/* list */}
                     <div className="qo-board">
                       {shownOrders.map((o) => {
-                        const amt = Number(o.amount), less = Number((o as any).lessAmount || 0), adv = Number(o.advancePaid), due = Math.max(0, amt - less - adv);
-                        const isMyOrder = o.task?.assignedTo?.id === userId;
-                        const ts = o.task ? STATUS_META[o.task.status] : null;
-                        const isClaiming = claiming === o.id;
+                        const amt  = Number(o.amount);
+                        const less = Number((o as any).lessAmount || 0);
+                        const adv  = Number(o.advancePaid);
+                        const due  = Math.max(0, amt - less - adv);
+                        const mine = o.task?.assignedTo?.id === userId;
+                        const st   = o.task ? STAGE_META[QO_STAGE[o.task.status] || "todo"] : null;
                         const isActive = activeOrderId === o.id;
 
                         return (
                           <div key={o.id}
-                            className={`qo-card${isActive ? " sel" : ""}${isMyOrder ? " mine" : ""}`}
-                            onClick={() => setActiveOrderId(isActive ? null : o.id)}
-                            style={{ cursor: "pointer" }}>
+                            className={`qo-card${isActive ? " sel" : ""}`}
+                            style={{ borderLeftColor: mine ? GOLD : LINE }}
+                            onClick={() => setActiveOrderId(isActive ? null : o.id)}>
 
                             <div className="qo-card-top">
-                              <div>
+                              <div style={{ minWidth: 0 }}>
                                 <div className="qo-card-name">{o.customerName}</div>
                                 {o.customerPhone && <div className="qo-card-phone">{o.customerPhone}</div>}
                               </div>
-                              <div onClick={e => e.stopPropagation()}>
+                              <div onClick={(e) => e.stopPropagation()}>
                                 {o.status === "billed" ? (
-                                  <span className="qo-status" style={{ background: "#dcfce7", color: GREEN }}>{o.invoiceNo || "Invoiced"}</span>
-                                ) : isMyOrder && ts ? (
-                                  <span className="qo-status" style={{ background: ts.bg, color: ts.color }}>{ts.label}</span>
+                                  <span className="ep-stage" style={{ background: "#e5f2e8", color: GREEN }}>{o.invoiceNo || "Billed"}</span>
                                 ) : !o.task ? (
-                                  <button className="qo-claim" disabled={isClaiming} onClick={() => claimOrder(o.id)}>
-                                    {isClaiming ? "Claiming…" : "Claim"}
+                                  <button className="qo-claim" disabled={claiming === o.id} onClick={() => claimOrder(o.id)}>
+                                    {claiming === o.id ? "Taking…" : "Take this"}
                                   </button>
-                                ) : (
-                                  <span className="qo-status" style={{ background: "#f3f4f6", color: MUTED }}>{o.task.assignedTo.name}</span>
-                                )}
+                                ) : st ? (
+                                  <span className="ep-stage" style={{ background: st.bg, color: st.color }}>
+                                    {mine ? st.label : o.task.assignedTo.name}
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
 
-                            {o.title && (
-                              <div style={{ fontSize: ".78rem", fontWeight: 800, color: "#b45309", background: "#fef3c7", border: "1px solid #fde68a", display: "inline-block", padding: "1px 9px", marginBottom: 6, letterSpacing: ".02em" }}>
-                                {o.title}
-                              </div>
-                            )}
-                            <div className="qo-card-work">{o.workDetails || "—"}</div>
+                            {o.title && <div className="qo-tag">{o.title}</div>}
+                            <div className="qo-work">{o.workDetails || "—"}</div>
 
-                            <div className="qo-card-meta">
-                              <span className="qo-chip">{o.paymentMethod === "cash" ? "💵 Cash" : "📱 Online"}</span>
-                              <span className={`qo-amount ${due > 0 ? "qo-due" : "qo-paid-lbl"}`}>
-                                {rupStr(amt)}{less > 0 ? ` · Less ${rupStr(less)}` : ""}{due > 0 ? ` · Due ${rupStr(due)}` : " · Paid"}
+                            <div className="qo-meta">
+                              <span>{o.paymentMethod === "cash" ? "Cash" : "Online"}</span>
+                              <span className={`qo-money ${due > 0 ? "due" : "paid"}`}>
+                                {rupStr(amt)}{less > 0 ? ` · less ${rupStr(less)}` : ""}{due > 0 ? ` · ${rupStr(due)} due` : " · fully paid"}
                               </span>
-                              <span className="qo-date">{fmtShort(o.entryDate)}</span>
-                              {o.task && <span style={{ fontSize: ".72rem", fontWeight: 600, color: isMyOrder ? "#c2974a" : "#8a8378" }}>👷 {o.task.assignedTo.name}{isMyOrder ? " (You)" : ""}</span>}
+                              <span>{fmtShort(o.entryDate)}</span>
+                              {o.task && <span style={{ fontWeight: 600, color: mine ? GOLD : MUTED }}>{o.task.assignedTo.name}{mine ? " (you)" : ""}</span>}
                             </div>
                           </div>
                         );
                       })}
                     </div>
 
-                    {/* Detail panel — only for my orders */}
+                    {/* detail */}
                     {activeOrder && (() => {
-                      const _amt  = Number(activeOrder.amount);
-                      const _less = Number((activeOrder as any).lessAmount || 0);
-                      const _adv  = Number(activeOrder.advancePaid);
-                      const _due  = Math.max(0, _amt - _less - _adv);
-                      const _ts   = activeOrder.task ? STATUS_META[activeOrder.task.status] : null;
+                      const amt  = Number(activeOrder.amount);
+                      const less = Number((activeOrder as any).lessAmount || 0);
+                      const adv  = Number(activeOrder.advancePaid);
+                      const due  = Math.max(0, amt - less - adv);
+                      const mine = activeOrder.task?.assignedTo?.id === userId;
+                      const st   = activeOrder.task ? STAGE_META[QO_STAGE[activeOrder.task.status] || "todo"] : null;
+
                       return (
-                      <div className="qo-detail">
-                        {/* Header */}
-                        <div className="qo-d-head">
-                          <div>
-                            <div className="qo-d-name">{activeOrder.customerName}</div>
-                            {activeOrder.customerPhone && <div className="qo-d-phone">{activeOrder.customerPhone}</div>}
-                          </div>
-                          <button className="ep-close" onClick={() => setActiveOrderId(null)}><IcoClose /></button>
-                        </div>
-
-                        {/* Assigned employee badge */}
-                        {activeOrder.task && (
-                          <div style={{ padding: "6px 16px", background: activeOrder.task.assignedTo.id === userId ? "#fef3c7" : "#f3f4f6", borderBottom: "1px solid #f1ece3", fontSize: ".78rem", fontWeight: 600, color: activeOrder.task.assignedTo.id === userId ? "#92400e" : "#8a8378" }}>
-                            👷 {activeOrder.task.assignedTo.name}{activeOrder.task.assignedTo.id === userId ? " (You)" : ""}
-                            {_ts && <span style={{ marginLeft: 8, padding: "1px 7px", borderRadius: 3, fontSize: ".7rem", fontWeight: 700, background: _ts.bg, color: _ts.color }}>{_ts.label}</span>}
-                          </div>
-                        )}
-
-                        <div className="qo-d-body" style={{ padding: "12px 16px" }}>
-
-                          {/* ── Due / Paid banner ── */}
-                          <div style={{ background: _due > 0 ? "#fef2ee" : "#eaf6ec", border: `1px solid ${_due > 0 ? "#f3c9ba" : "#bfe3c6"}`, borderRadius: 6, padding: "10px 14px", textAlign: "center", marginBottom: 10 }}>
-                            <div style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: _due > 0 ? "#b8421f" : "#2f7a3f", marginBottom: 3 }}>
-                              {_due > 0 ? "Balance Due" : "Fully Paid"}
+                        <div className="qo-detail">
+                          <div className="qo-d-head">
+                            <div>
+                              <div className="qo-d-name">{activeOrder.customerName}</div>
+                              {activeOrder.customerPhone && <div className="qo-d-phone">{activeOrder.customerPhone}</div>}
                             </div>
-                            <div style={{ fontSize: "1.4rem", fontWeight: 900, color: _due > 0 ? "#d9542f" : "#2f7a3f", lineHeight: 1 }}>
-                              {_due > 0 ? rupStr(_due) : "✓"}
-                            </div>
-                            <div style={{ fontSize: ".72rem", color: "#8a8378", marginTop: 5, display: "flex", justifyContent: "center", gap: 14 }}>
-                              <span>Bill: {rupStr(_amt)}</span>
-                              {_less > 0 && <span style={{ color: "#c2974a" }}>Less: −{rupStr(_less)}</span>}
-                              <span style={{ color: "#2f7a3f" }}>Paid: {rupStr(_adv)}</span>
-                            </div>
+                            <button className="ep-close" onClick={() => setActiveOrderId(null)}><IcoClose /></button>
                           </div>
 
-                          {/* ── Record Payment — only if due > 0 ── */}
-                          {_due > 0 && (
-                            <div style={{ background: "#fdf8f3", border: "1px solid #e7e1d7", borderRadius: 6, padding: "12px 14px", marginBottom: 10 }}>
-                              <div style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 7 }}>Collect Payment</div>
-                              {payErr && <div style={{ color: "#d9542f", fontSize: ".8rem", marginBottom: 8 }}>{payErr}</div>}
-                              <input
-                                style={{ width: "100%", padding: "9px 12px", border: "1px solid #e7e1d7", borderRadius: 5, fontSize: ".9rem", fontFamily: "inherit", marginBottom: 6, boxSizing: "border-box" as const, fontWeight: 700 }}
-                                type="number" min="1" max={_due}
-                                value={payAmt}
-                                onChange={e => setPayAmt(e.target.value)}
-                                placeholder={`₹ Amount (max ${rupStr(_due)})`}
-                              />
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
-                                {(["cash","online"] as const).map(m => (
-                                  <button key={m}
-                                    style={{ padding: "8px 0", border: payMethod === m ? "2px solid #d9542f" : "1px solid #e7e1d7", borderRadius: 6, fontFamily: "inherit", fontSize: ".9rem", fontWeight: 700, cursor: "pointer", background: payMethod === m ? "#fef2ee" : "#fff", color: payMethod === m ? "#d9542f" : "#8a8378", transition: "all .12s" }}
-                                    onClick={() => setPayMethod(m)}>
-                                    {m === "cash" ? "💵 Cash" : "📱 Online"}
-                                  </button>
-                                ))}
-                              </div>
-                              <input
-                                style={{ width: "100%", padding: "7px 12px", border: "1px solid #e7e1d7", borderRadius: 5, fontSize: ".82rem", fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" as const }}
-                                value={payNote}
-                                onChange={e => setPayNote(e.target.value)}
-                                placeholder="Note (optional)"
-                              />
-                              <button
-                                style={{ width: "100%", padding: "10px", background: "#d9542f", color: "#fff", border: "none", borderRadius: 6, fontFamily: "inherit", fontSize: ".88rem", fontWeight: 800, cursor: payBusy ? "not-allowed" : "pointer", opacity: payBusy ? .6 : 1, letterSpacing: ".02em" }}
-                                disabled={payBusy} onClick={recordPayment}>
-                                {payBusy ? "Recording…" : `Record ₹${payAmt || "0"} Payment`}
-                              </button>
+                          {activeOrder.task && (
+                            <div className="qo-owner" style={{ background: mine ? "#fdf3d9" : WASH, color: mine ? "#8a6b1f" : MUTED }}>
+                              {activeOrder.task.assignedTo.name}{mine ? " (you)" : ""}
+                              {st && <span className="ep-stage" style={{ background: st.bg, color: st.color }}>{st.label}</span>}
                             </div>
                           )}
 
-                          {/* ── Status ── */}
-                          <div style={{ marginBottom: 10 }}>
-                            <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 6 }}>Status</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
-                              {STATUS_FLOW.map((st) => {
-                                const sm = STATUS_META[st];
-                                const isOn = activeOrder.task?.status === st;
-                                return (
-                                  <button key={st}
-                                    style={{ padding: "9px 6px", border: isOn ? "none" : "1px solid #e7e1d7", borderRadius: 6, fontSize: ".8rem", fontWeight: 700, cursor: "pointer", background: isOn ? sm.color : "#fff", color: isOn ? "#fff" : "#8a8378", fontFamily: "inherit", transition: "all .12s" }}
-                                    disabled={orderBusy || activeOrder.task?.assignedTo?.id !== userId}
-                                    onClick={() => updateOrderTaskStatus(st)}
-                                    title={activeOrder.task?.assignedTo?.id !== userId ? "Only assigned employee can change status" : ""}>
-                                    {sm.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div style={{ fontSize: ".72rem", color: "#2f7a3f", display: "flex", alignItems: "center", gap: 5, marginTop: 8 }}>
-                              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#2f7a3f", display: "inline-block" }} />
-                              Admin sees this in real time
-                            </div>
-                          </div>
-
-                          {/* ── Work Details ── */}
-                          <div style={{ marginBottom: 10 }}>
-                            <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 6 }}>Work Details</div>
-                            <div style={{ fontSize: ".84rem", lineHeight: 1.5, whiteSpace: "pre-line" as const, background: "#faf8f3", borderLeft: "3px solid #c2974a", padding: "8px 11px", borderRadius: "0 5px 5px 0" }}>
-                              {activeOrder.workDetails || "—"}
-                            </div>
-                          </div>
-
-                          {/* ── Reference images ── */}
-                          {activeOrder.images && activeOrder.images.length > 0 && (
-                            <div style={{ marginBottom: 10 }}>
-                              <div style={{ fontSize: ".68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 6 }}>Reference Images</div>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
-                                {activeOrder.images.map((img, i) => (
-                                  <a key={i} href={`${API_BASE}${img}`} target="_blank" rel="noreferrer">
-                                    <img src={`${API_BASE}${img}`} alt="" style={{ width: 60, height: 60, objectFit: "cover" as const, border: "1px solid #e7e1d7", borderRadius: 6, cursor: "zoom-in" }} />
-                                  </a>
-                                ))}
+                          <div className="qo-d-body">
+                            {/* money first — that's what gets asked at the counter */}
+                            <div className={`qo-bal ${due > 0 ? "due" : "paid"}`}>
+                              <div className="qo-bal-l" style={{ color: due > 0 ? ACCENT_DK : GREEN }}>
+                                {due > 0 ? "Still to collect" : "Fully paid"}
+                              </div>
+                              <div className="qo-bal-n" style={{ color: due > 0 ? ACCENT : GREEN }}>
+                                {due > 0 ? rupStr(due) : "✓"}
+                              </div>
+                              <div className="qo-bal-sub">
+                                <span>Bill {rupStr(amt)}</span>
+                                {less > 0 && <span style={{ color: GOLD }}>Less {rupStr(less)}</span>}
+                                <span style={{ color: GREEN }}>Paid {rupStr(adv)}</span>
                               </div>
                             </div>
-                          )}
 
-                          {/* ── Notes (compact) ── */}
-                          <div>
-                            <div style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#8a8378", marginBottom: 8 }}>Notes</div>
-                            <textarea
-                              className="ep-ta"
-                              style={{ minHeight: 56, fontSize: ".84rem" }}
-                              value={orderNotes}
-                              onChange={e => setOrderNotes(e.target.value)}
-                              placeholder="Progress notes…"
-                              rows={3}
-                            />
-                            <button className="qo-save-notes" style={{ marginTop: 6 }} disabled={orderBusy} onClick={saveOrderNotes}>
-                              {orderBusy ? "Saving…" : "Save Notes"}
-                            </button>
+                            {due > 0 && (
+                              <div className="qo-pay">
+                                <div className="qo-d-l">Take payment</div>
+                                {payErr && <div style={{ color: ACCENT, fontSize: ".82rem", marginBottom: 8 }}>{payErr}</div>}
+                                <input className="qo-inp" type="number" min="1" max={due}
+                                  value={payAmt} onChange={(e) => setPayAmt(e.target.value)}
+                                  placeholder={`Amount — up to ${rupStr(due)}`} />
+                                <div className="qo-pay-methods">
+                                  {(["cash","online"] as const).map((m) => (
+                                    <button key={m} className={`qo-m${payMethod === m ? " on" : ""}`} onClick={() => setPayMethod(m)}>
+                                      {m === "cash" ? "Cash" : "Online"}
+                                    </button>
+                                  ))}
+                                </div>
+                                <input className="qo-inp" value={payNote}
+                                  onChange={(e) => setPayNote(e.target.value)} placeholder="Note (optional)" />
+                                <button className="qo-save" disabled={payBusy} onClick={recordPayment}>
+                                  {payBusy ? "Saving…" : `Record ${payAmt ? rupStr(Number(payAmt)) : "payment"}`}
+                                </button>
+                              </div>
+                            )}
+
+                            {activeOrder.task && (
+                              <div style={{ marginBottom: 14 }}>
+                                <div className="qo-d-l">Where is this job?</div>
+                                <div className="qo-flow">
+                                  {STATUS_FLOW.map((sflow) => {
+                                    const meta = STAGE_META[QO_STAGE[sflow]];
+                                    const on   = activeOrder.task?.status === sflow;
+                                    return (
+                                      <button key={sflow} className="qo-fbtn"
+                                        style={on ? { background: meta.color, color: "#fff", border: "none" } : {}}
+                                        disabled={orderBusy || !mine}
+                                        title={!mine ? "Only the person who took this order can change it" : ""}
+                                        onClick={() => updateOrderTaskStatus(sflow)}>
+                                        {meta.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <div className="qo-hint"><i />Admin sees this straight away</div>
+                              </div>
+                            )}
+
+                            <div style={{ marginBottom: 14 }}>
+                              <div className="qo-d-l">What to make</div>
+                              <div className="qo-work" style={{ marginTop: 0 }}>{activeOrder.workDetails || "—"}</div>
+                            </div>
+
+                            {activeOrder.images && activeOrder.images.length > 0 && (
+                              <div style={{ marginBottom: 14 }}>
+                                <div className="qo-d-l">Reference images</div>
+                                <div className="qo-imgs">
+                                  {activeOrder.images.map((img, i) => (
+                                    <img key={i} src={`${API_BASE}${img}`} alt=""
+                                      onClick={() => setLightbox(`${API_BASE}${img}`)} />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {activeOrder.task && mine && (
+                              <div>
+                                <div className="qo-d-l">Your notes</div>
+                                <textarea className="ep-ta" style={{ minHeight: 62, fontSize: ".86rem" }}
+                                  value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)}
+                                  placeholder="Anything admin should know…" />
+                                <button className="qo-save" disabled={orderBusy} onClick={saveOrderNotes}>
+                                  {orderBusy ? "Saving…" : "Save notes"}
+                                </button>
+                              </div>
+                            )}
                           </div>
-
                         </div>
-                      </div>
                       );
-                    })()}                  </div>
+                    })()}
+                  </div>
                 )}
             </>
           )}
 
-          {/* ── Team View ── */}
+          {/* ══════════ TEAM ══════════ */}
           {view === "team" && (
             <TeamView myId={userId} onOpenMine={(taskId) => openTask(taskId)} />
           )}
