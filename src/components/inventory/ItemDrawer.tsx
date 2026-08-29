@@ -2,10 +2,10 @@
 import { useState, useEffect, useMemo } from "react";
 import api from "../../api";
 import type { InventoryItem, Supplier } from "./types";
+import { UNIT_OPTS, unitLabel } from "./types";
 import PinField from "./PinField";
 
 const ADD_NEW = "__add_new__";
-const UNITS = ["piece","sqft","metre","roll","sheet","litre","kg","box","set"] as const;
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const TERRA = "#d9542f";
@@ -230,6 +230,7 @@ export default function ItemDrawer({ item, items, suppliers, selCat, onClose, on
   const qty        = parseFloat(form.openingQty) || 0;
   const buy        = parseFloat(form.buyPrice)    || 0;
   const liveValue  = qty > 0 && buy > 0 ? `Opening value: ₹${(qty * buy).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null;
+  const unitName   = unitLabel(form.unit);
 
   // Duplicate = same name + category + same supplier (or both have no supplier)
   // Different supplier = allowed (different purchase source, different price)
@@ -346,14 +347,14 @@ export default function ItemDrawer({ item, items, suppliers, selCat, onClose, on
               <div style={st.fg}>
                 <label style={st.label}>Unit</label>
                 <select style={st.select} value={form.unit} onChange={setField("unit")}>
-                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  {UNIT_OPTS.map(u => <option key={u} value={u}>{unitLabel(u)}</option>)}
                 </select>
               </div>
               {!isEdit && (
                 <div style={st.fg}>
                   <label style={st.label}>
                     Opening qty&nbsp;
-                    <span style={{ fontWeight: 400, textTransform: "none" }}>({form.unit})</span>
+                    <span style={{ fontWeight: 400, textTransform: "none" }}>({unitName})</span>
                   </label>
                   <input
                     style={st.input}
@@ -368,7 +369,7 @@ export default function ItemDrawer({ item, items, suppliers, selCat, onClose, on
 
             {/* Opening value live preview */}
             {!isEdit && liveValue && (
-              <span style={st.qtyBadge}>✓ {liveValue} ({form.unit})</span>
+              <span style={st.qtyBadge}>✓ {liveValue} ({unitName})</span>
             )}
 
             {/* ── SUPPLIER ────────────────────────────────────────── */}
@@ -387,7 +388,7 @@ export default function ItemDrawer({ item, items, suppliers, selCat, onClose, on
               <div style={st.fg}>
                 <label style={st.label}>
                   Buy price (₹)
-                  {form.unit !== "piece" && <span style={{ fontWeight: 400 }}> /{form.unit}</span>}
+                  {form.unit !== "piece" && <span style={{ fontWeight: 400 }}> /{unitName}</span>}
                 </label>
                 <input
                   style={st.input}
@@ -400,7 +401,7 @@ export default function ItemDrawer({ item, items, suppliers, selCat, onClose, on
               <div style={st.fg}>
                 <label style={st.label}>
                   Sell price (₹)
-                  {form.unit !== "piece" && <span style={{ fontWeight: 400 }}> /{form.unit}</span>}
+                  {form.unit !== "piece" && <span style={{ fontWeight: 400 }}> /{unitName}</span>}
                 </label>
                 <input
                   style={st.input}

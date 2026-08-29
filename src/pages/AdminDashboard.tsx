@@ -8,6 +8,7 @@ const Inventory        = lazy(() => import("../components/inventory"));
 const InvoiceMaker     = lazy(() => import("../components/billing"));
 const Invoices         = lazy(() => import("../components/invoices"));
 const PaymentReminders = lazy(() => import("../components/PaymentReminders"));
+const Expenses         = lazy(() => import("../components/expenses"));
 const Activity         = lazy(() => import("../components/Activity"));
 const AdminPostUpload  = lazy(() => import("../components/AdminPostUpload"));
 const PostFeed         = lazy(() => import("../components/PostFeed"));
@@ -16,7 +17,7 @@ const Tasks            = lazy(() => import("../components/tasks"));
 const Employees        = lazy(() => import("../components/employees"));
 const QuickOrders      = lazy(() => import("../components/quick-order"));
 
-type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
+type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "expenses" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
 
 const ACCENT = "#d9542f";
 
@@ -26,6 +27,7 @@ const IconBookings  = () => (<svg {...ico}><rect x="8" y="2" width="8" height="4
 const IconBilling   = () => (<svg {...ico}><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>);
 const IconInvoices  = () => (<svg {...ico}><path d="M16 3H6a2 2 0 0 0-2 2v11" /><rect x="8" y="6" width="12" height="15" rx="2" /><path d="M11 11h6M11 15h4" /></svg>);
 const IconReminders = () => (<svg {...ico}><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>);
+const IconExpenses  = () => (<svg {...ico}><path d="M3 7V6a2 2 0 0 1 2-2h11" /><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M17 13h2" /><path d="M8 11h5M8 14h5l-3.5 3.5" /></svg>);
 const IconActivity  = () => (<svg {...ico}><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z" /><path d="m9 12 2 2 4-4" /></svg>);
 const IconPosts     = () => (<svg {...ico}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>);
 const IconSettings  = () => (<svg {...ico}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>);
@@ -42,6 +44,7 @@ const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "billing",   label: "Billing",   Icon: IconBilling   },
   { id: "invoices",  label: "Invoices",  Icon: IconInvoices  },
   { id: "reminders", label: "Reminders", Icon: IconReminders },
+  { id: "expenses",  label: "Daily Expense", Icon: IconExpenses },
   { id: "activity",  label: "Activity",  Icon: IconActivity  },
   { id: "posts",     label: "Posts",     Icon: IconPosts     },
   { id: "khata",     label: "Quick Orders", Icon: IconKhata },
@@ -57,6 +60,7 @@ const TITLES: Record<Tab, string> = {
   billing:   "Billing",
   invoices:  "Invoices",
   reminders: "Payment reminders",
+  expenses:  "Daily Expense",
   activity:  "Activity",
   posts:     "Posts",
   khata:     "Quick Orders",
@@ -144,6 +148,7 @@ export default function AdminDashboard() {
             {activeTab === "billing"   && <InvoiceMaker />}
             {activeTab === "invoices"  && <Invoices />}
             {activeTab === "reminders" && <PaymentReminders />}
+            {activeTab === "expenses"  && <Expenses />}
             {activeTab === "activity"  && <Activity />}
             {activeTab === "posts"     && (
               <div>

@@ -7,7 +7,7 @@ import OverviewFilters from "./OverviewFilters";
 import {
   InventoryItem, KPIs, CatSummary,
   INK, MUTE, LINE, IVORY, CARD, TERRA, GOLD, GOLD_LT, GREEN, RED, SANS,
-  catColor, dec, rfmt, dtfmt,
+  catColor, dec, rfmt, dtfmt, unitLabel,
 } from "./types";
 
 interface Props {
@@ -259,7 +259,7 @@ export default function InventoryTable({
                       </td>
                       <td style={st.td}>
                         <div style={{ fontWeight:700, fontVariantNumeric:"tabular-nums", fontSize:14, color:isOut?RED:isLow?"#b45309":GREEN }}>
-                          {qty} {it.unit}
+                          {qty} {unitLabel(it.unit)}
                         </div>
                         <div style={{ fontSize:10.5, marginTop:2 }}>
                           {isOut  ? <span style={{color:RED,fontWeight:700}}>Out of stock</span>
@@ -307,7 +307,7 @@ export default function InventoryTable({
                 This removes the item and its entire stock history. This cannot be undone.
               </p>
               <div style={st.delWarn}>
-                ⚠️ Current stock: <strong>{dec(delItem.quantity)} {delItem.unit}</strong>
+                ⚠️ Current stock: <strong>{dec(delItem.quantity)} {unitLabel(delItem.unit)}</strong>
                 {delItem.supplier?.name && <> · Supplier: <strong>{delItem.supplier.name}</strong></>}
               </div>
               <PinField value={delPin} onChange={setDelPin} />

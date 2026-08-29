@@ -26,7 +26,7 @@ export const CAT_COLORS   = ["#d9542f","#c2974a","#2563eb","#7c3aed","#059669","
 export const catColor     = (i: number) => CAT_COLORS[i % CAT_COLORS.length];
 
 // ── TypeScript types ──────────────────────────────────────────────────────────
-export type StockUnit    = "piece"|"sqft"|"metre"|"roll"|"sheet"|"litre"|"kg"|"box"|"set";
+export type StockUnit    = "piece"|"sqft"|"sq_inch"|"inch"|"metre"|"roll"|"sheet"|"box";
 export type MovementType = "opening"|"purchase"|"consumption"|"wastage"|"returned"|"adjustment";
 
 export interface Supplier {
@@ -55,7 +55,22 @@ export interface KPIs {
 export interface CatSummary { name: string; count: number; value: number; low: number; }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-export const UNIT_OPTS: StockUnit[] = ["piece","sqft","metre","roll","sheet","litre","kg","box","set"];
+export const UNIT_OPTS: StockUnit[] = ["piece","sqft","sq_inch","inch","metre","roll","sheet","box"];
+
+/** Enum values can't hold spaces, so anything shown to a person comes from here. */
+export const UNIT_LABEL: Record<StockUnit, string> = {
+  piece:   "piece",
+  sqft:    "sqft",
+  sq_inch: "Square Inch",
+  inch:    "inch",
+  metre:   "metre",
+  roll:    "roll",
+  sheet:   "sheet",
+  box:     "box",
+};
+
+/** Falls back to the raw value for any legacy unit still sitting in old rows. */
+export const unitLabel = (u: string) => UNIT_LABEL[u as StockUnit] ?? u;
 
 export const MOV_LABEL: Record<string,string> = {
   opening:"Opening", purchase:"Purchase", consumption:"Consumption",

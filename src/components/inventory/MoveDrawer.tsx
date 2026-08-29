@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import api from "../../api";
 import Icon from "./Icon";
 import PinField from "./PinField";
-import { InventoryItem, MovementType, MOV_LABEL, MOV_SIGN, INK, LINE, IVORY, CARD, MUTE, GREEN, RED, TERRA, dec, sharedSt } from "./types";
+import { InventoryItem, MovementType, MOV_LABEL, MOV_SIGN, INK, LINE, IVORY, CARD, MUTE, GREEN, RED, TERRA, dec, sharedSt, unitLabel } from "./types";
 
 interface Props {
   item:    InventoryItem;
@@ -16,6 +16,8 @@ export default function MoveDrawer({ item, onClose, onSaved }: Props) {
   const [err,  setErr]  = useState("");
   const [busy, setBusy] = useState(false);
   const f = (k: string) => (v: string) => setForm(p => ({...p,[k]:v}));
+
+  const unitName = unitLabel(item.unit);
 
   const projBalance = useMemo(() => {
     const d    = parseFloat(form.delta) || 0;
@@ -60,7 +62,7 @@ export default function MoveDrawer({ item, onClose, onSaved }: Props) {
               <div key={b.label} style={{ background:CARD, padding:"16px 20px", textAlign:"center" }}>
                 <div style={{ fontSize:10.5, color:MUTE, textTransform:"uppercase", letterSpacing:.7, marginBottom:6 }}>{b.label}</div>
                 <div style={{ fontSize:26, fontWeight:900, color:b.color, fontVariantNumeric:"tabular-nums" }}>{b.val.toFixed(2)}</div>
-                <div style={{ fontSize:11.5, color:MUTE }}>{item.unit}</div>
+                <div style={{ fontSize:11.5, color:MUTE }}>{unitName}</div>
               </div>
             ))}
           </div>
@@ -72,7 +74,7 @@ export default function MoveDrawer({ item, onClose, onSaved }: Props) {
               ))}
             </select></label>
 
-          <label style={sharedSt.field}><span style={sharedSt.lbl}>Quantity ({item.unit})</span>
+          <label style={sharedSt.field}><span style={sharedSt.lbl}>Quantity ({unitName})</span>
             <input style={sharedSt.inp} type="number" min="0.001" step="0.001" autoFocus
               value={form.delta} onChange={e => f("delta")(e.target.value)} placeholder="0"/></label>
 
