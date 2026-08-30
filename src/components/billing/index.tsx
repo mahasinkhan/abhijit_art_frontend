@@ -1,9 +1,5 @@
 // src/components/billing/index.tsx
 // ── Thin shell: all state + data fetching + actions, zero UI ─────────────────
-// One component serves both billing pages:
-//   variant "full" → Billing 100% — one bill fills an A4 sheet
-//   variant "half" → Billing 50%  — bill on the top half, cut line, blank below
-// Everything else (save, stock consumption, email, WhatsApp) is identical.
 import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../api";
 import {
@@ -195,6 +191,9 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
     items: items.filter(it=>it.desc.trim()||num(it.rate)>0).map(it=>({
       desc:it.desc, qty:num(it.qty), rate:num(it.rate),
       ...(it.itemId?{itemId:it.itemId}:{}),
+      ...(it.unit?{unit:it.unit}:{}),
+      ...(num(it.width)>0?{width:num(it.width)}:{}),
+      ...(num(it.height)>0?{height:num(it.height)}:{}),
     })),
     discType, discVal, taxPct, notes, warranty, paidAmount:advancePaid, paymentMethod:payMethod,
   });
@@ -254,7 +253,11 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
       bizName:biz.name, bizPan:biz.pan, bizGstin:biz.gstin, bizAddress:biz.address, bizPhone:biz.phone, bizEmail:biz.email,
       invNo:printedNo, invDate:fmtD(date), invTime:new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}),
       clientName:client.name, clientAddr:client.address, clientPhone:client.phone, clientGstin:client.gstin,
-      items: items.filter(it=>it.desc.trim()||num(it.rate)>0).map(it=>({desc:it.desc,qty:num(it.qty),rate:num(it.rate)})),
+      items: items.filter(it=>it.desc.trim()||num(it.rate)>0).map(it=>({
+        desc:it.desc, qty:num(it.qty), rate:num(it.rate),
+        size:(num(it.width)>0&&num(it.height)>0)?`${num(it.width)} × ${num(it.height)}`:"",
+        unit:it.unit||"",
+      })),
       discType, discVal:num(discVal), taxPct:num(taxPct),
       subtotal:totals.subtotal, discountAmt:totals.discountAmt, taxAmt:totals.taxAmt, total:totals.total,
       paidAmount:advancePaid, notes, warranty,
@@ -318,17 +321,8 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
   return (
     <div style={{ fontFamily:SANS, color:INK, minWidth:0, maxWidth:"100%" }}>
 
-      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", gap:20, flexWrap:"wrap", marginBottom:22 }}>
-        <div>
-          <h1 style={{ fontSize:26, fontWeight:800, margin:0, letterSpacing:-.6, color:INK }}>
-            {half ? "Invoice maker — half page" : "Invoice maker"}
-          </h1>
-          <p style={{ color:MUTE, fontSize:13.5, margin:"6px 0 0" }}>
-            {half
-              ? "For short bills — prints on the top half of an A4, cut along the dashed line."
-              : "Save the invoice, then download / WhatsApp / email it."}
-          </p>
-        </div>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:10, flexWrap:"wrap", marginBottom:22, position:"sticky", top:66, zIndex:9, background:"#f5f6f8", padding:"10px 0" }}>
+        
         <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
           <button className="bl-toolbar" style={btnSt.ghost} onClick={resetBilling}><Icon name="reset" size={15}/> New invoice</button>
           <button

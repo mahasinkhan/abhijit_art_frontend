@@ -170,6 +170,7 @@ export default function Inventory() {
               onEditDrawer= {it => setItemDrawer(it)}
               onExportCSV = {exportCSV}
               onDeleted   = {refresh}
+              onRenamed   = {refresh}
             />
         }
       </div>

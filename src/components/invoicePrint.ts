@@ -4,18 +4,23 @@ export type InvoicePrintData = {
   bizAddress?: string; bizPhone?: string; bizEmail?: string;
   invNo: string; invDate: string; invTime?: string;
   clientName: string; clientAddr?: string; clientPhone?: string; clientGstin?: string;
-  items: { desc: string; qty: number; rate: number }[];
+  items: { desc: string; qty: number; rate: number; size?: string; unit?: string }[];
   discType: string; discVal: number; taxPct: number;
   subtotal: number; discountAmt: number; taxAmt: number; total: number; paidAmount: number;
   notes?: string; warranty?: string;
 };
 
+const esc = (s:any)=>String(s??"").replace(/[&<>"']/g,(c:string)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]as string));
+const sizeCell = (it:{size?:string}) => it.size ? esc(it.size) : "—";
+const qtyCell  = (it:{qty:number;unit?:string}) => `${it.qty}${it.unit?` ${esc(it.unit)}`:""}`;
+const rateCell = (it:{rate:number;unit?:string}, r:string) => `₹${r}${it.unit?`/${esc(it.unit)}`:""}`;
+
 export function buildFullA4HTML(p: InvoicePrintData): string {
-  const e=(s:any)=>String(s??"").replace(/[&<>"']/g,(c:string)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":'&#39;'}[c]as string));
+  const e=esc;
   const fmtN=(n:number)=>Math.round(n).toLocaleString("en-IN");
   const taxable=p.subtotal-p.discountAmt; const cgst=p.taxAmt/2; const due=Math.max(p.total-p.paidAmount,0);
   function amtWords(n:number):string{const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];const m=Math.round(n);if(m===0)return"Zero Only";function b(x:number):string{if(x<20)return ones[x];if(x<100)return tens[Math.floor(x/10)]+(x%10?" "+ones[x%10]:"");return ones[Math.floor(x/100)]+" Hundred"+(x%100?" "+b(x%100):"");}let r="";if(m>=10000000)r+=b(Math.floor(m/10000000))+" Crore ";if(m>=100000)r+=b(Math.floor((m%10000000)/100000))+" Lakh ";if(m>=1000)r+=b(Math.floor((m%100000)/1000))+" Thousand ";r+=b(m%1000);return r.trim()+" Only";}
-  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td r">${it.qty}</td><td class="td r">₹${fmtN(it.rate)}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">₹${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
+  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td c">${sizeCell(it)}</td><td class="td r">${qtyCell(it)}</td><td class="td r">${rateCell(it,fmtN(it.rate))}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">₹${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
   const css=`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
 body{font-family:'Inter',Arial,sans-serif;font-size:8.5pt;color:#1a1a2e;background:#f0ece4;display:flex;justify-content:center;padding:8px}
@@ -98,14 +103,15 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8.5pt;color:#1a1a2e;backgrou
       <table class="tbl">
         <thead><tr>
           <th class="th c" style="width:9mm">No</th><th class="th">Items</th>
-          <th class="th r" style="width:16mm">Qty</th><th class="th r" style="width:24mm">Rate</th>
-          ${p.discountAmt>0?`<th class="th r" style="width:20mm">Disc.</th>`:""}
-          ${p.taxPct>0?`<th class="th r" style="width:18mm">Tax</th>`:""}
-          <th class="th r" style="width:26mm">Total</th>
+          <th class="th c" style="width:18mm">Size</th>
+          <th class="th r" style="width:18mm">Qty</th><th class="th r" style="width:24mm">Rate</th>
+          ${p.discountAmt>0?`<th class="th r" style="width:18mm">Disc.</th>`:""}
+          ${p.taxPct>0?`<th class="th r" style="width:16mm">Tax</th>`:""}
+          <th class="th r" style="width:24mm">Total</th>
         </tr></thead>
-        <tbody>${rows||`<tr><td colspan="7" class="td c" style="color:#aaa;padding:6mm">No items</td></tr>`}</tbody>
+        <tbody>${rows||`<tr><td colspan="8" class="td c" style="color:#aaa;padding:6mm">No items</td></tr>`}</tbody>
         <tfoot><tr class="sub-row">
-          <td class="c">Sub.</td><td><b>SUBTOTAL</b></td>
+          <td colspan="3"><b>SUBTOTAL</b></td>
           <td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td>
           <td class="r">${fmtN(p.subtotal)}</td>
           ${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}
@@ -141,11 +147,11 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8.5pt;color:#1a1a2e;backgrou
 }
 
 export function buildLandscapeA4HTML(p: InvoicePrintData): string {
-  const e=(s:any)=>String(s??"").replace(/[&<>"']/g,(c:string)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":'&#39;'}[c]as string));
+  const e=esc;
   const fmtN=(n:number)=>Math.round(n).toLocaleString("en-IN");
   const taxable=p.subtotal-p.discountAmt; const cgst=p.taxAmt/2; const due=Math.max(p.total-p.paidAmount,0);
   function amtWords(n:number):string{const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];const m=Math.round(n);if(m===0)return"Zero Only";function b(x:number):string{if(x<20)return ones[x];if(x<100)return tens[Math.floor(x/10)]+(x%10?" "+ones[x%10]:"");return ones[Math.floor(x/100)]+" Hundred"+(x%100?" "+b(x%100):"");}let r="";if(m>=10000000)r+=b(Math.floor(m/10000000))+" Crore ";if(m>=100000)r+=b(Math.floor((m%10000000)/100000))+" Lakh ";if(m>=1000)r+=b(Math.floor((m%100000)/1000))+" Thousand ";r+=b(m%1000);return r.trim()+" Only";}
-  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td r">${it.qty}</td><td class="td r">₹${fmtN(it.rate)}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
+  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td c">${sizeCell(it)}</td><td class="td r">${qtyCell(it)}</td><td class="td r">${rateCell(it,fmtN(it.rate))}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
   const css=`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
 body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background:#f0ece4;display:flex;justify-content:center;padding:6px}
@@ -231,14 +237,15 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
           <table class="tbl">
             <thead><tr>
               <th class="th c" style="width:8mm">No</th><th class="th">Items</th>
-              <th class="th r" style="width:14mm">Qty</th><th class="th r" style="width:20mm">Rate</th>
-              ${p.discountAmt>0?`<th class="th r" style="width:17mm">Disc.</th>`:""}
-              ${p.taxPct>0?`<th class="th r" style="width:16mm">Tax</th>`:""}
+              <th class="th c" style="width:16mm">Size</th>
+              <th class="th r" style="width:16mm">Qty</th><th class="th r" style="width:22mm">Rate</th>
+              ${p.discountAmt>0?`<th class="th r" style="width:16mm">Disc.</th>`:""}
+              ${p.taxPct>0?`<th class="th r" style="width:15mm">Tax</th>`:""}
               <th class="th r" style="width:22mm">Total</th>
             </tr></thead>
-            <tbody>${rows||`<tr><td colspan="7" class="td c" style="color:#aaa;padding:5mm">No items</td></tr>`}</tbody>
+            <tbody>${rows||`<tr><td colspan="8" class="td c" style="color:#aaa;padding:5mm">No items</td></tr>`}</tbody>
             <tfoot><tr class="sub-row">
-              <td class="c">Sub.</td><td><b>SUBTOTAL</b></td>
+              <td class="c">Sub.</td><td colspan="2"><b>SUBTOTAL</b></td>
               <td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td>
               <td class="r">${fmtN(p.subtotal)}</td>
               ${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}
@@ -274,11 +281,11 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 }
 
 export function buildSideBySideA4HTML(p: InvoicePrintData): string {
-  const e=(s:any)=>String(s??"").replace(/[&<>"']/g,(c:string)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":'&#39;'}[c]as string));
+  const e=esc;
   const fmtN=(n:number)=>Math.round(n).toLocaleString("en-IN");
   const taxable=p.subtotal-p.discountAmt; const cgst=p.taxAmt/2; const due=Math.max(p.total-p.paidAmount,0);
   function amtWords(n:number):string{const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];const m=Math.round(n);if(m===0)return"Zero Only";function b(x:number):string{if(x<20)return ones[x];if(x<100)return tens[Math.floor(x/10)]+(x%10?" "+ones[x%10]:"");return ones[Math.floor(x/100)]+" Hundred"+(x%100?" "+b(x%100):"");}let r="";if(m>=10000000)r+=b(Math.floor(m/10000000))+" Crore ";if(m>=100000)r+=b(Math.floor((m%10000000)/100000))+" Lakh ";if(m>=1000)r+=b(Math.floor((m%100000)/1000))+" Thousand ";r+=b(m%1000);return r.trim()+" Only";}
-  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td r">${it.qty}</td><td class="td r">₹${fmtN(it.rate)}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
+  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td c">${sizeCell(it)}</td><td class="td r">${qtyCell(it)}</td><td class="td r">${rateCell(it,fmtN(it.rate))}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
   const bill = `
     <div class="bill">
       <div class="hdr">
@@ -307,15 +314,16 @@ export function buildSideBySideA4HTML(p: InvoicePrintData): string {
         <thead><tr>
           <th class="th c" style="width:6mm">No</th>
           <th class="th">Items</th>
-          <th class="th r" style="width:9mm">Qty</th>
-          <th class="th r" style="width:14mm">Rate</th>
-          ${p.discountAmt>0?`<th class="th r" style="width:12mm">Disc.</th>`:""}
-          ${p.taxPct>0?`<th class="th r" style="width:11mm">Tax</th>`:""}
-          <th class="th r" style="width:15mm">Total</th>
+          <th class="th c" style="width:13mm">Size</th>
+          <th class="th r" style="width:12mm">Qty</th>
+          <th class="th r" style="width:15mm">Rate</th>
+          ${p.discountAmt>0?`<th class="th r" style="width:11mm">Disc.</th>`:""}
+          ${p.taxPct>0?`<th class="th r" style="width:10mm">Tax</th>`:""}
+          <th class="th r" style="width:14mm">Total</th>
         </tr></thead>
-        <tbody>${rows||`<tr><td colspan="6" class="td c" style="color:#aaa">No items</td></tr>`}</tbody>
+        <tbody>${rows||`<tr><td colspan="8" class="td c" style="color:#aaa">No items</td></tr>`}</tbody>
         <tfoot><tr class="sub-row">
-          <td class="c">Sub.</td><td><b>SUBTOTAL</b></td>
+          <td class="c">Sub.</td><td colspan="2"><b>SUBTOTAL</b></td>
           <td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td>
           <td class="r">₹${fmtN(p.subtotal)}</td>
           ${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}
@@ -411,17 +419,12 @@ body{font-family:'Inter',Arial,sans-serif;font-size:7.5pt;color:#1a1a2e;backgrou
 <script>setTimeout(()=>window.print(),420)</script></body></html>`;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   buildSingleHalfA4HTML — Billing 50%: ONE bill on a fixed
-   6 inch × 8 inch page (portrait, upright). No rotation, no A4,
-   no cut line. Laser printer, custom 6×8 paper.
-   ═══════════════════════════════════════════════════════════ */
 export function buildSingleHalfA4HTML(p: InvoicePrintData): string {
-  const e=(s:any)=>String(s??"").replace(/[&<>"']/g,(c:string)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":'&#39;'}[c]as string));
+  const e=esc;
   const fmtN=(n:number)=>Math.round(n).toLocaleString("en-IN");
   const taxable=p.subtotal-p.discountAmt; const cgst=p.taxAmt/2; const due=Math.max(p.total-p.paidAmount,0);
   function amtWords(n:number):string{const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];const m=Math.round(n);if(m===0)return"Zero Only";function b(x:number):string{if(x<20)return ones[x];if(x<100)return tens[Math.floor(x/10)]+(x%10?" "+ones[x%10]:"");return ones[Math.floor(x/100)]+" Hundred"+(x%100?" "+b(x%100):"");}let r="";if(m>=10000000)r+=b(Math.floor(m/10000000))+" Crore ";if(m>=100000)r+=b(Math.floor((m%10000000)/100000))+" Lakh ";if(m>=1000)r+=b(Math.floor((m%100000)/1000))+" Thousand ";r+=b(m%1000);return r.trim()+" Only";}
-  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td r">${it.qty}</td><td class="td r">₹${fmtN(it.rate)}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
+  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td c">${sizeCell(it)}</td><td class="td r">${qtyCell(it)}</td><td class="td r">${rateCell(it,fmtN(it.rate))}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
   const css=`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}
 html,body{width:6in;height:8in;margin:0;padding:0;overflow:hidden}
@@ -445,11 +448,11 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 .bt-line{font-size:6pt;color:#555}
 .tblwrap{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .tbl{width:100%;border-collapse:collapse}
-.th{background:#c56a3a;color:#fff;padding:1.8mm 2.5mm;font-size:6pt;font-weight:700;text-align:left}
-.td{padding:1.8mm 2.5mm;border-bottom:.5px solid #ede8dc;font-size:7pt;vertical-align:top}
+.th{background:#c56a3a;color:#fff;padding:1.8mm 2mm;font-size:5.6pt;font-weight:700;text-align:left}
+.td{padding:1.8mm 2mm;border-bottom:.5px solid #ede8dc;font-size:6.6pt;vertical-align:top}
 .td small{font-size:4.5pt;color:#888;display:block}
 .tbl tbody tr:nth-child(even) td{background:#fdfaf5}
-.sub-row td{background:#f5f0e8;font-weight:800;font-size:7.5pt;padding:1.8mm 2.5mm;border-top:1.5px solid #c8a84b}
+.sub-row td{background:#f5f0e8;font-weight:800;font-size:7pt;padding:1.8mm 2mm;border-top:1.5px solid #c8a84b}
 .r{text-align:right}.c{text-align:center}.bold{font-weight:700}
 .bot{display:flex;border-top:1px solid #e8e0cc;flex-shrink:0}
 .bot-l{flex:1.15;padding:2.5mm 3.5mm;display:flex;flex-direction:column;gap:1.5mm;border-right:1px solid #e8e0cc}
@@ -500,15 +503,16 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
     <div class="tblwrap">
       <table class="tbl">
         <thead><tr>
-          <th class="th c" style="width:8mm">No</th><th class="th">Items</th>
-          <th class="th r" style="width:11mm">Qty</th><th class="th r" style="width:18mm">Rate</th>
-          ${p.discountAmt>0?`<th class="th r" style="width:15mm">Disc.</th>`:""}
-          ${p.taxPct>0?`<th class="th r" style="width:13mm">Tax</th>`:""}
-          <th class="th r" style="width:20mm">Total</th>
+          <th class="th c" style="width:7mm">No</th><th class="th">Items</th>
+          <th class="th c" style="width:14mm">Size</th>
+          <th class="th r" style="width:13mm">Qty</th><th class="th r" style="width:17mm">Rate</th>
+          ${p.discountAmt>0?`<th class="th r" style="width:13mm">Disc.</th>`:""}
+          ${p.taxPct>0?`<th class="th r" style="width:11mm">Tax</th>`:""}
+          <th class="th r" style="width:18mm">Total</th>
         </tr></thead>
-        <tbody>${rows||`<tr><td colspan="7" class="td c" style="color:#aaa;padding:6mm">No items</td></tr>`}</tbody>
+        <tbody>${rows||`<tr><td colspan="8" class="td c" style="color:#aaa;padding:6mm">No items</td></tr>`}</tbody>
         <tfoot><tr class="sub-row">
-          <td class="c">Sub.</td><td><b>SUBTOTAL</b></td>
+          <td class="c">Sub.</td><td colspan="2"><b>SUBTOTAL</b></td>
           <td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td>
           <td class="r">${fmtN(p.subtotal)}</td>
           ${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}
@@ -541,11 +545,11 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 }
 
 export function buildTwoUpA4HTML(p: InvoicePrintData): string {
-  const e=(s:any)=>String(s??"").replace(/[&<>"']/g,(c:string)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":'&#39;'}[c]as string));
+  const e=esc;
   const fmtN=(n:number)=>Math.round(n).toLocaleString("en-IN");
   const taxable=p.subtotal-p.discountAmt; const cgst=p.taxAmt/2; const due=Math.max(p.total-p.paidAmount,0);
   function amtWords(n:number):string{const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];const m=Math.round(n);if(m===0)return"Zero Only";function b(x:number):string{if(x<20)return ones[x];if(x<100)return tens[Math.floor(x/10)]+(x%10?" "+ones[x%10]:"");return ones[Math.floor(x/100)]+" Hundred"+(x%100?" "+b(x%100):"");}let r="";if(m>=10000000)r+=b(Math.floor(m/10000000))+" Crore ";if(m>=100000)r+=b(Math.floor((m%10000000)/100000))+" Lakh ";if(m>=1000)r+=b(Math.floor((m%100000)/1000))+" Thousand ";r+=b(m%1000);return r.trim()+" Only";}
-  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td r">${it.qty}</td><td class="td r">₹${fmtN(it.rate)}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
+  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td c">${sizeCell(it)}</td><td class="td r">${qtyCell(it)}</td><td class="td r">${rateCell(it,fmtN(it.rate))}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
   const block = `
     <div class="inv">
       <div class="hdr">
@@ -570,14 +574,15 @@ export function buildTwoUpA4HTML(p: InvoicePrintData): string {
       <table class="tbl">
         <thead><tr>
           <th class="th c" style="width:6mm">No</th><th class="th">Items</th>
-          <th class="th r" style="width:9mm">Qty</th><th class="th r" style="width:15mm">Rate</th>
-          ${p.discountAmt>0?`<th class="th r" style="width:13mm">Disc.</th>`:""}
-          ${p.taxPct>0?`<th class="th r" style="width:12mm">Tax</th>`:""}
-          <th class="th r" style="width:16mm">Total</th>
+          <th class="th c" style="width:13mm">Size</th>
+          <th class="th r" style="width:12mm">Qty</th><th class="th r" style="width:15mm">Rate</th>
+          ${p.discountAmt>0?`<th class="th r" style="width:11mm">Disc.</th>`:""}
+          ${p.taxPct>0?`<th class="th r" style="width:10mm">Tax</th>`:""}
+          <th class="th r" style="width:14mm">Total</th>
         </tr></thead>
-        <tbody>${rows||`<tr><td colspan="6" class="td c" style="color:#aaa">No items</td></tr>`}</tbody>
+        <tbody>${rows||`<tr><td colspan="8" class="td c" style="color:#aaa">No items</td></tr>`}</tbody>
         <tfoot><tr class="sub-row">
-          <td class="c">Sub.</td><td><b>SUBTOTAL</b></td>
+          <td class="c">Sub.</td><td colspan="2"><b>SUBTOTAL</b></td>
           <td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td>
           <td class="r">${fmtN(p.subtotal)}</td>
           ${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}
@@ -662,13 +667,13 @@ export function buildTwoUpA4HTML(p: InvoicePrintData): string {
 }
 
 export function buildInvoicePopupHTML(p: InvoicePrintData): string {
-  const e=(s:any)=>String(s??"").replace(/[&<>"']/g,(c:string)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":'&#39;'}[c]as string));
+  const e=esc;
   const fmtN=(n:number)=>Math.round(n).toLocaleString("en-IN");
   const taxable=p.subtotal-p.discountAmt; const cgst=p.taxAmt/2; const due=Math.max(p.total-p.paidAmount,0);
   function amtWords(n:number):string{const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];const m=Math.round(n);if(m===0)return"Zero Only";function b(x:number):string{if(x<20)return ones[x];if(x<100)return tens[Math.floor(x/10)]+(x%10?" "+ones[x%10]:"");return ones[Math.floor(x/100)]+" Hundred"+(x%100?" "+b(x%100):"");}let r="";if(m>=10000000)r+=b(Math.floor(m/10000000))+" Crore ";if(m>=100000)r+=b(Math.floor((m%10000000)/100000))+" Lakh ";if(m>=1000)r+=b(Math.floor((m%100000)/1000))+" Thousand ";r+=b(m%1000);return r.trim()+" Only";}
-  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td r">${it.qty}</td><td class="td r">₹${fmtN(it.rate)}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
+  const rows=p.items.map((it,i)=>{const lt=it.qty*it.rate;const ld=p.discountAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.discountAmt:0;const lx=p.taxAmt>0&&p.subtotal>0?(lt/p.subtotal)*p.taxAmt:0;return `<tr><td class="td c">${i+1}.</td><td class="td">${e(it.desc)}</td><td class="td c">${sizeCell(it)}</td><td class="td r">${qtyCell(it)}</td><td class="td r">${rateCell(it,fmtN(it.rate))}</td>${p.discountAmt>0?`<td class="td r">₹${fmtN(ld)}<br/><small>${p.discType==="percent"?p.discVal+"%":""}</small></td>`:""}${p.taxPct>0?`<td class="td r">${fmtN(lx)}<br/><small>${p.taxPct}%</small></td>`:""}<td class="td r bold">₹${fmtN(lt-ld+lx)}</td></tr>`;}).join("");
   const css=`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background:#f0ece4;display:flex;justify-content:center;padding:8px}.page{width:148mm;min-height:210mm;background:#fff;box-shadow:0 4px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;border:1px solid #e0d8c8}.hdr{display:flex;align-items:center;gap:4mm;padding:4mm 5mm 3mm;border-bottom:2.5px solid #c8a84b;background:linear-gradient(135deg,#fdfaf3 0%,#fff 60%)}.hdr-logo{width:26mm;height:26mm;object-fit:contain;flex-shrink:0}.hdr-biz{flex:1}.hdr-biz-name{font-size:13pt;font-weight:900;color:#1a2a6e;letter-spacing:-.3px;line-height:1.1}.hdr-biz-pan{font-size:6.5pt;color:#444;font-weight:600;margin-top:1mm}.hdr-biz-addr{font-size:5.5pt;color:#666;margin-top:1mm}.hdr-biz-sub{font-size:5.5pt;color:#666;margin-top:.5mm;display:flex;flex-wrap:wrap;gap:3mm}.hdr-inv{text-align:right;flex-shrink:0;align-self:center}.hdr-inv-row{display:flex;gap:5mm;justify-content:flex-end}.hdr-inv-col{text-align:right}.hdr-inv-lbl{font-size:6pt;font-weight:700;color:#8a8f9a;text-transform:uppercase;letter-spacing:.5px}.hdr-inv-val{font-size:8.5pt;font-weight:800;color:#1a2a6e;margin-top:.5mm}.parties{display:flex;border-bottom:1px solid #e8e0cc;background:#fffdf7}.party{flex:1;padding:2.5mm 4mm;border-right:1px solid #e8e0cc}.party:last-child{border-right:none}.party-lbl{font-size:6.5pt;font-weight:800;color:#1a2a6e;text-transform:uppercase;letter-spacing:.8px;margin-bottom:1.5mm;padding-bottom:1mm;border-bottom:1.5px solid #c8a84b}.party-name{font-size:8pt;font-weight:700;color:#1a1a2e}.party-line{font-size:6pt;color:#555;margin-top:.5mm;line-height:1.4}.tbl{width:100%;border-collapse:collapse}.th{background:#1a2a6e;color:#fff;padding:2mm 2.5mm;font-size:6pt;font-weight:700;text-align:left}.td{padding:2mm 2.5mm;border-bottom:.5px solid #ede8dc;font-size:7pt;vertical-align:top}.td small{font-size:5pt;color:#888;display:block}.subtotal-row td{background:#f5f0e8;font-weight:800;font-size:7.5pt;padding:2mm 2.5mm;border-top:1.5px solid #c8a84b}.r{text-align:right}.c{text-align:center}.bold{font-weight:700}.bot{display:flex;flex:1;border-top:1px solid #e8e0cc;min-height:0}.bot-left{flex:1.1;padding:3mm 4mm;display:flex;flex-direction:column;gap:2mm;border-right:1px solid #e8e0cc}.bot-right{flex:1;padding:3mm 4mm;display:flex;flex-direction:column;gap:1mm}.terms-lbl{font-size:6.5pt;font-weight:800;color:#1a2a6e;margin-bottom:.5mm}.terms-txt{font-size:5.5pt;color:#555;line-height:1.5}.qr-row{display:flex;gap:3mm;align-items:flex-end;margin-top:auto}.qr-wrap{display:flex;flex-direction:column;align-items:center;gap:1mm}.qr-img{width:22mm;height:22mm;object-fit:contain}.qr-lbl{font-size:5.5pt;font-weight:700;color:#1a2a6e;text-align:center}.sig-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;text-align:center;padding-bottom:1mm}.sig-line{width:22mm;border-bottom:.5px solid #888;margin:1mm auto .5mm}.sig-lbl{font-size:5pt;color:#555}.tot-row{display:flex;justify-content:space-between;font-size:7pt;padding:.8mm 0;border-bottom:.5px solid #ede8dc}.tot-lbl{color:#555}.tot-val{font-weight:700;font-variant-numeric:tabular-nums}.grand-box{background:#1a2a6e;color:#fff;padding:2.5mm 3mm;margin-top:1.5mm}.grand-row{display:flex;justify-content:space-between;align-items:baseline}.grand-lbl{font-size:8pt;font-weight:700}.grand-val{font-size:11pt;font-weight:900}.due-row{display:flex;justify-content:space-between;font-size:7pt;color:#ffccaa;margin-top:.5mm}.words-box{border:.5px solid #e0d8c8;padding:1.5mm 2mm;margin-top:1.5mm;background:#fffdf7}.words-lbl{font-size:5.5pt;font-weight:700;color:#1a2a6e;margin-bottom:.5mm}.words-txt{font-size:6pt;color:#333;font-weight:600}@media print{@page{size:A5 portrait;margin:0}body{background:#fff;padding:0}.page{box-shadow:none;border:none;width:100%;min-height:100vh}}`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${e(p.invNo)}</title><style>${css}</style></head><body><div class="page"><div class="hdr">${p.logoSrc?`<img src="${e(p.logoSrc)}" alt="${e(p.bizName)}" class="hdr-logo" onerror="this.style.display='none'"/>`:`<div style="width:26mm;height:26mm;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#f0e8d0;border:1px solid #c8a84b;border-radius:50%;font-size:8pt;font-weight:800;color:#8a6a1c">${e(p.bizName.slice(0,2))}</div>`}<div class="hdr-biz"><div class="hdr-biz-name">${e(p.bizName)}</div>${p.bizPan?`<div class="hdr-biz-pan">Pan No &nbsp;<b>${e(p.bizPan)}</b></div>`:""}${p.bizAddress?`<div class="hdr-biz-addr">📍 ${e(p.bizAddress)}</div>`:""}<div class="hdr-biz-sub">${p.bizPhone?`<span>📞 ${e(p.bizPhone)}</span>`:""}${p.bizEmail?`<span>✉ ${e(p.bizEmail)}</span>`:""}${p.bizGstin?`<span>GSTIN: ${e(p.bizGstin)}</span>`:""}</div></div><div class="hdr-inv"><div class="hdr-inv-row"><div class="hdr-inv-col"><div class="hdr-inv-lbl">Invoice Date</div><div class="hdr-inv-val">${e(p.invDate)}</div></div><div class="hdr-inv-col"><div class="hdr-inv-lbl">Invoice No</div><div class="hdr-inv-val">#${e(p.invNo)}</div></div></div></div></div><div class="parties"><div class="party"><div class="party-lbl">Bill To</div><div class="party-name">${e(p.clientName)||"—"}</div>${p.clientAddr?`<div class="party-line">${e(p.clientAddr)}</div>`:""}${p.clientPhone?`<div class="party-line">📞 ${e(p.clientPhone)}</div>`:""}${p.clientGstin?`<div class="party-line">GSTIN: ${e(p.clientGstin)}</div>`:""}</div></div><table class="tbl"><thead><tr><th class="th c" style="width:7mm">No</th><th class="th">Items</th><th class="th r" style="width:10mm">Qty.</th><th class="th r" style="width:16mm">Rate</th>${p.discountAmt>0?`<th class="th r" style="width:14mm">Disc.</th>`:""}${p.taxPct>0?`<th class="th r" style="width:13mm">Tax</th>`:""}<th class="th r" style="width:17mm">Total</th></tr></thead><tbody>${rows||`<tr><td colspan="6" class="td c" style="color:#aaa;padding:4mm">No items</td></tr>`}</tbody><tfoot><tr class="subtotal-row"><td class="c">Sub.</td><td><b>SUBTOTAL</b></td><td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td><td class="r">${fmtN(p.subtotal)}</td>${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}${p.taxPct>0?`<td class="r">${fmtN(p.taxAmt)}</td>`:""}<td class="r">₹${fmtN(taxable)}</td></tr></tfoot></table><div class="bot"><div class="bot-left">${p.notes?`<div><div class="terms-lbl">Terms &amp; Conditions</div><div class="terms-txt">${e(p.notes)}</div></div>`:""}${p.warranty?`<div><div class="terms-lbl">Warranty</div><div class="terms-txt">${e(p.warranty)}</div></div>`:""}<div class="qr-row">${p.qrSrc?`<div class="qr-wrap"><div class="qr-lbl">Payment QR Code</div><img src="${e(p.qrSrc)}" alt="UPI QR" class="qr-img"/></div>`:""}<div class="sig-wrap"><img src="/images/Signature.png" alt="Signature" style="height:10mm;width:auto;display:block;margin:auto auto 1mm" onerror="this.style.display='none'"/><div class="sig-line"></div><div class="sig-lbl">Authorised Signatory</div></div></div></div><div class="bot-right"><div class="tot-row"><span class="tot-lbl">Taxable Amount</span><span class="tot-val">₹${taxable.toFixed(2)}</span></div>${cgst>0?`<div class="tot-row"><span class="tot-lbl">CGST @${p.taxPct/2}%</span><span class="tot-val">${cgst.toFixed(2)}</span></div>`:""}${cgst>0?`<div class="tot-row"><span class="tot-lbl">SGST @${p.taxPct/2}%</span><span class="tot-val">${cgst.toFixed(2)}</span></div>`:""}${p.paidAmount>0.005?`<div class="tot-row"><span class="tot-lbl">Amount Received</span><span class="tot-val" style="color:#15803d">−₹${p.paidAmount.toFixed(2)}</span></div>`:""}<div class="grand-box"><div class="grand-row"><span class="grand-lbl">Total Amount</span><span class="grand-val">₹${p.total.toFixed(2)}</span></div>${due>0.005?`<div class="due-row"><span>Balance Due</span><span>₹${due.toFixed(2)}</span></div>`:""}</div><div class="words-box"><div class="words-lbl">Total Amount (in words)</div><div class="words-txt">${amtWords(p.total)}</div></div></div></div></div><script>setTimeout(()=>window.print(),420)</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${e(p.invNo)}</title><style>${css}</style></head><body><div class="page"><div class="hdr">${p.logoSrc?`<img src="${e(p.logoSrc)}" alt="${e(p.bizName)}" class="hdr-logo" onerror="this.style.display='none'"/>`:`<div style="width:26mm;height:26mm;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#f0e8d0;border:1px solid #c8a84b;border-radius:50%;font-size:8pt;font-weight:800;color:#8a6a1c">${e(p.bizName.slice(0,2))}</div>`}<div class="hdr-biz"><div class="hdr-biz-name">${e(p.bizName)}</div>${p.bizPan?`<div class="hdr-biz-pan">Pan No &nbsp;<b>${e(p.bizPan)}</b></div>`:""}${p.bizAddress?`<div class="hdr-biz-addr">📍 ${e(p.bizAddress)}</div>`:""}<div class="hdr-biz-sub">${p.bizPhone?`<span>📞 ${e(p.bizPhone)}</span>`:""}${p.bizEmail?`<span>✉ ${e(p.bizEmail)}</span>`:""}${p.bizGstin?`<span>GSTIN: ${e(p.bizGstin)}</span>`:""}</div></div><div class="hdr-inv"><div class="hdr-inv-row"><div class="hdr-inv-col"><div class="hdr-inv-lbl">Invoice Date</div><div class="hdr-inv-val">${e(p.invDate)}</div></div><div class="hdr-inv-col"><div class="hdr-inv-lbl">Invoice No</div><div class="hdr-inv-val">#${e(p.invNo)}</div></div></div></div></div><div class="parties"><div class="party"><div class="party-lbl">Bill To</div><div class="party-name">${e(p.clientName)||"—"}</div>${p.clientAddr?`<div class="party-line">${e(p.clientAddr)}</div>`:""}${p.clientPhone?`<div class="party-line">📞 ${e(p.clientPhone)}</div>`:""}${p.clientGstin?`<div class="party-line">GSTIN: ${e(p.clientGstin)}</div>`:""}</div></div><table class="tbl"><thead><tr><th class="th c" style="width:7mm">No</th><th class="th">Items</th><th class="th c" style="width:14mm">Size</th><th class="th r" style="width:13mm">Qty.</th><th class="th r" style="width:16mm">Rate</th>${p.discountAmt>0?`<th class="th r" style="width:13mm">Disc.</th>`:""}${p.taxPct>0?`<th class="th r" style="width:11mm">Tax</th>`:""}<th class="th r" style="width:16mm">Total</th></tr></thead><tbody>${rows||`<tr><td colspan="8" class="td c" style="color:#aaa;padding:4mm">No items</td></tr>`}</tbody><tfoot><tr class="subtotal-row"><td class="c">Sub.</td><td colspan="2"><b>SUBTOTAL</b></td><td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td><td class="r">${fmtN(p.subtotal)}</td>${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}${p.taxPct>0?`<td class="r">${fmtN(p.taxAmt)}</td>`:""}<td class="r">₹${fmtN(taxable)}</td></tr></tfoot></table><div class="bot"><div class="bot-left">${p.notes?`<div><div class="terms-lbl">Terms &amp; Conditions</div><div class="terms-txt">${e(p.notes)}</div></div>`:""}${p.warranty?`<div><div class="terms-lbl">Warranty</div><div class="terms-txt">${e(p.warranty)}</div></div>`:""}<div class="qr-row">${p.qrSrc?`<div class="qr-wrap"><div class="qr-lbl">Payment QR Code</div><img src="${e(p.qrSrc)}" alt="UPI QR" class="qr-img"/></div>`:""}<div class="sig-wrap"><img src="/images/Signature.png" alt="Signature" style="height:10mm;width:auto;display:block;margin:auto auto 1mm" onerror="this.style.display='none'"/><div class="sig-line"></div><div class="sig-lbl">Authorised Signatory</div></div></div></div><div class="bot-right"><div class="tot-row"><span class="tot-lbl">Taxable Amount</span><span class="tot-val">₹${taxable.toFixed(2)}</span></div>${cgst>0?`<div class="tot-row"><span class="tot-lbl">CGST @${p.taxPct/2}%</span><span class="tot-val">${cgst.toFixed(2)}</span></div>`:""}${cgst>0?`<div class="tot-row"><span class="tot-lbl">SGST @${p.taxPct/2}%</span><span class="tot-val">${cgst.toFixed(2)}</span></div>`:""}${p.paidAmount>0.005?`<div class="tot-row"><span class="tot-lbl">Amount Received</span><span class="tot-val" style="color:#15803d">−₹${p.paidAmount.toFixed(2)}</span></div>`:""}<div class="grand-box"><div class="grand-row"><span class="grand-lbl">Total Amount</span><span class="grand-val">₹${p.total.toFixed(2)}</span></div>${due>0.005?`<div class="due-row"><span>Balance Due</span><span>₹${due.toFixed(2)}</span></div>`:""}</div><div class="words-box"><div class="words-lbl">Total Amount (in words)</div><div class="words-txt">${amtWords(p.total)}</div></div></div></div></div><script>setTimeout(()=>window.print(),420)</script></body></html>`;
 }
 
 export function amtWordsPreview(n: number): string {

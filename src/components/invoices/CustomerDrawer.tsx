@@ -1,6 +1,6 @@
 // src/components/invoices/CustomerDrawer.tsx
 import { useState } from "react";
-import { CustomerRow, Invoice, INK, MUTE, FAINT, TERRA, GREEN, LINE, SANS, num, round2, rupee as makeRupee, fmt, fmtTime, effectivePaid, STATUS_META, sharedSt } from "./types";
+import { CustomerRow, Invoice, INK, MUTE, TERRA, GREEN, LINE, SANS, num, round2, rupee as makeRupee, fmt, fmtTime, effectivePaid, STATUS_META, sharedSt } from "./types";
 import Icon from "./Icon";
 
 const rupee = makeRupee;
@@ -10,24 +10,35 @@ interface Props {
   onClose:      () => void;
   onPay:        (inv: Invoice) => void;
   onPrint:      (inv: Invoice) => void;
+  onEdit:       (inv: Invoice) => void;
+  onPreview:    (inv: Invoice) => void;
   onStatement:  (key: string) => void;
 }
 
-export default function CustomerDrawer({ row, onClose, onPay, onPrint, onStatement }: Props) {
-  const [q, setQ]           = useState("");
+const withFormat = (inv: Invoice, format: "full" | "half"): Invoice => ({
+  ...inv,
+  business: { ...((inv.business || {}) as any), format },
+});
+
+const savedFormat = (inv: Invoice): "half" | "full" =>
+  ((inv.business || {}) as any).format === "full" ? "full" : "half";
+
+export default function CustomerDrawer({ row, onClose, onPay, onPrint, onEdit, onPreview, onStatement }: Props) {
+  const [q, setQ]               = useState("");
   const [paidOpen, setPaidOpen] = useState(false);
 
   const filtered = q.trim()
     ? row.invoices.filter(inv => inv.invoiceNo.toLowerCase().includes(q.toLowerCase()))
     : row.invoices;
 
-  const isPaid   = (inv: Invoice) => inv.status === "paid" || round2(num(inv.total) - effectivePaid(inv)) <= 0.005;
-  const paidInvs = filtered.filter(isPaid);
+  const isPaid     = (inv: Invoice) => inv.status === "paid" || round2(num(inv.total) - effectivePaid(inv)) <= 0.005;
+  const paidInvs   = filtered.filter(isPaid);
   const activeInvs = filtered.filter(inv => !isPaid(inv));
 
   return (
     <div style={sharedSt.backdrop} onClick={onClose}>
       <div data-modal-scroll style={st.drawer} onClick={e => e.stopPropagation()}>
+
         {/* Header */}
         <div style={st.head}>
           <div>
@@ -45,8 +56,8 @@ export default function CustomerDrawer({ row, onClose, onPay, onPrint, onStateme
         {/* Stats */}
         <div style={st.stats}>
           {[
-            { label:"Total Billed", val:rupee(row.billed), color:INK  },
-            { label:"Paid",         val:rupee(row.paid),   color:GREEN },
+            { label:"Total Billed", val:rupee(row.billed), color:INK   },
+            { label:"Paid",         val:rupee(row.paid),   color:GREEN  },
             { label:"Balance Due",  val:row.due>0?rupee(row.due):"✓ Cleared", color:row.due>0?TERRA:GREEN },
           ].map(s => (
             <div key={s.label} style={st.stat}>
@@ -61,7 +72,7 @@ export default function CustomerDrawer({ row, onClose, onPay, onPrint, onStateme
           <Icon name="csv" size={15}/> View Invoice &amp; Payment Statement
         </button>
 
-        {/* Outstanding invoices count */}
+        {/* Outstanding count */}
         <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:0.6, textTransform:"uppercase", color:"#9ca3af", marginBottom:8 }}>
           {activeInvs.length}{q ? ` of ${row.invoices.length}` : ""} outstanding invoice{activeInvs.length!==1?"s":""}
         </div>
@@ -70,10 +81,18 @@ export default function CustomerDrawer({ row, onClose, onPay, onPrint, onStateme
         {paidInvs.length > 0 && (
           <div style={st.paidSection}>
             <button style={st.paidHead} onClick={() => setPaidOpen(v => !v)}>
-              <span style={{ display:"inline-flex", alignItems:"center", gap:7 }}><Icon name="lock" size={13}/> Paid &amp; locked · {paidInvs.length}</span>
+              <span style={{ display:"inline-flex", alignItems:"center", gap:7 }}>
+                <Icon name="lock" size={13}/> Paid &amp; locked · {paidInvs.length}
+              </span>
               <span style={{ fontSize:16, transform:paidOpen?"rotate(90deg)":"none", transition:"transform .15s" }}>›</span>
             </button>
-            {paidOpen && <div style={st.paidList}>{paidInvs.map(inv => <PaidCard key={inv.id} inv={inv} onPrint={onPrint}/>)}</div>}
+            {paidOpen && (
+              <div style={st.paidList}>
+                {paidInvs.map(inv => (
+                  <PaidCard key={inv.id} inv={inv} onPrint={onPrint} onPreview={onPreview}/>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -83,7 +102,9 @@ export default function CustomerDrawer({ row, onClose, onPay, onPrint, onStateme
             ? <div style={{ padding:"18px", textAlign:"center", color:MUTE, fontSize:13 }}>No invoices match "{q}".</div>
             : activeInvs.length === 0
               ? <div style={{ padding:"18px", textAlign:"center", color:GREEN, fontSize:13, fontWeight:600 }}>✓ All invoices are fully paid.</div>
-              : activeInvs.map(inv => <ActiveCard key={inv.id} inv={inv} onPay={onPay} onPrint={onPrint}/>)
+              : activeInvs.map(inv => (
+                  <ActiveCard key={inv.id} inv={inv} onPay={onPay} onPrint={onPrint} onEdit={onEdit} onPreview={onPreview}/>
+                ))
           }
         </div>
       </div>
@@ -91,45 +112,117 @@ export default function CustomerDrawer({ row, onClose, onPay, onPrint, onStateme
   );
 }
 
-function ActiveCard({ inv, onPay, onPrint }: { inv: Invoice; onPay:(i:Invoice)=>void; onPrint:(i:Invoice)=>void }) {
+// ── Format badge ──────────────────────────────────────────────────────────
+function FormatBadge({ format }: { format: "half" | "full" }) {
+  return (
+    <span style={{
+      fontSize:9, fontWeight:800, padding:"2px 6px",
+      textTransform:"uppercase", letterSpacing:0.5,
+      background: format === "half" ? "#fff3e0" : "#e8f0fe",
+      color:       format === "half" ? "#b45309"  : "#1a56db",
+      border:      format === "half" ? "1px solid #fcd34d" : "1px solid #93c5fd",
+    }}>
+      {format === "half" ? "Half (6×8)" : "Full (A4)"}
+    </span>
+  );
+}
+
+// ── Print button (uses saved format automatically) ────────────────────────
+function PrintBtn({ inv, onPrint }: { inv: Invoice; onPrint: (i:Invoice) => void }) {
+  const format = savedFormat(inv);
+  return (
+    <button
+      className="ivh-icon"
+      style={st.actionBtn}
+      onClick={() => onPrint(withFormat(inv, format))}
+      title={`Print ${format === "half" ? "Half (6×8)" : "Full (A4)"}`}
+    >
+      <Icon name="download" size={14}/>
+      <span style={{ fontSize:11.5, fontWeight:600 }}>Print</span>
+    </button>
+  );
+}
+
+// ── Active card ───────────────────────────────────────────────────────────
+function ActiveCard({
+  inv, onPay, onPrint, onEdit, onPreview,
+}: {
+  inv:       Invoice;
+  onPay:     (i:Invoice) => void;
+  onPrint:   (i:Invoice) => void;
+  onEdit:    (i:Invoice) => void;
+  onPreview: (i:Invoice) => void;
+}) {
   const m     = STATUS_META[inv.status];
   const total = num(inv.total);
   const paid  = effectivePaid(inv);
   const due   = round2(Math.max(total - paid, 0));
+
   return (
     <div style={st.card}>
       <div style={st.cardTopRow}>
-        <button className="ivh-nolink" style={st.invNo} onClick={() => onPrint(inv)}>{inv.invoiceNo}</button>
+        <button className="ivh-nolink" style={st.invNo} onClick={() => onPreview(inv)}>
+          {inv.invoiceNo}
+        </button>
         <span style={{ ...st.badge, background:m.bg, color:m.fg }}>{m.label}</span>
+        <FormatBadge format={savedFormat(inv)}/>
         <div style={{ marginLeft:"auto", textAlign:"right" }}>
           <div style={{ fontSize:14, fontWeight:800, color:INK, fontVariantNumeric:"tabular-nums" }}>{rupee(total)}</div>
           <div style={{ fontSize:11, color:due>0?TERRA:GREEN, fontWeight:700 }}>{due>0?`Due ${rupee(due)}`:"Paid"}</div>
         </div>
       </div>
-      <div style={st.cardMeta}>{fmt(inv.date)} · {fmtTime(inv.createdAt)} — {(inv.items||[]).map(it=>`${it.qty}× ${it.desc}`).join(", ")||"—"}</div>
+      <div style={st.cardMeta}>
+        {fmt(inv.date)} · {fmtTime(inv.createdAt)} — {(inv.items||[]).map(it=>`${it.qty}× ${it.desc}`).join(", ")||"—"}
+      </div>
       <div style={st.cardActions}>
-        <button className="ivh-icon" style={st.actionBtn} onClick={() => onPay(inv)} disabled={inv.status==="cancelled"}><Icon name="banknote" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Payment</span></button>
-        <button className="ivh-icon" style={st.actionBtn} onClick={() => onPrint(inv)}><Icon name="download" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Print</span></button>
+        <button className="ivh-icon" style={st.actionBtn} onClick={() => onPay(inv)} disabled={inv.status==="cancelled"}>
+          <Icon name="banknote" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Payment</span>
+        </button>
+        <button className="ivh-icon" style={st.actionBtn} onClick={() => onEdit(inv)} disabled={inv.status==="cancelled"}>
+          <Icon name="edit" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Edit</span>
+        </button>
+        <button className="ivh-icon" style={st.actionBtn} onClick={() => onPreview(inv)}>
+          <Icon name="search" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Preview</span>
+        </button>
+        <PrintBtn inv={inv} onPrint={onPrint}/>
       </div>
     </div>
   );
 }
 
-function PaidCard({ inv, onPrint }: { inv: Invoice; onPrint:(i:Invoice)=>void }) {
+// ── Paid card ─────────────────────────────────────────────────────────────
+function PaidCard({
+  inv, onPrint, onPreview,
+}: {
+  inv:       Invoice;
+  onPrint:   (i:Invoice) => void;
+  onPreview: (i:Invoice) => void;
+}) {
   const total = num(inv.total);
+
   return (
     <div style={{ ...st.card, background:"#f6fbf7", borderColor:"#cfe8d8" }}>
       <div style={st.cardTopRow}>
-        <button className="ivh-nolink" style={st.invNo} onClick={() => onPrint(inv)}>{inv.invoiceNo}</button>
-        <span style={{ ...st.badge, background:"#eafaf0", color:GREEN, display:"inline-flex", alignItems:"center", gap:3 }}><Icon name="lock" size={10}/> PAID</span>
+        <button className="ivh-nolink" style={st.invNo} onClick={() => onPreview(inv)}>
+          {inv.invoiceNo}
+        </button>
+        <span style={{ ...st.badge, background:"#eafaf0", color:GREEN, display:"inline-flex", alignItems:"center", gap:3 }}>
+          <Icon name="lock" size={10}/> PAID
+        </span>
+        <FormatBadge format={savedFormat(inv)}/>
         <div style={{ marginLeft:"auto" }}>
           <div style={{ fontSize:14, fontWeight:800, color:INK, fontVariantNumeric:"tabular-nums" }}>{rupee(total)}</div>
           <div style={{ fontSize:11, color:GREEN, fontWeight:700 }}>Cleared</div>
         </div>
       </div>
-      <div style={st.cardMeta}>{fmt(inv.date)} · {fmtTime(inv.createdAt)} — {(inv.items||[]).map(it=>`${it.qty}× ${it.desc}`).join(", ")||"—"}</div>
+      <div style={st.cardMeta}>
+        {fmt(inv.date)} · {fmtTime(inv.createdAt)} — {(inv.items||[]).map(it=>`${it.qty}× ${it.desc}`).join(", ")||"—"}
+      </div>
       <div style={st.cardActions}>
-        <button className="ivh-icon" style={st.actionBtn} onClick={() => onPrint(inv)}><Icon name="download" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Download</span></button>
+        <button className="ivh-icon" style={st.actionBtn} onClick={() => onPreview(inv)}>
+          <Icon name="search" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Preview</span>
+        </button>
+        <PrintBtn inv={inv} onPrint={onPrint}/>
       </div>
     </div>
   );
@@ -154,7 +247,7 @@ const st: Record<string, React.CSSProperties> = {
   card:        { display:"grid", gridTemplateColumns:"1fr auto", gap:"3px 12px", alignItems:"start", padding:"9px 11px", background:"#fff", border:`1px solid ${LINE}` },
   cardTopRow:  { display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", gridColumn:"1 / -1" },
   cardMeta:    { gridColumn:"1 / -1", fontSize:11.5, color:"#6b7280", lineHeight:1.45, wordBreak:"break-word", marginTop:1 },
-  cardActions: { gridColumn:"1 / -1", display:"flex", gap:8, marginTop:2 },
+  cardActions: { gridColumn:"1 / -1", display:"flex", gap:8, marginTop:2, flexWrap:"wrap", alignItems:"center" },
   invNo:       { border:"none", background:"transparent", padding:0, fontFamily:SANS, fontWeight:800, fontSize:13.5, color:TERRA, cursor:"pointer", textAlign:"left" },
   badge:       { fontSize:10, fontWeight:700, padding:"2px 7px", textTransform:"uppercase", letterSpacing:0.3 },
   actionBtn:   { display:"inline-flex", alignItems:"center", gap:5, padding:"5px 11px", border:"1px solid #e6dcd2", background:"#fff", color:"#545a67", cursor:"pointer", borderRadius:0, fontFamily:"inherit" },

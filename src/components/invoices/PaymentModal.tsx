@@ -3,7 +3,7 @@ import { useState } from "react";
 import api from "../../api";
 import {
   Invoice, InvMethod, METHOD_META, INK, MUTE, FAINT, TERRA, GREEN, LINE, SANS,
-  num, round2, rupee as makeRupee, fmt, effectivePaid, deriveStatus, badgeStyle,
+  num, round2, rupee as makeRupee, fmt, fmtTime, effectivePaid, deriveStatus, badgeStyle,
   STATUS_META, sharedSt, errMessage, REQ_TIMEOUT,
 } from "./types";
 import Icon from "./Icon";
@@ -77,7 +77,7 @@ export default function PaymentModal({ inv, onClose, onUpdate }: Props) {
 
   return (
     <div style={sharedSt.backdrop} onClick={() => !saving && !done && !savedAnim && onClose()}>
-      <div data-modal-scroll className="ivh-modal" style={{ ...sharedSt.editModal, maxWidth:520 }} onClick={e=>e.stopPropagation()}>
+      <div data-modal-scroll className="ivh-modal" style={{ ...sharedSt.editModal, maxWidth:620 }} onClick={e=>e.stopPropagation()}>
         {done ? <SuccessPanel title={done.title} detail={done.detail} tone={done.tone}/>
         : savedAnim ? <SuccessPanel title={fullyPaid?"Paid in full":"Payment saved"} detail={fullyPaid?`${inv.invoiceNo} · settled`:`${inv.invoiceNo} · balance ${rupee(balanceNow)}`} tone={GREEN}/>
         : (
@@ -106,7 +106,7 @@ export default function PaymentModal({ inv, onClose, onUpdate }: Props) {
                       const del = deletingId === p.id;
                       return (
                         <div key={p.id} style={st.histRow}>
-                          <span style={{ color:MUTE, fontSize:12, minWidth:92, whiteSpace:"nowrap" }}>{fmt(p.createdAt)}</span>
+                          <span style={{ color:MUTE, fontSize:12, minWidth:135, whiteSpace:"nowrap" }}>{fmt(p.createdAt)} · {fmtTime(p.createdAt)}</span>
                           <span style={{ ...st.methPill, color:pm.fg, background:pm.bg, borderColor:pm.bd }}><Icon name={pm.icon} size={11}/> {pm.label}</span>
                           {p.note && <span style={{ fontSize:11.5, color:MUTE, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:120 }}>{p.note}</span>}
                           <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>

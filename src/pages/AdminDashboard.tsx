@@ -17,16 +17,15 @@ const Tasks            = lazy(() => import("../components/tasks"));
 const Employees        = lazy(() => import("../components/employees"));
 const QuickOrders      = lazy(() => import("../components/quick-order"));
 
-type Tab = "bookings" | "customers" | "inventory" | "billing" | "billing50" | "invoices" | "reminders" | "expenses" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
+type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "expenses" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
+type BillingVariant = "full" | "half";
 
 const ACCENT = "#d9542f";
 
-/* ── inline icons ── */
 const ico = { width: 19, height: 19, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 const IconBookings  = () => (<svg {...ico}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M9 12h6M9 16h6" /></svg>);
 const IconBilling   = () => (<svg {...ico}><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>);
 const IconInvoices  = () => (<svg {...ico}><path d="M16 3H6a2 2 0 0 0-2 2v11" /><rect x="8" y="6" width="12" height="15" rx="2" /><path d="M11 11h6M11 15h4" /></svg>);
-const IconBilling50 = () => (<svg {...ico}><rect x="4" y="3" width="16" height="18" rx="1" /><path d="M4 12h16" strokeDasharray="3 2" /><path d="M7 6h7M7 9h5" /></svg>);
 const IconReminders = () => (<svg {...ico}><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>);
 const IconExpenses  = () => (<svg {...ico}><path d="M3 7V6a2 2 0 0 1 2-2h11" /><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M17 13h2" /><path d="M8 11h5M8 14h5l-3.5 3.5" /></svg>);
 const IconActivity  = () => (<svg {...ico}><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z" /><path d="m9 12 2 2 4-4" /></svg>);
@@ -39,28 +38,26 @@ const IconKhata     = () => (<svg {...ico}><path d="M4 6h16M4 10h16M4 14h8M4 18h
 const IconTasks     = () => (<svg {...ico}><rect x="9" y="3" width="13" height="13" rx="1"/><path d="M5 7H2a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-3"/><path d="m5 12 2 2 4-4"/></svg>);
 
 const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
-  { id: "bookings",  label: "Bookings",  Icon: IconBookings  },
-  { id: "customers", label: "Customers", Icon: IconCustomers },
-  { id: "inventory", label: "Inventory", Icon: IconInventory },
-  { id: "billing",   label: "Billing 100%",  Icon: IconBilling   },
-  { id: "billing50", label: "Billing 50%",   Icon: IconBilling50 },
-  { id: "invoices",  label: "Invoices",  Icon: IconInvoices  },
-  { id: "reminders", label: "Reminders", Icon: IconReminders },
-  { id: "expenses",  label: "Income & Expense", Icon: IconExpenses },
-  { id: "activity",  label: "Activity",  Icon: IconActivity  },
-  { id: "posts",     label: "Posts",     Icon: IconPosts     },
-  { id: "khata",     label: "Quick Orders", Icon: IconKhata },
-  { id: "employees", label: "Employees", Icon: IconEmployees },
-  { id: "tasks",     label: "Tasks",     Icon: IconTasks     },
-  { id: "settings",  label: "Settings",  Icon: IconSettings  },
+  { id: "bookings",  label: "Bookings",         Icon: IconBookings  },
+  { id: "customers", label: "Customers",        Icon: IconCustomers },
+  { id: "inventory", label: "Inventory",        Icon: IconInventory },
+  { id: "billing",   label: "Billing",          Icon: IconBilling   },
+  { id: "invoices",  label: "Invoices",         Icon: IconInvoices  },
+  { id: "reminders", label: "Reminders",        Icon: IconReminders },
+  { id: "expenses",  label: "Income & Expense", Icon: IconExpenses  },
+  { id: "activity",  label: "Activity",         Icon: IconActivity  },
+  { id: "posts",     label: "Posts",            Icon: IconPosts     },
+  { id: "khata",     label: "Quick Orders",     Icon: IconKhata     },
+  { id: "employees", label: "Employees",        Icon: IconEmployees },
+  { id: "tasks",     label: "Tasks",            Icon: IconTasks     },
+  { id: "settings",  label: "Settings",         Icon: IconSettings  },
 ];
 
 const TITLES: Record<Tab, string> = {
   bookings:  "Bookings",
   customers: "Customers",
   inventory: "Inventory",
-  billing:   "Billing 100% — full page",
-  billing50: "Billing 50% — half page",
+  billing:   "Billing",
   invoices:  "Invoices",
   reminders: "Payment reminders",
   expenses:  "Income & Expense",
@@ -79,6 +76,7 @@ export default function AdminDashboard() {
   const [activeTab,      setActiveTab]      = useState<Tab>("bookings");
   const [drawerOpen,     setDrawerOpen]     = useState(false);
   const [taskPrefillEmp, setTaskPrefillEmp] = useState<string | null>(null);
+  const [billingVariant, setBillingVariant] = useState<BillingVariant>("half");
 
   const handleLogout = () => { logout(); navigate("/login"); };
   const initial = (user?.name?.[0] || "A").toUpperCase();
@@ -133,7 +131,30 @@ export default function AdminDashboard() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <h1 className="adm-htitle">{TITLES[activeTab]}</h1>
+          <h1 className="adm-htitle">
+            {TITLES[activeTab]}
+            {activeTab === "billing" && (
+              <span style={{ display:"inline-flex", alignItems:"center", gap:0, marginLeft:16, border:`1px solid #e0e0e8`, overflow:"hidden", verticalAlign:"middle" }}>
+                {(["full","half"] as BillingVariant[]).map((v, i) => (
+                  <button
+                    key={v}
+                    onClick={() => setBillingVariant(v)}
+                    style={{
+                      padding:"5px 14px", border:"none",
+                      borderLeft: i > 0 ? "1px solid #e0e0e8" : "none",
+                      background: billingVariant === v ? ACCENT : "#fff",
+                      color: billingVariant === v ? "#fff" : "#5b626f",
+                      fontFamily:"inherit", fontWeight:700, fontSize:12.5,
+                      cursor:"pointer", transition:"all .15s",
+                      whiteSpace:"nowrap",
+                    }}
+                  >
+                    {v === "full" ? "Full (A4)" : "Half (6×8)"}
+                  </button>
+                ))}
+              </span>
+            )}
+          </h1>
           <div className="adm-hright">
             <div className="adm-user">
               <div className="adm-avatar">{initial}</div>
@@ -148,8 +169,7 @@ export default function AdminDashboard() {
             {activeTab === "bookings"  && <Bookings />}
             {activeTab === "customers" && <Customers />}
             {activeTab === "inventory" && <Inventory />}
-            {activeTab === "billing"   && <InvoiceMaker variant="full" />}
-            {activeTab === "billing50" && <InvoiceMaker variant="half" />}
+            {activeTab === "billing"   && <InvoiceMaker variant={billingVariant} />}
             {activeTab === "invoices"  && <Invoices />}
             {activeTab === "reminders" && <PaymentReminders />}
             {activeTab === "expenses"  && <IncomeExpense />}
@@ -186,11 +206,19 @@ export default function AdminDashboard() {
         }
         .adm-content {
           flex: 1; min-width: 0; max-width: 100%;
-          display: flex; flex-direction: column; overflow-x: hidden;
+          display: flex; flex-direction: column;
+          min-height: 100vh;
+        }
+        .adm-header {
+          position: sticky; top: 0; z-index: 10;
+          flex-shrink: 0;
+          background: #fff; border-bottom: 1px solid #ebebf0;
+          padding: 0 clamp(16px,3vw,36px); height: 66px;
+          display: flex; align-items: center; justify-content: space-between; gap: 16px;
         }
         .adm-main {
           padding: 28px clamp(16px,3vw,36px) 60px;
-          min-width: 0; max-width: 100%;
+          min-width: 0; max-width: 100%; flex: 1;
         }
         .adm-main.no-pad {
           padding: 0; display: flex; flex-direction: column; flex: 1; min-height: 0;
@@ -232,13 +260,11 @@ export default function AdminDashboard() {
           content: ""; position: absolute; left: 0; top: 9px; bottom: 9px;
           width: 3px; border-radius: 0; background: ${ACCENT};
         }
-        .adm-header {
-          position: sticky; top: 0; z-index: 10;
-          background: #fff; border-bottom: 1px solid #ebebf0;
-          padding: 0 clamp(16px,3vw,36px); height: 66px;
-          display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        .adm-htitle {
+          margin: 0; font-size: 20px; font-weight: 800; color: #1f2430;
+          letter-spacing: -0.3px; display: flex; align-items: center;
+          gap: 12px; flex-wrap: wrap;
         }
-        .adm-htitle  { margin: 0; font-size: 20px; font-weight: 800; color: #1f2430; letter-spacing: -0.3px; }
         .adm-hright  { display: flex; align-items: center; gap: 14px; }
         .adm-user    { display: flex; align-items: center; gap: 10px; }
         .adm-avatar  {
@@ -271,8 +297,7 @@ export default function AdminDashboard() {
           opacity: 0; transition: opacity .22s ease;
         }
         @media (max-width: 860px) {
-          .adm-header   { position: fixed; top: 0; left: 0; right: 0; z-index: 45; }
-          .adm-content  { padding-top: 64px; }
+          .adm-header   { position: sticky; top: 0; z-index: 45; }
           .adm-burger   { display: inline-flex; }
           .adm-backdrop { display: block; pointer-events: none; }
           .adm-backdrop.on { opacity: 1; pointer-events: auto; }

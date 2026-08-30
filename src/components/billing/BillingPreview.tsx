@@ -33,7 +33,8 @@ export default function BillingPreview(p: Props) {
   const taxable = subtotal - discountAmt;
   const cgst = taxAmt / 2;
   const visibleItems = p.items.filter(it => it.desc.trim() || num(it.rate) > 0);
-  const cols = 4 + (discountAmt > 0 ? 1 : 0) + (num(p.taxPct) > 0 ? 1 : 0);
+  // base cols: No, Item, Size, Qty, Rate, Total = 6; +Disc, +Tax
+  const cols = 6 + (discountAmt > 0 ? 1 : 0) + (num(p.taxPct) > 0 ? 1 : 0);
 
   const renderCard = () => (
     <div style={{
@@ -44,7 +45,7 @@ export default function BillingPreview(p: Props) {
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div style={{ display:"flex", alignItems:"center", gap:9, padding:"12px 14px 10px", borderBottom:"2.5px solid #e89a3c", background:"linear-gradient(135deg,#fff2e6 0%,#fff8f0 50%,#fff 100%)", flexShrink:0 }}>
-                {logoOk
+        {logoOk
           ? <img src={p.logoBase64 || "/images/abhijit_art_logo.png"} alt={p.biz.name} style={{ width:56,height:56,objectFit:"contain",flexShrink:0 }} onError={()=>setLogoOk(false)}/>
           : <div style={{ width:56,height:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#f0e8d0",border:"1px solid #c8a84b",borderRadius:"50%",fontSize:13,fontWeight:800,color:"#8a6a1c" }}>{(p.biz.name||"").slice(0,2)}</div>}
         <div style={{ flex:1, minWidth:0 }}>
@@ -85,15 +86,16 @@ export default function BillingPreview(p: Props) {
           <thead>
             <tr>
               {[
-                { t:"No",    w:26 as number|undefined, a:"center" as const },
+                { t:"No",    w:24 as number|undefined, a:"center" as const },
                 { t:"Items", w:undefined,              a:"left"   as const },
-                { t:"Qty",   w:34,                     a:"right"  as const },
-                { t:"Rate",  w:58,                     a:"right"  as const },
-                ...(discountAmt>0 ? [{ t:"Disc.", w:50, a:"right" as const }] : []),
-                ...(num(p.taxPct)>0 ? [{ t:"Tax", w:44, a:"right" as const }] : []),
-                { t:"Total", w:64, a:"right" as const },
+                { t:"Size",  w:52,                     a:"center" as const },
+                { t:"Qty",   w:52,                     a:"right"  as const },
+                { t:"Rate",  w:62,                     a:"right"  as const },
+                ...(discountAmt>0 ? [{ t:"Disc.", w:46, a:"right" as const }] : []),
+                ...(num(p.taxPct)>0 ? [{ t:"Tax", w:40, a:"right" as const }] : []),
+                { t:"Total", w:60, a:"right" as const },
               ].map(h => (
-                <th key={h.t} style={{ background:ORANGE, color:"#fff", padding:"5px 6px", fontSize:8.5, fontWeight:700, textAlign:h.a, width:h.w }}>{h.t}</th>
+                <th key={h.t} style={{ background:ORANGE, color:"#fff", padding:"5px 6px", fontSize:8, fontWeight:700, textAlign:h.a, width:h.w }}>{h.t}</th>
               ))}
             </tr>
           </thead>
@@ -104,13 +106,16 @@ export default function BillingPreview(p: Props) {
                   const lt = num(it.qty)*num(it.rate);
                   const ld = discountAmt>0&&subtotal>0?(lt/subtotal)*discountAmt:0;
                   const lx = taxAmt>0&&subtotal>0?(lt/subtotal)*taxAmt:0;
-                  const td = { padding:"5px 6px", borderBottom:`.5px solid ${RULE}`, fontSize:10 };
+                  const td = { padding:"5px 6px", borderBottom:`.5px solid ${RULE}`, fontSize:9.5 };
+                  const hasSize = num(it.width)>0 && num(it.height)>0;
+                  const u = it.unit ? String(it.unit) : "";
                   return (
                     <tr key={it.id} style={{ background: i%2 ? "#fdfaf5" : "transparent" }}>
                       <td style={{ ...td, textAlign:"center" as const, color:"#aaa" }}>{i+1}.</td>
                       <td style={td}>{it.desc||"—"}</td>
-                      <td style={{ ...td, textAlign:"right" as const }}>{num(it.qty)}</td>
-                      <td style={{ ...td, textAlign:"right" as const, fontVariantNumeric:"tabular-nums" }}>₹{num(it.rate).toLocaleString("en-IN")}</td>
+                      <td style={{ ...td, textAlign:"center" as const, color:"#666", whiteSpace:"nowrap" as const }}>{hasSize ? `${num(it.width)} × ${num(it.height)}` : "—"}</td>
+                      <td style={{ ...td, textAlign:"right" as const, whiteSpace:"nowrap" as const }}>{num(it.qty)}{u?` ${u}`:""}</td>
+                      <td style={{ ...td, textAlign:"right" as const, fontVariantNumeric:"tabular-nums", whiteSpace:"nowrap" as const }}>₹{num(it.rate).toLocaleString("en-IN")}{u?`/${u}`:""}</td>
                       {discountAmt>0&&<td style={{ ...td, textAlign:"right" as const, fontVariantNumeric:"tabular-nums" }}>₹{Math.round(ld).toLocaleString("en-IN")}</td>}
                       {num(p.taxPct)>0&&<td style={{ ...td, textAlign:"right" as const, fontVariantNumeric:"tabular-nums" }}>{Math.round(lx).toLocaleString("en-IN")}</td>}
                       <td style={{ ...td, textAlign:"right" as const, fontWeight:700, fontVariantNumeric:"tabular-nums" }}>₹{Math.round(lt-ld+lx).toLocaleString("en-IN")}</td>
@@ -120,13 +125,12 @@ export default function BillingPreview(p: Props) {
           </tbody>
           <tfoot>
             <tr style={{ background:"#f5f0e8", fontWeight:800, borderTop:"1.5px solid #c8a84b" }}>
-              <td style={{ padding:6,textAlign:"center" as const,fontSize:10 }}>Sub.</td>
-              <td style={{ padding:6,fontSize:10.5 }}><b>SUBTOTAL</b></td>
-              <td style={{ padding:6,textAlign:"right" as const,fontSize:10.5 }}>{visibleItems.reduce((s,it)=>s+num(it.qty),0)}</td>
-              <td style={{ padding:6,textAlign:"right" as const,fontSize:10.5,fontVariantNumeric:"tabular-nums" }}>{Math.round(subtotal).toLocaleString("en-IN")}</td>
-              {discountAmt>0&&<td style={{ padding:6,textAlign:"right" as const,fontSize:10.5,fontVariantNumeric:"tabular-nums" }}>₹{Math.round(discountAmt).toLocaleString("en-IN")}</td>}
-              {num(p.taxPct)>0&&<td style={{ padding:6,textAlign:"right" as const,fontSize:10.5,fontVariantNumeric:"tabular-nums" }}>{Math.round(taxAmt).toLocaleString("en-IN")}</td>}
-              <td style={{ padding:6,textAlign:"right" as const,fontSize:10.5,fontVariantNumeric:"tabular-nums" }}>₹{Math.round(taxable).toLocaleString("en-IN")}</td>
+            <td style={{ padding:6,fontSize:10 }} colSpan={3}><b>SUBTOTAL</b></td>
+              <td style={{ padding:6,textAlign:"right" as const,fontSize:10 }}>{visibleItems.reduce((s,it)=>s+num(it.qty),0)}</td>
+              <td style={{ padding:6,textAlign:"right" as const,fontSize:10,fontVariantNumeric:"tabular-nums" }}>{Math.round(subtotal).toLocaleString("en-IN")}</td>
+              {discountAmt>0&&<td style={{ padding:6,textAlign:"right" as const,fontSize:10,fontVariantNumeric:"tabular-nums" }}>₹{Math.round(discountAmt).toLocaleString("en-IN")}</td>}
+              {num(p.taxPct)>0&&<td style={{ padding:6,textAlign:"right" as const,fontSize:10,fontVariantNumeric:"tabular-nums" }}>{Math.round(taxAmt).toLocaleString("en-IN")}</td>}
+              <td style={{ padding:6,textAlign:"right" as const,fontSize:10,fontVariantNumeric:"tabular-nums" }}>₹{Math.round(taxable).toLocaleString("en-IN")}</td>
             </tr>
           </tfoot>
         </table>
@@ -197,7 +201,6 @@ export default function BillingPreview(p: Props) {
     </div>
   );
 
-  // ── Half: plain 6 inch × 8 inch upright bill (laser printer, custom paper) ──
   if (half) {
     return (
       <div style={{ position:"sticky", top:20, minWidth:0 }}>
@@ -209,7 +212,6 @@ export default function BillingPreview(p: Props) {
     );
   }
 
-  // ── Full: one bill fills the A4 portrait sheet ─────────
   return (
     <div style={{ position:"sticky", top:20, minWidth:0 }}>
       {labelRow("A4 · 210 × 297 mm")}

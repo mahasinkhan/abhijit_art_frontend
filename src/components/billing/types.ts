@@ -31,6 +31,8 @@ export interface LineItem {
   rate:   string;
   itemId?: string;   // linked inventory item
   unit?:   string;
+  width?:  string;   // area items: width  (flex, vinyl…)
+  height?: string;   // area items: height — qty auto = width × height
 }
 
 export interface Party {
@@ -96,7 +98,7 @@ export const SEQ_KEY      = "aa_invoice_seq";
 export const loadBiz = (): Party => {
   try { const s = localStorage.getItem(BIZ_KEY); if (s) return JSON.parse(s); } catch {}
   return {
-        name:    "",
+    name:    "",
     address: "Rabindra Sadan, Shakti Mandir Club, SS Sen Road\nBerhampore, West Bengal - 742101",
     phone:   "7478482106 (Office) | 9932913826 (Abhijit)",
     email:   "abhijitart85@gmail.com",
@@ -168,7 +170,6 @@ export const btnSt = {
     borderRadius:0, border:`1px solid ${TERRA}`, background:CARD, color:TERRA,
     fontFamily:SANS, fontWeight:700, fontSize:13.5, cursor:"pointer",
   } as React.CSSProperties,
-  // Modal helpers
   backdrop: {
     position:"fixed", inset:0, background:"rgba(24,22,28,.5)",
     backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)",

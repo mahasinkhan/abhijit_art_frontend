@@ -12,12 +12,12 @@ import {
   PERIOD_OPTIONS, GLOBAL_CSS, csvCell, errMessage, REQ_TIMEOUT,
   STATUS_META, srcMeta, methodSummary,
 } from "./types";
-import { printInvoice } from "./PrintUtils";
+import { printInvoice, previewInvoice } from "./PrintUtils";
 
 // ── Child components ───────────────────────────────────────────────────────
-import Icon         from "./Icon";
-import StatsBar     from "./StatsBar";
-import InvoiceTable from "./InvoiceTable";
+import Icon          from "./Icon";
+import StatsBar      from "./StatsBar";
+import InvoiceTable  from "./InvoiceTable";
 import CustomerTable from "./CustomerTable";
 import CustomerDrawer from "./CustomerDrawer";
 import StatementModal from "./StatementModal";
@@ -34,10 +34,10 @@ export default function Invoices() {
   const [error,      setError]      = useState("");
 
   // ── Filters ───────────────────────────────────────────────────────────────
-  const [q,       setQ]       = useState("");
-  const [filter,  setFilter]  = useState<"all"|InvStatus>("all");
-  const [period,  setPeriod]  = useState<Period>("all");
-  const [viewMode,setViewMode]= useState<"customers"|"all">("customers");
+  const [q,        setQ]        = useState("");
+  const [filter,   setFilter]   = useState<"all"|InvStatus>("all");
+  const [period,   setPeriod]   = useState<Period>("all");
+  const [viewMode, setViewMode] = useState<"customers"|"all">("customers");
 
   // ── Modal targets ─────────────────────────────────────────────────────────
   const [payTarget,  setPayTarget]  = useState<Invoice|null>(null);
@@ -52,9 +52,14 @@ export default function Invoices() {
   // ── Load ──────────────────────────────────────────────────────────────────
   const load = async (initial = false) => {
     initial ? setLoading(true) : setRefreshing(true); setError("");
-    try { const res = await api.get("/api/invoices", { timeout:REQ_TIMEOUT }); setList(Array.isArray(res.data)?res.data:[]); }
-    catch(e:any) { setError(errMessage(e,"Couldn't load invoices.")); }
-    finally { initial ? setLoading(false) : setRefreshing(false); }
+    try {
+      const res = await api.get("/api/invoices", { timeout: REQ_TIMEOUT });
+      setList(Array.isArray(res.data) ? res.data : []);
+    } catch(e:any) {
+      setError(errMessage(e, "Couldn't load invoices."));
+    } finally {
+      initial ? setLoading(false) : setRefreshing(false);
+    }
   };
   useEffect(() => { load(true); }, []);
 
@@ -70,21 +75,38 @@ export default function Invoices() {
     document.querySelectorAll<HTMLElement>("*").forEach(el=>{
       if(el.hasAttribute("data-modal-scroll")||el.closest("[data-modal-scroll]")) return;
       const oy=getComputedStyle(el).overflowY;
-      if((oy==="auto"||oy==="scroll")&&el.scrollHeight>el.clientHeight){ locked.push({el,prev:el.style.cssText}); el.style.setProperty("overflow","hidden","important"); }
+      if((oy==="auto"||oy==="scroll")&&el.scrollHeight>el.clientHeight){
+        locked.push({el,prev:el.style.cssText});
+        el.style.setProperty("overflow","hidden","important");
+      }
     });
-    return () => { html.style.cssText=prevHtml; body.style.cssText=prevBody; locked.forEach(({el,prev})=>{el.style.cssText=prev;}); };
+    return () => {
+      html.style.cssText=prevHtml;
+      body.style.cssText=prevBody;
+      locked.forEach(({el,prev})=>{ el.style.cssText=prev; });
+    };
   }, [payTarget,editTarget,delTarget,sendTarget,drillKey,stmtKey]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const periodList = useMemo(() => {
     const since=periodSince(period); if(!since) return list;
     const t=since.getTime();
-    return list.filter(inv=>{ const dt=new Date(inv.date); return !isNaN(dt.getTime())&&dt.getTime()>=t; });
+    return list.filter(inv=>{
+      const dt=new Date(inv.date);
+      return !isNaN(dt.getTime()) && dt.getTime()>=t;
+    });
   }, [list, period]);
 
   const shown = useMemo(() => {
     const needle=q.trim().toLowerCase();
-    return periodList.filter(inv=>{ if(filter!=="all"&&inv.status!==filter) return false; if(!needle) return true; return inv.invoiceNo.toLowerCase().includes(needle)||(inv.clientName||"").toLowerCase().includes(needle)||(inv.clientEmail||"").toLowerCase().includes(needle)||(inv.clientPhone||"").toLowerCase().includes(needle); });
+    return periodList.filter(inv=>{
+      if(filter!=="all"&&inv.status!==filter) return false;
+      if(!needle) return true;
+      return inv.invoiceNo.toLowerCase().includes(needle)
+        ||(inv.clientName||"").toLowerCase().includes(needle)
+        ||(inv.clientEmail||"").toLowerCase().includes(needle)
+        ||(inv.clientPhone||"").toLowerCase().includes(needle);
+    });
   }, [periodList, q, filter]);
 
   const stats = useMemo(() => {
@@ -93,9 +115,16 @@ export default function Invoices() {
       if(inv.status==="cancelled") continue;
       const t=num(inv.total); const p=effectivePaid(inv);
       billed+=t; received+=p; outstanding+=Math.max(t-p,0);
-      for (const pay of Array.isArray(inv.payments)?inv.payments:[]) { const amt=num(pay.amount); if(pay.method==="online") online+=amt; else cash+=amt; }
+      for (const pay of Array.isArray(inv.payments)?inv.payments:[]) {
+        const amt=num(pay.amount);
+        if(pay.method==="online") online+=amt; else cash+=amt;
+      }
     }
-    return { count:periodList.length, billed:round2(billed), received:round2(received), outstanding:round2(outstanding), cash:round2(cash), online:round2(online) };
+    return {
+      count:periodList.length,
+      billed:round2(billed), received:round2(received),
+      outstanding:round2(outstanding), cash:round2(cash), online:round2(online),
+    };
   }, [periodList]);
 
   const customerRows = useMemo((): CustomerRow[] => {
@@ -107,17 +136,36 @@ export default function Invoices() {
       const existing=map.get(key);
       if (existing) {
         existing.invoices.push(inv);
-        if(inv.status!=="cancelled"){ existing.billed+=total; existing.paid+=paid; existing.due+=Math.max(total-paid,0); }
+        if(inv.status!=="cancelled"){
+          existing.billed+=total; existing.paid+=paid;
+          existing.due+=Math.max(total-paid,0);
+        }
         if(new Date(inv.date)>new Date(existing.lastDate)) existing.lastDate=inv.date;
         if(!existing.email&&inv.clientEmail) existing.email=inv.clientEmail;
       } else {
-        map.set(key,{ key, name:inv.clientName||"—", phone:inv.clientPhone, email:inv.clientEmail, invoices:[inv],
-          billed:inv.status!=="cancelled"?total:0, paid:inv.status!=="cancelled"?paid:0, due:inv.status!=="cancelled"?Math.max(total-paid,0):0, lastDate:inv.date });
+        map.set(key,{
+          key, name:inv.clientName||"—", phone:inv.clientPhone,
+          email:inv.clientEmail, invoices:[inv],
+          billed:inv.status!=="cancelled"?total:0,
+          paid:inv.status!=="cancelled"?paid:0,
+          due:inv.status!=="cancelled"?Math.max(total-paid,0):0,
+          lastDate:inv.date,
+        });
       }
     }
-    let rows=Array.from(map.values()).map(r=>({...r,billed:round2(r.billed),paid:round2(r.paid),due:round2(r.due),invoices:r.invoices.sort((a,b)=>new Date(b.createdAt||b.date).getTime()-new Date(a.createdAt||a.date).getTime())}));
+    let rows=Array.from(map.values()).map(r=>({
+      ...r,
+      billed:round2(r.billed), paid:round2(r.paid), due:round2(r.due),
+      invoices:r.invoices.sort((a,b)=>
+        new Date(b.createdAt||b.date).getTime()-new Date(a.createdAt||a.date).getTime()
+      ),
+    }));
     const needle=q.trim().toLowerCase();
-    if(needle) rows=rows.filter(r=>r.name.toLowerCase().includes(needle)||(r.phone||"").includes(needle)||(r.email||"").toLowerCase().includes(needle));
+    if(needle) rows=rows.filter(r=>
+      r.name.toLowerCase().includes(needle)
+      ||(r.phone||"").includes(needle)
+      ||(r.email||"").toLowerCase().includes(needle)
+    );
     return rows.sort((a,b)=>b.due-a.due||new Date(b.lastDate).getTime()-new Date(a.lastDate).getTime());
   }, [periodList, q]);
 
@@ -126,8 +174,9 @@ export default function Invoices() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const updateInvoice = (updated: Invoice) => {
-    setList(rows => rows.map(r => r.id===updated.id?updated:r));
-    setPayTarget(cur => cur&&cur.id===updated.id?updated:cur);
+    setList(rows => rows.map(r => r.id===updated.id ? updated : r));
+    setPayTarget(cur  => cur&&cur.id===updated.id   ? updated : cur);
+    setEditTarget(cur => cur&&cur.id===updated.id   ? updated : cur);
   };
   const deleteInvoice = (id: string) => setList(rows => rows.filter(r=>r.id!==id));
 
@@ -135,10 +184,22 @@ export default function Invoices() {
 
   const exportCsv = () => {
     const head=["Invoice No","Date","Client","Phone","Email","GSTIN","Source","Method","Subtotal","Discount","GST","Total","Paid","Due","Status"];
-    const body=shown.map(inv=>{ const total=num(inv.total); const paid=effectivePaid(inv); const ms=methodSummary(inv); const sm=srcMeta(inv.source); return [inv.invoiceNo,fmt(inv.date),inv.clientName||"",inv.clientPhone||"",inv.clientEmail||"",inv.clientGstin||"",sm.label,ms?ms.label:"",num(inv.subtotal).toFixed(2),num(inv.discountAmt).toFixed(2),num(inv.taxAmt).toFixed(2),total.toFixed(2),paid.toFixed(2),Math.max(total-paid,0).toFixed(2),STATUS_META[inv.status].label].map(csvCell).join(","); });
+    const body=shown.map(inv=>{
+      const total=num(inv.total); const paid=effectivePaid(inv);
+      const ms=methodSummary(inv); const sm=srcMeta(inv.source);
+      return [
+        inv.invoiceNo, fmt(inv.date), inv.clientName||"", inv.clientPhone||"",
+        inv.clientEmail||"", inv.clientGstin||"", sm.label, ms?ms.label:"",
+        num(inv.subtotal).toFixed(2), num(inv.discountAmt).toFixed(2),
+        num(inv.taxAmt).toFixed(2), total.toFixed(2), paid.toFixed(2),
+        Math.max(total-paid,0).toFixed(2), STATUS_META[inv.status].label,
+      ].map(csvCell).join(",");
+    });
     const csv=[head.map(csvCell).join(","),...body].join("\n");
     const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8;"}));
-    const a=document.createElement("a"); a.href=url; a.download=`invoices-${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
+    const a=document.createElement("a");
+    a.href=url; a.download=`invoices-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -147,8 +208,12 @@ export default function Invoices() {
 
       {/* Top toolbar */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:10, flexWrap:"wrap", marginBottom:16 }}>
-        <button className="ivh-ghost" style={st.ghostBtn} onClick={exportCsv} disabled={!shown.length}><Icon name="csv" size={15}/> Export CSV</button>
-        <button className="ivh-ghost" style={st.ghostBtn} onClick={() => load(false)} disabled={refreshing}><Icon name="refresh" size={15}/> {refreshing?"Refreshing…":"Refresh"}</button>
+        <button className="ivh-ghost" style={st.ghostBtn} onClick={exportCsv} disabled={!shown.length}>
+          <Icon name="csv" size={15}/> Export CSV
+        </button>
+        <button className="ivh-ghost" style={st.ghostBtn} onClick={() => load(false)} disabled={refreshing}>
+          <Icon name="refresh" size={15}/> {refreshing?"Refreshing…":"Refresh"}
+        </button>
       </div>
 
       {/* KPI stats */}
@@ -156,8 +221,12 @@ export default function Invoices() {
 
       {/* View toggle */}
       <div style={st.viewToggle}>
-        <button className={`ivh-vtab${viewMode==="customers"?" on":""}`} style={st.vtab} onClick={()=>setViewMode("customers")}><Icon name="user" size={15}/> By Customer</button>
-        <button className={`ivh-vtab${viewMode==="all"?" on":""}`}       style={st.vtab} onClick={()=>setViewMode("all")}><Icon name="receipt" size={15}/> All Invoices</button>
+        <button className={`ivh-vtab${viewMode==="customers"?" on":""}`} style={st.vtab} onClick={()=>setViewMode("customers")}>
+          <Icon name="user" size={15}/> By Customer
+        </button>
+        <button className={`ivh-vtab${viewMode==="all"?" on":""}`} style={st.vtab} onClick={()=>setViewMode("all")}>
+          <Icon name="receipt" size={15}/> All Invoices
+        </button>
       </div>
 
       {/* Search + period */}
@@ -168,23 +237,45 @@ export default function Invoices() {
         </select>
         <div style={st.searchWrap}>
           <span style={st.searchIcon}><Icon name="search" size={15}/></span>
-          <input className="ivh-in" style={st.searchIn} placeholder={viewMode==="customers"?"Search customers by name or phone…":"Search by name, phone or invoice no…"} value={q} onChange={e=>setQ(e.target.value)}/>
+          <input
+            className="ivh-in" style={st.searchIn}
+            placeholder={viewMode==="customers"?"Search customers by name or phone…":"Search by name, phone or invoice no…"}
+            value={q} onChange={e=>setQ(e.target.value)}
+          />
         </div>
       </div>
 
       {/* Main content */}
       {viewMode === "customers"
-        ? <CustomerTable rows={customerRows} loading={loading} refreshing={refreshing} onDrill={k=>{ setDrillKey(k); }}/>
-        : <InvoiceTable  shown={shown} loading={loading} refreshing={refreshing} error={error} filter={filter} onFilter={setFilter} onRetry={()=>load(true)} onPrint={printInvoice} onEdit={inv=>{ if(inv.status!=="paid"&&inv.status!=="cancelled") setEditTarget(inv); }} onPay={setPayTarget} onSend={(inv,ch)=>setSendTarget({inv,ch})} onDelete={setDelTarget}/>
+        ? <CustomerTable rows={customerRows} loading={loading} refreshing={refreshing} onDrill={k=>setDrillKey(k)}/>
+        : <InvoiceTable
+            shown={shown} loading={loading} refreshing={refreshing} error={error}
+            filter={filter} onFilter={setFilter} onRetry={()=>load(true)}
+            onPrint={printInvoice}
+            onEdit={inv=>{ if(inv.status!=="paid"&&inv.status!=="cancelled") setEditTarget(inv); }}
+            onPay={setPayTarget}
+            onSend={(inv,ch)=>setSendTarget({inv,ch})}
+            onDelete={setDelTarget}
+          />
       }
 
       {/* Modals & drawers */}
-      {drillRow  && <CustomerDrawer row={drillRow} onClose={()=>setDrillKey(null)} onPay={setPayTarget} onPrint={printInvoice} onStatement={openStatement}/>}
-      {stmtRow   && <StatementModal row={stmtRow}  onClose={()=>setStmtKey(null)}/>}
-      {payTarget && <PaymentModal  inv={payTarget}  onClose={()=>setPayTarget(null)}  onUpdate={updateInvoice}/>}
-      {editTarget&& <EditModal     inv={editTarget} onClose={()=>setEditTarget(null)} onUpdate={updateInvoice}/>}
-      {delTarget && <DeleteModal   inv={delTarget}  onClose={()=>setDelTarget(null)}  onDelete={deleteInvoice}/>}
-      {sendTarget&& <SendModal     inv={sendTarget.inv} channel={sendTarget.ch} onClose={()=>setSendTarget(null)}/>}
+      {drillRow   && (
+        <CustomerDrawer
+          row={drillRow}
+          onClose={()=>setDrillKey(null)}
+          onPay={setPayTarget}
+          onPrint={printInvoice}
+          onEdit={inv=>{ if(inv.status!=="paid"&&inv.status!=="cancelled") setEditTarget(inv); }}
+          onPreview={previewInvoice}
+          onStatement={openStatement}
+        />
+      )}
+      {stmtRow    && <StatementModal row={stmtRow}   onClose={()=>setStmtKey(null)}/>}
+      {payTarget  && <PaymentModal   inv={payTarget}  onClose={()=>setPayTarget(null)}  onUpdate={updateInvoice}/>}
+      {editTarget && <EditModal      inv={editTarget} onClose={()=>setEditTarget(null)} onUpdate={updateInvoice}/>}
+      {delTarget  && <DeleteModal    inv={delTarget}  onClose={()=>setDelTarget(null)}  onDelete={deleteInvoice}/>}
+      {sendTarget && <SendModal      inv={sendTarget.inv} channel={sendTarget.ch} onClose={()=>setSendTarget(null)}/>}
 
       <style>{GLOBAL_CSS}</style>
     </div>

@@ -27,11 +27,12 @@ interface Props {
   onEditDrawer:  (it: InventoryItem) => void;
   onExportCSV?:  () => void;
   onDeleted?:    () => void;
+  onRenamed?:    () => void;
 }
 
 export default function InventoryTable({
   items, kpis, catSummary, loading, selCat, lowOnly,
-  onSelCat, onLowToggle, onClearCat, onClearLow, onMoveDrawer, onHistDrawer, onEditDrawer, onDeleted,
+  onSelCat, onLowToggle, onClearCat, onClearLow, onMoveDrawer, onHistDrawer, onEditDrawer, onDeleted, onRenamed,
 }: Props) {
   const [search,   setSearch]   = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -41,6 +42,38 @@ export default function InventoryTable({
   const [delPin,  setDelPin]  = useState("");
   const [delBusy, setDelBusy] = useState(false);
   const [delErr,  setDelErr]  = useState("");
+
+  // ── Category rename state ─────────────────────────────────────────────
+  const [editingCat, setEditingCat] = useState<string | null>(null);
+  const [editCatVal, setEditCatVal] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameErr,  setRenameErr]  = useState("");
+
+  const startRename = (catName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingCat(catName);
+    setEditCatVal(catName);
+    setRenameErr("");
+  };
+
+  const saveRename = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!editingCat || !editCatVal.trim()) { setEditingCat(null); return; }
+    if (editCatVal.trim() === editingCat)  { setEditingCat(null); return; }
+    setRenameBusy(true); setRenameErr("");
+    try {
+      await api.patch("/api/inventory/categories/rename", {
+        oldName: editingCat,
+        newName: editCatVal.trim(),
+      });
+      setEditingCat(null);
+      onRenamed?.();
+    } catch (ex: any) {
+      setRenameErr(ex.response?.data?.error || ex.response?.data?.message || "Rename failed");
+    } finally {
+      setRenameBusy(false);
+    }
+  };
 
   async function confirmDelete() {
     if (!delItem || !delPin) { setDelErr("PIN required"); return; }
@@ -90,7 +123,7 @@ export default function InventoryTable({
   return (
     <div style={st.wrap}>
 
-      {/* ── KPI strip ─────────────────────────────────────────────────── */}
+      {/* KPI strip */}
       <div style={st.kpiStrip}>
         {[
           { label:"Total items",  val: loading?"…":String(kpis?.totalItems ?? items.length), sub:"Active in catalogue",  accent: GOLD   },
@@ -106,10 +139,8 @@ export default function InventoryTable({
         ))}
       </div>
 
-      {/* ── Filter bar ────────────────────────────────────────────────── */}
+      {/* Filter bar */}
       <div style={st.filterBar}>
-
-        {/* Category first */}
         {selCat ? (
           <button className="inv-filter-active" style={st.filterChip} onClick={onClearCat}>
             <span style={{ fontSize:11, color:MUTE }}>Category:</span>
@@ -124,10 +155,7 @@ export default function InventoryTable({
             ))}
           </select>
         )}
-
         <div style={st.divider} />
-
-        {/* Search */}
         <div style={st.searchWrap}>
           <Icon name="search" size={15} color={MUTE} />
           <input
@@ -137,12 +165,8 @@ export default function InventoryTable({
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
-          {search && (
-            <button style={st.clearX} onClick={() => setSearch("")}>×</button>
-          )}
+          {search && <button style={st.clearX} onClick={() => setSearch("")}>×</button>}
         </div>
-
-        {/* Low stock */}
         <button
           className={lowOnly ? "inv-filter-active" : "inv-filter-btn"}
           style={{ ...st.filterBtn, ...(lowOnly ? st.filterBtnOn : {}) }}
@@ -156,16 +180,11 @@ export default function InventoryTable({
             </span>
           )}
         </button>
-
         <div style={st.divider} />
-
-        {/* Date filter */}
         <div style={st.dateRow}>
           <span style={st.dateLabel}>Updated</span>
           <OverviewFilters onChange={f => { setDateFrom(f.from); setDateTo(f.to); }} />
         </div>
-
-        {/* Clear all */}
         {activeFilters > 0 && (
           <>
             <div style={st.divider} />
@@ -176,7 +195,7 @@ export default function InventoryTable({
         )}
       </div>
 
-      {/* ── Results count ─────────────────────────────────────────────── */}
+      {/* Results count */}
       {showTable && (
         <div style={st.resultsMeta}>
           <span style={{ color:MUTE, fontSize:12.5 }}>
@@ -187,7 +206,7 @@ export default function InventoryTable({
         </div>
       )}
 
-      {/* ── Category cards OR items table ─────────────────────────────── */}
+      {/* Category cards OR items table */}
       {!showTable ? (
         <div style={st.tableOuter}>
           {loading ? (
@@ -196,24 +215,93 @@ export default function InventoryTable({
             <div style={st.empty}>No stock items yet — click Add item to get started.</div>
           ) : (
             <div style={st.catGrid}>
-              {catCards.map((c, i) => (
-                <button key={c.name} className="inv-catcard" style={st.catCard} onClick={() => onSelCat(c.name)}>
-                  <div style={{ ...st.catAccent, background: catColor(i) }} />
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={st.catName}>{c.name}</div>
-                    <div style={st.catMeta}>{c.count} item{c.count!==1?"s":""}</div>
-                    <div style={st.catValue}>{rfmt(c.value)}</div>
-                    <div style={st.catValueLbl}>stock value</div>
-                    {(c.low > 0 || c.out > 0) && (
-                      <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
-                        {c.out > 0 && <span style={st.badgeOut}>{c.out} out</span>}
-                        {c.low > 0 && <span style={st.badgeLow}>{c.low} low</span>}
+              {catCards.map((c, i) => {
+                const isEditing = editingCat === c.name;
+                return (
+                  <div key={c.name} style={{ position:"relative" }}>
+                    {isEditing ? (
+                      /* ── Inline rename card ── */
+                      <div style={{ ...st.catCard, border:`2px solid ${TERRA}`, cursor:"default", alignItems:"center" }} onClick={e => e.stopPropagation()}>
+                        <div style={{ ...st.catAccent, background: catColor(i) }} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:11, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.6, marginBottom:6 }}>Rename category</div>
+                          <input
+                            autoFocus
+                            style={{ width:"100%", padding:"7px 10px", border:`1px solid ${TERRA}`, fontSize:13.5, fontFamily:SANS, color:INK, outline:"none", marginBottom:8 }}
+                            value={editCatVal}
+                            onChange={e => setEditCatVal(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key==="Enter") saveRename();
+                              if (e.key==="Escape") { setEditingCat(null); setRenameErr(""); }
+                            }}
+                            onClick={e => e.stopPropagation()}
+                          />
+                          {renameErr && <div style={{ fontSize:11.5, color:RED, marginBottom:6 }}>{renameErr}</div>}
+                          <div style={{ display:"flex", gap:8 }}>
+                            <button
+                              style={{ flex:1, padding:"7px 0", background:TERRA, border:"none", color:"#fff", fontFamily:SANS, fontWeight:700, fontSize:12.5, cursor:"pointer", opacity:renameBusy?.6:1 }}
+                              onClick={saveRename}
+                              disabled={renameBusy || !editCatVal.trim()}
+                            >{renameBusy ? "Saving…" : "Save"}</button>
+                            <button
+                              style={{ padding:"7px 12px", background:"transparent", border:`1px solid ${LINE}`, fontFamily:SANS, fontWeight:600, fontSize:12.5, cursor:"pointer", color:MUTE }}
+                              onClick={e => { e.stopPropagation(); setEditingCat(null); setRenameErr(""); }}
+                            >Cancel</button>
+                          </div>
+                        </div>
                       </div>
+                    ) : (
+                      /* ── Normal category card ── */
+                      <button className="inv-catcard" style={st.catCard} onClick={() => onSelCat(c.name)}>
+                        <div style={{ ...st.catAccent, background: catColor(i) }} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ marginBottom:3 }}>
+                            <div style={st.catName}>{c.name}</div>
+                          </div>
+                          <div style={st.catMeta}>{c.count} item{c.count!==1?"s":""}</div>
+                          <div style={st.catValue}>{rfmt(c.value)}</div>
+                          <div style={st.catValueLbl}>stock value</div>
+                          {(c.low > 0 || c.out > 0) && (
+                            <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
+                              {c.out > 0 && <span style={st.badgeOut}>{c.out} out</span>}
+                              {c.low > 0 && <span style={st.badgeLow}>{c.low} low</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div style={st.catArrow}>→</div>
+                        {/* Edit button — top right corner */}
+                        <button
+                          title="Rename category"
+                          onClick={e => startRename(c.name, e)}
+                          style={{
+                            position:"absolute", top:8, right:8,
+                            width:26, height:26,
+                            display:"flex", alignItems:"center", justifyContent:"center",
+                            background:"#fff", border:`1px solid ${LINE}`,
+                            cursor:"pointer", color:MUTE, borderRadius:0,
+                            transition:"all .15s",
+                          }}
+                          onMouseEnter={e => {
+                            (e.currentTarget as HTMLElement).style.color = TERRA;
+                            (e.currentTarget as HTMLElement).style.borderColor = TERRA;
+                            (e.currentTarget as HTMLElement).style.background = "#fff2ee";
+                          }}
+                          onMouseLeave={e => {
+                            (e.currentTarget as HTMLElement).style.color = MUTE;
+                            (e.currentTarget as HTMLElement).style.borderColor = LINE;
+                            (e.currentTarget as HTMLElement).style.background = "#fff";
+                          }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                        </button>
+                      </button>
                     )}
                   </div>
-                  <div style={st.catArrow}>→</div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -254,9 +342,7 @@ export default function InventoryTable({
                           </div>
                         </div>
                       </td>
-                      <td style={st.td}>
-                        <span style={st.catPill}>{it.category||"—"}</span>
-                      </td>
+                      <td style={st.td}><span style={st.catPill}>{it.category||"—"}</span></td>
                       <td style={st.td}>
                         <div style={{ fontWeight:700, fontVariantNumeric:"tabular-nums", fontSize:14, color:isOut?RED:isLow?"#b45309":GREEN }}>
                           {qty} {unitLabel(it.unit)}
@@ -291,7 +377,7 @@ export default function InventoryTable({
         </div>
       )}
 
-      {/* ── Delete confirm modal ──────────────────────────────────────── */}
+      {/* Delete confirm modal */}
       {delItem && (
         <div style={st.overlay} onClick={() => !delBusy && setDelItem(null)}>
           <div style={st.delBox} onClick={e => e.stopPropagation()}>
@@ -307,7 +393,7 @@ export default function InventoryTable({
                 This removes the item and its entire stock history. This cannot be undone.
               </p>
               <div style={st.delWarn}>
-                ⚠️ Current stock: <strong>{dec(delItem.quantity)} {unitLabel(delItem.unit)}</strong>
+                ⚠ Current stock: <strong>{dec(delItem.quantity)} {unitLabel(delItem.unit)}</strong>
                 {delItem.supplier?.name && <> · Supplier: <strong>{delItem.supplier.name}</strong></>}
               </div>
               <PinField value={delPin} onChange={setDelPin} />
@@ -340,58 +426,49 @@ export default function InventoryTable({
 }
 
 const st: Record<string, React.CSSProperties> = {
-  wrap:       { flex:1, minWidth:0, display:"flex", flexDirection:"column", overflowY:"auto" },
-  kpiStrip:   { display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1, background:LINE, borderBottom:`1px solid ${LINE}`, flexShrink:0 },
-  kpiCard:    { background:CARD, padding:"22px 24px" },
-
-  // ── Filter bar ────────────────────────────────────────────────────────────
-  filterBar:  { display:"flex", alignItems:"center", gap:0, padding:"10px 16px", borderBottom:`1px solid ${LINE}`, background:"#fafafa", flexShrink:0, flexWrap:"wrap", rowGap:8 },
-  searchWrap: { display:"flex", alignItems:"center", gap:8, background:CARD, border:`1px solid ${LINE}`, padding:"8px 12px", minWidth:220, flex:"1 1 220px", maxWidth:320 },
-  searchIn:   { flex:1, border:"none", outline:"none", fontSize:13, fontFamily:SANS, color:INK, background:"transparent" },
-  clearX:     { background:"none", border:"none", cursor:"pointer", color:MUTE, fontSize:17, lineHeight:1, padding:"0 2px" },
-  divider:    { width:1, height:28, background:LINE, margin:"0 10px", flexShrink:0 },
+  wrap:        { flex:1, minWidth:0, display:"flex", flexDirection:"column", overflowY:"auto" },
+  kpiStrip:    { display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:1, background:LINE, borderBottom:`1px solid ${LINE}`, flexShrink:0 },
+  kpiCard:     { background:CARD, padding:"22px 24px" },
+  filterBar:   { display:"flex", alignItems:"center", gap:0, padding:"10px 16px", borderBottom:`1px solid ${LINE}`, background:"#fafafa", flexShrink:0, flexWrap:"wrap", rowGap:8 },
+  searchWrap:  { display:"flex", alignItems:"center", gap:8, background:CARD, border:`1px solid ${LINE}`, padding:"8px 12px", minWidth:220, flex:"1 1 220px", maxWidth:320 },
+  searchIn:    { flex:1, border:"none", outline:"none", fontSize:13, fontFamily:SANS, color:INK, background:"transparent" },
+  clearX:      { background:"none", border:"none", cursor:"pointer", color:MUTE, fontSize:17, lineHeight:1, padding:"0 2px" },
+  divider:     { width:1, height:28, background:LINE, margin:"0 10px", flexShrink:0 },
   filterSelect:{ padding:"8px 12px", border:`1px solid ${LINE}`, background:CARD, fontSize:13, fontFamily:SANS, color:INK, cursor:"pointer", outline:"none", fontWeight:600, minWidth:150 },
-  filterBtn:  { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 13px", border:`1px solid ${LINE}`, background:CARD, fontSize:12.5, fontFamily:SANS, fontWeight:600, color:MUTE, cursor:"pointer", whiteSpace:"nowrap" as const, transition:"all .15s" },
-  filterBtnOn:{ background:"#fff1ee", borderColor:`${TERRA}66`, color:TERRA },
-  filterChip: { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 13px", border:`1px solid ${TERRA}55`, background:"#fff6f2", fontSize:12.5, fontFamily:SANS, fontWeight:600, color:INK, cursor:"pointer" },
-  chipX:      { marginLeft:2, color:MUTE, fontSize:15, lineHeight:1 },
-  badge:      { fontSize:11, fontWeight:700, padding:"1px 7px", borderRadius:10, fontVariantNumeric:"tabular-nums" as const },
-  dateRow:    { display:"inline-flex", alignItems:"center", gap:8 },
-  dateLabel:  { fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase" as const, letterSpacing:.8, whiteSpace:"nowrap" as const },
-  clearAll:   { padding:"8px 13px", background:"none", border:`1px solid ${LINE}`, fontSize:12.5, fontWeight:600, color:MUTE, cursor:"pointer", fontFamily:SANS, whiteSpace:"nowrap" as const },
-
-  resultsMeta:{ padding:"8px 20px", borderBottom:`1px solid ${LINE}`, background:IVORY, flexShrink:0 },
-
-  // ── Table ─────────────────────────────────────────────────────────────────
-  tableOuter: { flex:1, overflowX:"auto" },
-  table:      { width:"100%", borderCollapse:"collapse", fontSize:13.5 },
-  th:         { padding:"11px 16px", textAlign:"left", fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, borderBottom:`2px solid ${LINE}`, background:IVORY, whiteSpace:"nowrap" },
-  td:         { padding:"13px 16px", borderBottom:`1px solid ${LINE}`, verticalAlign:"middle" },
-  catPill:    { display:"inline-block", padding:"3px 9px", fontSize:11, fontWeight:700, borderRadius:2, background:GOLD_LT, color:"#7a5a10" },
-  iconBtn:    { width:32, height:32, display:"grid", placeItems:"center", border:`1px solid ${LINE}`, background:CARD, color:MUTE, cursor:"pointer", borderRadius:0, transition:"all .18s" },
-  delBtn:     { width:32, height:32, display:"grid", placeItems:"center", border:`1px solid ${LINE}`, background:CARD, color:MUTE, cursor:"pointer", borderRadius:0, transition:"all .18s" },
-  empty:      { padding:"60px 0", textAlign:"center", color:MUTE, fontFamily:SANS },
-
-  // ── Delete modal ─────────────────────────────────────────────────────────
-  overlay:    { position:"fixed", inset:0, background:"rgba(42,35,29,.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:2000, backdropFilter:"blur(2px)" },
-  delBox:     { background:CARD, width:"min(440px,94vw)", boxShadow:"0 8px 40px rgba(0,0,0,.18)", display:"flex", flexDirection:"column", fontFamily:SANS, color:INK },
-  delHd:      { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 20px", borderBottom:`1px solid ${LINE}`, background:IVORY, fontSize:14, fontWeight:700 },
-  delX:       { background:"none", border:"none", fontSize:17, cursor:"pointer", color:MUTE, lineHeight:1 },
-  delBody:    { padding:"18px 20px", display:"flex", flexDirection:"column", gap:14 },
-  delWarn:    { fontSize:12.5, color:"#7a5a00", background:"#fff8e6", border:"1px solid #f0c040", padding:"8px 12px" },
-  delFt:      { display:"flex", gap:10, justifyContent:"flex-end", padding:"14px 20px", borderTop:`1px solid ${LINE}`, background:IVORY },
-  delGhost:   { padding:"9px 20px", background:"transparent", border:`1px solid ${LINE}`, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:SANS, color:INK },
-  delDanger:  { padding:"9px 22px", background:RED, border:"none", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS, color:"#fff" },
-
-  // ── Category cards ────────────────────────────────────────────────────────
-  catGrid:    { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))", gap:14, padding:20 },
-  catCard:    { display:"flex", alignItems:"stretch", gap:14, background:CARD, border:`1px solid ${LINE}`, padding:"18px 18px 18px 0", cursor:"pointer", fontFamily:SANS, textAlign:"left", position:"relative", transition:"all .15s" },
-  catAccent:  { width:5, flexShrink:0, borderRadius:2 },
-  catName:    { fontSize:16, fontWeight:800, color:INK, marginBottom:3 },
-  catMeta:    { fontSize:12, color:MUTE, marginBottom:14 },
-  catValue:   { fontSize:22, fontWeight:900, color:TERRA, fontVariantNumeric:"tabular-nums", lineHeight:1 },
-  catValueLbl:{ fontSize:10.5, color:MUTE, textTransform:"uppercase", letterSpacing:.6, marginTop:4 },
-  badgeOut:   { fontSize:10.5, fontWeight:700, color:RED, background:"#fff1ee", border:`1px solid ${RED}44`, padding:"2px 8px", borderRadius:2 },
-  badgeLow:   { fontSize:10.5, fontWeight:700, color:"#b45309", background:"#fef3c7", border:"1px solid #f0c04066", padding:"2px 8px", borderRadius:2 },
-  catArrow:   { alignSelf:"center", color:"#cfcabf", fontSize:18, fontWeight:700 },
+  filterBtn:   { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 13px", border:`1px solid ${LINE}`, background:CARD, fontSize:12.5, fontFamily:SANS, fontWeight:600, color:MUTE, cursor:"pointer", whiteSpace:"nowrap" as const, transition:"all .15s" },
+  filterBtnOn: { background:"#fff1ee", borderColor:`${TERRA}66`, color:TERRA },
+  filterChip:  { display:"inline-flex", alignItems:"center", gap:6, padding:"8px 13px", border:`1px solid ${TERRA}55`, background:"#fff6f2", fontSize:12.5, fontFamily:SANS, fontWeight:600, color:INK, cursor:"pointer" },
+  chipX:       { marginLeft:2, color:MUTE, fontSize:15, lineHeight:1 },
+  badge:       { fontSize:11, fontWeight:700, padding:"1px 7px", borderRadius:10, fontVariantNumeric:"tabular-nums" as const },
+  dateRow:     { display:"inline-flex", alignItems:"center", gap:8 },
+  dateLabel:   { fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase" as const, letterSpacing:.8, whiteSpace:"nowrap" as const },
+  clearAll:    { padding:"8px 13px", background:"none", border:`1px solid ${LINE}`, fontSize:12.5, fontWeight:600, color:MUTE, cursor:"pointer", fontFamily:SANS, whiteSpace:"nowrap" as const },
+  resultsMeta: { padding:"8px 20px", borderBottom:`1px solid ${LINE}`, background:IVORY, flexShrink:0 },
+  tableOuter:  { flex:1, overflowX:"auto" },
+  table:       { width:"100%", borderCollapse:"collapse", fontSize:13.5 },
+  th:          { padding:"11px 16px", textAlign:"left", fontSize:10.5, fontWeight:700, color:MUTE, textTransform:"uppercase", letterSpacing:.8, borderBottom:`2px solid ${LINE}`, background:IVORY, whiteSpace:"nowrap" },
+  td:          { padding:"13px 16px", borderBottom:`1px solid ${LINE}`, verticalAlign:"middle" },
+  catPill:     { display:"inline-block", padding:"3px 9px", fontSize:11, fontWeight:700, borderRadius:2, background:GOLD_LT, color:"#7a5a10" },
+  iconBtn:     { width:32, height:32, display:"grid", placeItems:"center", border:`1px solid ${LINE}`, background:CARD, color:MUTE, cursor:"pointer", borderRadius:0, transition:"all .18s" },
+  delBtn:      { width:32, height:32, display:"grid", placeItems:"center", border:`1px solid ${LINE}`, background:CARD, color:MUTE, cursor:"pointer", borderRadius:0, transition:"all .18s" },
+  empty:       { padding:"60px 0", textAlign:"center", color:MUTE, fontFamily:SANS },
+  overlay:     { position:"fixed", inset:0, background:"rgba(42,35,29,.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:2000, backdropFilter:"blur(2px)" },
+  delBox:      { background:CARD, width:"min(440px,94vw)", boxShadow:"0 8px 40px rgba(0,0,0,.18)", display:"flex", flexDirection:"column", fontFamily:SANS, color:INK },
+  delHd:       { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"15px 20px", borderBottom:`1px solid ${LINE}`, background:IVORY, fontSize:14, fontWeight:700 },
+  delX:        { background:"none", border:"none", fontSize:17, cursor:"pointer", color:MUTE, lineHeight:1 },
+  delBody:     { padding:"18px 20px", display:"flex", flexDirection:"column", gap:14 },
+  delWarn:     { fontSize:12.5, color:"#7a5a00", background:"#fff8e6", border:"1px solid #f0c040", padding:"8px 12px" },
+  delFt:       { display:"flex", gap:10, justifyContent:"flex-end", padding:"14px 20px", borderTop:`1px solid ${LINE}`, background:IVORY },
+  delGhost:    { padding:"9px 20px", background:"transparent", border:`1px solid ${LINE}`, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:SANS, color:INK },
+  delDanger:   { padding:"9px 22px", background:RED, border:"none", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:SANS, color:"#fff" },
+  catGrid:     { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))", gap:14, padding:20 },
+  catCard:     { display:"flex", alignItems:"stretch", gap:14, background:CARD, border:`1px solid ${LINE}`, padding:"18px 18px 18px 0", cursor:"pointer", fontFamily:SANS, textAlign:"left", position:"relative", transition:"all .15s", width:"100%" },
+  catAccent:   { width:5, flexShrink:0, borderRadius:2 },
+  catName:     { fontSize:16, fontWeight:800, color:INK, marginBottom:3, paddingRight:30 },
+  catMeta:     { fontSize:12, color:MUTE, marginBottom:14 },
+  catValue:    { fontSize:22, fontWeight:900, color:TERRA, fontVariantNumeric:"tabular-nums", lineHeight:1 },
+  catValueLbl: { fontSize:10.5, color:MUTE, textTransform:"uppercase", letterSpacing:.6, marginTop:4 },
+  badgeOut:    { fontSize:10.5, fontWeight:700, color:RED, background:"#fff1ee", border:`1px solid ${RED}44`, padding:"2px 8px", borderRadius:2 },
+  badgeLow:    { fontSize:10.5, fontWeight:700, color:"#b45309", background:"#fef3c7", border:"1px solid #f0c04066", padding:"2px 8px", borderRadius:2 },
+  catArrow:    { alignSelf:"center", color:"#cfcabf", fontSize:18, fontWeight:700 },
 };

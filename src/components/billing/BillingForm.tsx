@@ -49,6 +49,12 @@ interface Props {
 const CUSTOM = "__custom__";
 const normalizePhone = (v: string) => v.replace(/\D/g, "").slice(-10);
 
+const calcArea = (w: string, h: string): string => {
+  const W = num(w), H = num(h);
+  if (W <= 0 || H <= 0) return "";
+  return String(Math.round(W * H * 100) / 100);
+};
+
 export default function BillingForm(p: Props) {
   const [nameSugOpen,  setNameSugOpen]  = useState(false);
   const [phoneSugOpen, setPhoneSugOpen] = useState(false);
@@ -80,7 +86,6 @@ export default function BillingForm(p: Props) {
     return allCustomers.filter(c => normalizePhone(c.phone).includes(phoneQuery)).slice(0, 6);
   }, [allCustomers, phoneQuery]);
 
-  // Customer found/not-found status
   const customerFound = useMemo(() => {
     const name = p.client.name.trim().toLowerCase();
     const phone = normalizePhone(p.client.phone);
@@ -90,7 +95,6 @@ export default function BillingForm(p: Props) {
     return null;
   }, [allCustomers, p.client.name, p.client.phone]);
 
-  // Phone conflict: same phone, different name — must use existing profile
   const phoneConflict = useMemo(() => {
     if (phoneQuery.length < 10) return null;
     return allCustomers.find(
@@ -105,7 +109,6 @@ export default function BillingForm(p: Props) {
     setPhoneSugOpen(false); setActivePhSug(-1);
   };
 
-  // ── Item helpers ──────────────────────────────────────────────────────────
   const stockById = useMemo(() => { const m = new Map<string, StockItem>(); for (const s of p.stockItems) m.set(s.id, s); return m; }, [p.stockItems]);
   const catOf = (it: LineItem) => { if (rowCat[it.id] !== undefined) return rowCat[it.id]; if (it.itemId) return stockById.get(it.itemId)?.category || ""; return ""; };
   const itemsInCat = (cat: string) => !cat || cat === CUSTOM ? [] : p.stockItems.filter(s => (s.category || "") === cat);
@@ -116,14 +119,24 @@ export default function BillingForm(p: Props) {
     const s = stockById.get(stockId); if (!s) return;
     setItem(rowId, { itemId: s.id, desc: s.name, rate: "", unit: s.unit });
   };
+  const setSize = (id: string, dim: "width"|"height", val: string) => {
+    p.onItemsChange(p.items.map(it => {
+      if (it.id !== id) return it;
+      const next = { ...it, [dim]: val } as LineItem;
+      const area = calcArea(next.width || "", next.height || "");
+      if (area) next.qty = area;
+      return next;
+    }));
+  };
   const addItem = () => p.onItemsChange([...p.items, { id: uid(), desc: "", qty: "1", rate: "" }]);
   const removeItem = (id: string) => { if (p.items.length === 1) return; p.onItemsChange(p.items.filter(it => it.id !== id)); setRowCat(m => { const n = { ...m }; delete n[id]; return n; }); };
 
   const inp    = { width:"100%", boxSizing:"border-box" as const, padding:"10px 12px", border:"1px solid #e6dcd2", borderRadius:0, fontSize:14, fontFamily:SANS, background:CARD, color:INK, colorScheme:"light" as const };
   const inpSm  = { ...inp, padding:"9px 8px", fontSize:13 };
   const inpNum = { ...inp, textAlign:"right" as const, fontVariantNumeric:"tabular-nums" as const };
+  const inpDim = { ...inp, padding:"9px 6px", fontSize:13, textAlign:"center" as const };
   const card   = { background:GLOW, border:`1px solid ${LINE}`, boxShadow:GLOW_SHADOW, padding:"20px 22px" };
-  const GRID   = "minmax(0,0.85fr) minmax(0,1.35fr) 64px 92px 88px 28px";
+  const GRID   = "minmax(0,0.8fr) minmax(0,1.25fr) 120px 60px 84px 84px 28px";
 
   return (
     <div style={{ minWidth:0 }}>
@@ -156,7 +169,6 @@ export default function BillingForm(p: Props) {
 
         <div style={{ fontSize:11, fontWeight:700, letterSpacing:.8, textTransform:"uppercase" as const, color:MUTE, marginTop:20 }}>Bill to</div>
 
-        {/* Client name with autocomplete */}
         <div style={{ position:"relative", marginTop:12 }}>
           <span style={{ display:"block", fontSize:12.5, fontWeight:700, color:BODY, marginBottom:6 }}>
             Client name <span style={{ fontWeight:500, color:MUTE, fontSize:11.5 }}> · type to search saved customers</span>
@@ -187,7 +199,6 @@ export default function BillingForm(p: Props) {
         </div>
 
         <div style={{ display:"flex", gap:12 }}>
-          {/* Phone with autocomplete + auto-fill on match */}
           <div style={{ flex:1, minWidth:0, marginTop:12 }}>
             <span style={{ display:"block", fontSize:12.5, fontWeight:700, color:BODY, marginBottom:6 }}>
               Phone <span style={{ fontWeight:500, color:MUTE, fontSize:11.5 }}> · type to find existing customer</span>
@@ -199,7 +210,6 @@ export default function BillingForm(p: Props) {
                   const val = e.target.value;
                   p.onClientChange({ ...p.client, phone: val });
                   setPhoneSugOpen(true); setActivePhSug(-1);
-                  // Auto-fill when 10-digit phone matches existing customer
                   const norm = val.replace(/\D/g, "").slice(-10);
                   if (norm.length >= 10) {
                     const match = allCustomers.find(c => normalizePhone(c.phone) === norm);
@@ -229,7 +239,6 @@ export default function BillingForm(p: Props) {
               )}
             </div>
 
-            {/* Phone belongs to someone else — must use their profile */}
             {phoneConflict && (
               <div style={{ marginTop:6, padding:"8px 12px", background:"#fdecea", border:"1px solid #f3cfc2", fontSize:12.5, color:"#8a2f16", lineHeight:1.5, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
                 <span>⚠️ This number belongs to <strong>{phoneConflict.name}</strong>. You must use their profile.</span>
@@ -241,7 +250,6 @@ export default function BillingForm(p: Props) {
               </div>
             )}
 
-            {/* Customer not found — must add first */}
             {customerFound === false && !phoneConflict && (
               <div style={{ marginTop:6, padding:"8px 12px", background:"#fdecea", border:"1px solid #f3cfc2", fontSize:12.5, color:"#8a2f16", lineHeight:1.5, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
                 <span>⚠️ Customer not found in database. Add them first to create a bill.</span>
@@ -255,7 +263,6 @@ export default function BillingForm(p: Props) {
               </div>
             )}
 
-            {/* Customer found ✓ */}
             {customerFound === true && !phoneConflict && (
               <div style={{ marginTop:6, padding:"6px 10px", background:"#e8f6ee", border:"1px solid #bfe3cd", fontSize:12, color:"#15733f", fontWeight:600 }}>
                 ✓ Customer found
@@ -276,11 +283,11 @@ export default function BillingForm(p: Props) {
       <section style={{ ...card, marginTop:16 }}>
         <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", flexWrap:"wrap", gap:10, marginBottom:14 }}>
           <h2 style={{ fontSize:16, fontWeight:800, margin:0, color:INK }}>Items</h2>
-          <span style={{ fontSize:11.5, color:MUTE }}>Pick a category, then the item — or choose Custom</span>
+          <span style={{ fontSize:11.5, color:MUTE }}>Fill Size (W × H) to auto-calc Qty — or leave blank & type Qty</span>
         </div>
 
         <div style={{ display:"grid", gridTemplateColumns:GRID, gap:8, alignItems:"center", fontSize:10.5, fontWeight:700, color:MUTE, letterSpacing:.7, textTransform:"uppercase" as const, padding:"0 2px 8px" }}>
-          <span>Category</span><span>Item</span><span style={{ textAlign:"right" }}>Qty</span><span style={{ textAlign:"right" }}>Rate (₹)</span><span style={{ textAlign:"right" }}>Amount</span><span/>
+          <span>Category</span><span>Item</span><span style={{ textAlign:"center" }}>Size (W × H)</span><span style={{ textAlign:"right" }}>Qty</span><span style={{ textAlign:"right" }}>Rate (₹)</span><span style={{ textAlign:"right" }}>Amount</span><span/>
         </div>
 
         {p.items.map(it => {
@@ -290,6 +297,7 @@ export default function BillingForm(p: Props) {
           const linked   = it.itemId ? stockById.get(it.itemId) : undefined;
           const avail    = linked ? dec(linked.quantity) : 0;
           const after    = avail - num(it.qty);
+          const sized    = num(it.width) > 0 && num(it.height) > 0;
           return (
             <div key={it.id} style={{ marginBottom:10 }}>
               <div style={{ display:"grid", gridTemplateColumns:GRID, gap:8, alignItems:"center" }}>
@@ -306,12 +314,22 @@ export default function BillingForm(p: Props) {
                     {opts.map(s => <option key={s.id} value={s.id}>{s.name} — {dec(s.quantity)} {s.unit}</option>)}
                   </select>
                 )}
-                <input className="bl-in" style={{ ...inpNum, width:"100%" }} type="number" min="0" value={it.qty} onChange={e => setItem(it.id, { qty: e.target.value })}/>
+                <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                  <input className="bl-in" style={inpDim} type="number" min="0" placeholder="W" value={it.width || ""} onChange={e => setSize(it.id, "width", e.target.value)}/>
+                  <span style={{ color:MUTE, fontSize:12, fontWeight:700 }}>×</span>
+                  <input className="bl-in" style={inpDim} type="number" min="0" placeholder="H" value={it.height || ""} onChange={e => setSize(it.id, "height", e.target.value)}/>
+                </div>
+                <input className="bl-in" style={{ ...inpNum, width:"100%", ...(sized?{background:"#faf7f3",color:MUTE}:{}) }} type="number" min="0" value={it.qty} readOnly={sized} title={sized?"Auto-calculated from Size (W × H)":""} onChange={e => setItem(it.id, { qty: e.target.value })}/>
                 <input className="bl-in" style={{ ...inpNum, width:"100%" }} type="number" min="0" placeholder="0" value={it.rate} onChange={e => setItem(it.id, { rate: e.target.value })}/>
                 <span style={{ textAlign:"right", fontSize:13, fontWeight:800, color:INK, fontVariantNumeric:"tabular-nums" }}>{rupee(num(it.qty) * num(it.rate))}</span>
                 <button className="bl-del" style={{ width:28, height:28, display:"grid", placeItems:"center", border:"none", background:"transparent", color:FAINT, cursor:"pointer" }}
                   onClick={() => removeItem(it.id)} disabled={p.items.length === 1}><Icon name="trash" size={15}/></button>
               </div>
+              {sized && (
+                <div style={{ fontSize:11, marginTop:3, paddingLeft:2, color:MUTE }}>
+                  {num(it.width)} × {num(it.height)} = <b style={{ color:INK }}>{num(it.qty)}</b> {linked?.unit || "sqft"}
+                </div>
+              )}
               {linked && (
                 <div style={{ fontSize:11, marginTop:4, paddingLeft:2, color: after < 0 ? TERRA : MUTE }}>
                   {after < 0
@@ -392,6 +410,7 @@ export default function BillingForm(p: Props) {
         .bl-in[type="number"]{-moz-appearance:textfield;appearance:textfield}
         .bl-in[type="number"]::-webkit-outer-spin-button,.bl-in[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
         .bl-in:disabled{background:#faf7f3;color:${MUTE};cursor:not-allowed}
+        .bl-in[readonly]{cursor:default}
         .bl-add:hover{border-color:${TERRA}66;color:${TERRA};background:#fffcf9}
         .bl-del:hover:not(:disabled){color:${TERRA};background:#fdecea}
         .bl-del:disabled{opacity:.35;cursor:not-allowed}
