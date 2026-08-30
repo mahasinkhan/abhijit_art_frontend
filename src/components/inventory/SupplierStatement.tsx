@@ -731,7 +731,7 @@ export default function SupplierStatement({ supplierId, onBack, onActions }: Pro
                     <input style={{ ...sharedSt.inp, textAlign:"right" }} type="number" min="0" value={l.qty} onChange={e=>setPurLine(l.id,"qty",e.target.value)}/>
                     <input style={{ ...sharedSt.inp, textAlign:"right" }} type="number" min="0" placeholder="0" value={l.rate} onChange={e=>setPurLine(l.id,"rate",e.target.value)}/>
                     <select style={sharedSt.inp} value={l.unit} onChange={e=>setPurLine(l.id,"unit",e.target.value)}>
-                      {["piece","sqft","Square Inch","inch","metre","roll","sheet","box"].map(u=>(
+                      {["piece","sqft","Square Inch","inch","feet","metre","roll","sheet","box"].map(u=>(
                         <option key={u} value={u}>{u}</option>
                       ))}
                     </select>

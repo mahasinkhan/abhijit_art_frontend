@@ -44,11 +44,9 @@ export default function BillingPreview(p: Props) {
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div style={{ display:"flex", alignItems:"center", gap:9, padding:"12px 14px 10px", borderBottom:"2.5px solid #e89a3c", background:"linear-gradient(135deg,#fff2e6 0%,#fff8f0 50%,#fff 100%)", flexShrink:0 }}>
-        {p.logoBase64
-          ? <img src={p.logoBase64} alt={p.biz.name} style={{ width:56,height:56,objectFit:"contain",flexShrink:0 }}/>
-          : logoOk
-            ? <img src="/images/abhijit_art_logo.png" alt={p.biz.name} style={{ width:56,height:56,objectFit:"contain",flexShrink:0 }} onError={()=>setLogoOk(false)}/>
-            : <div style={{ width:56,height:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#f0e8d0",border:"1px solid #c8a84b",borderRadius:"50%",fontSize:13,fontWeight:800,color:"#8a6a1c" }}>{(p.biz.name||"").slice(0,2)}</div>}
+                {logoOk
+          ? <img src={p.logoBase64 || "/images/abhijit_art_logo.png"} alt={p.biz.name} style={{ width:56,height:56,objectFit:"contain",flexShrink:0 }} onError={()=>setLogoOk(false)}/>
+          : <div style={{ width:56,height:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#f0e8d0",border:"1px solid #c8a84b",borderRadius:"50%",fontSize:13,fontWeight:800,color:"#8a6a1c" }}>{(p.biz.name||"").slice(0,2)}</div>}
         <div style={{ flex:1, minWidth:0 }}>
           {p.biz.name && <div style={{ fontSize:19,fontWeight:900,color:ORANGE,lineHeight:1.05 }}>{p.biz.name}</div>}
           {p.biz.pan && <div style={{ fontSize:9,color:"#444",fontWeight:600,marginTop:2 }}>Pan No&nbsp; <b>{p.biz.pan}</b></div>}
