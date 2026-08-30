@@ -35,7 +35,7 @@ export default function BillingPreview(p: Props) {
   const visibleItems = p.items.filter(it => it.desc.trim() || num(it.rate) > 0);
   const cols = 4 + (discountAmt > 0 ? 1 : 0) + (num(p.taxPct) > 0 ? 1 : 0);
 
-  const renderCard = (hideName: boolean) => (
+  const renderCard = () => (
     <div style={{
       width:"100%", height:"100%", background:CARD,
       fontFamily:"'Inter',Arial,sans-serif", color:"#1a1a2e",
@@ -50,7 +50,7 @@ export default function BillingPreview(p: Props) {
             ? <img src="/images/abhijit_art_logo.png" alt={p.biz.name} style={{ width:56,height:56,objectFit:"contain",flexShrink:0 }} onError={()=>setLogoOk(false)}/>
             : <div style={{ width:56,height:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#f0e8d0",border:"1px solid #c8a84b",borderRadius:"50%",fontSize:13,fontWeight:800,color:"#8a6a1c" }}>{(p.biz.name||"").slice(0,2)}</div>}
         <div style={{ flex:1, minWidth:0 }}>
-          {!hideName && <div style={{ fontSize:19,fontWeight:900,color:ORANGE,lineHeight:1.05 }}>{p.biz.name}</div>}
+          {p.biz.name && <div style={{ fontSize:19,fontWeight:900,color:ORANGE,lineHeight:1.05 }}>{p.biz.name}</div>}
           {p.biz.pan && <div style={{ fontSize:9,color:"#444",fontWeight:600,marginTop:2 }}>Pan No&nbsp; <b>{p.biz.pan}</b></div>}
           {p.biz.address && <div style={{ fontSize:8.5,color:"#666",marginTop:2,lineHeight:1.35,whiteSpace:"pre-line" as const }}>📍 {p.biz.address}</div>}
           <div style={{ fontSize:8.5,color:"#666",marginTop:2,display:"flex",flexWrap:"wrap" as const,gap:"2px 8px" }}>
@@ -155,7 +155,7 @@ export default function BillingPreview(p: Props) {
               </div>
             )}
             <div style={{ flex:1,display:"flex",flexDirection:"column" as const,alignItems:"center",justifyContent:"flex-end",textAlign:"center" as const }}>
-                            {p.sigBase64 && <img src={p.sigBase64} alt="Signature" style={{ height:28,width:"auto",display:"block",margin:"auto auto 3px",marginTop:20 }}/>}
+              {p.sigBase64 && <img src={p.sigBase64} alt="Signature" style={{ height:28,width:"auto",display:"block",margin:"auto auto 3px" }}/>}
               <div style={{ width:56,borderBottom:".5px solid #888",margin:"3px auto 2px" }}/>
               <div style={{ fontSize:7,color:"#555" }}>Authorised Signatory</div>
             </div>
@@ -199,38 +199,13 @@ export default function BillingPreview(p: Props) {
     </div>
   );
 
-  // ── Half: two rotated copies on one A4 portrait sheet ──────────────
+  // ── Half: plain 6 inch × 8 inch upright bill (laser printer, custom paper) ──
   if (half) {
     return (
       <div style={{ position:"sticky", top:20, minWidth:0 }}>
-        {labelRow("A4 · 210 × 297 mm · top half only")}
-        <div style={{
-          width:"100%", aspectRatio:"210 / 297", position:"relative",
-          background:CARD, border:"1px solid #e0d8c8", boxShadow:"0 4px 20px rgba(0,0,0,.13)",
-          overflow:"hidden", display:"flex", flexDirection:"column" as const,
-        }}>
-          <div style={{ position:"relative", width:"100%", aspectRatio:"210 / 148.5", overflow:"hidden" }}>
-            <div style={{
-              position:"absolute", top:"50%", left:"50%",
-              width:"70.711%", height:"141.421%",
-              transform:"translate(-50%,-50%) rotate(-90deg)",
-              transformOrigin:"center center",
-              boxSizing:"border-box" as const, overflow:"hidden",
-              border:"1px solid #ece2d1", background:CARD,
-            }}>
-              <div style={{ width:"141.421%", height:"141.421%", transform:"scale(0.70711)", transformOrigin:"top left" }}>
-                {renderCard(true)}
-              </div>
-            </div>
-          </div>
-          <div style={{ flex:1, background:"#fff", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <span style={{ fontSize:10, color:MUTE, fontStyle:"italic" }}>blank — feed back for next customer</span>
-          </div>
-          <div style={{ position:"absolute", left:0, right:0, top:"50%", borderTop:"1.5px dashed #b9b3a4", zIndex:4 }}/>
-          <span style={{ position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)", background:"#fff", padding:"0 8px", fontSize:11, color:"#999", zIndex:5 }}>✂</span>
-        </div>
-        <div style={{ marginTop:8, fontSize:10.5, color:MUTE, textAlign:"center" as const, lineHeight:1.4 }}>
-          Cut along the dashed line · turn the paper to read (right edge = top) · feed blank half back for next customer
+        {labelRow("6 × 8 inch")}
+        <div style={{ width:"100%", aspectRatio:"6 / 8", border:"1px solid #e0d8c8", boxShadow:"0 4px 20px rgba(0,0,0,.13)", overflow:"hidden" }}>
+          {renderCard()}
         </div>
       </div>
     );
@@ -241,7 +216,7 @@ export default function BillingPreview(p: Props) {
     <div style={{ position:"sticky", top:20, minWidth:0 }}>
       {labelRow("A4 · 210 × 297 mm")}
       <div style={{ width:"100%", aspectRatio:"210 / 297", border:"1px solid #e0d8c8", boxShadow:"0 4px 20px rgba(0,0,0,.13)", overflow:"hidden" }}>
-        {renderCard(false)}
+        {renderCard()}
       </div>
     </div>
   );
