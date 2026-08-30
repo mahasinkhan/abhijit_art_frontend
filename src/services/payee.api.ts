@@ -14,23 +14,27 @@ export interface Payee {
   role: string;
   notes: string;
   active: boolean;
-  /** attached by the list/detail endpoints */
-  totalPaid: number;
-  paymentCount: number;
-  lastPaidAt?: string | null;
+  /** money given to them */
+  paid: number;
+  /** money received back from them */
+  received: number;
+  /** paid − received. Positive means they still owe us. */
+  net: number;
+  entryCount: number;
+  lastEntryAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface PayeeDetail extends Payee {
-  cash: number;
-  online: number;
-  expenses: {
-    id: string; date: string; category: string; title: string;
-    amount: number; method: "cash" | "online"; notes: string;
+  cashPaid: number;
+  onlinePaid: number;
+  entries: {
+    id: string; kind: "income" | "expense"; date: string; category: string;
+    title: string; amount: number; method: "cash" | "online"; notes: string;
   }[];
-  byMonth:    { month: string; amount: number }[];
-  byCategory: { category: string; amount: number }[];
+  byMonth:    { month: string; income: number; expense: number }[];
+  byCategory: { category: string; kind: string; amount: number }[];
 }
 
 export interface PayeeInput {

@@ -3,7 +3,7 @@ import api from "../api";
 import { io, Socket } from "socket.io-client";
 
 interface Employee {
-  id: string; name: string; email: string; phone: string;
+  id: string; name: string; username: string | null; phone: string;
   createdAt: string;
   _count: { tasksAssigned: number };
 }
@@ -40,7 +40,7 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
   const [teamView,  setTeamView]    = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
-  const [form, setForm]         = useState({ name: "", email: "", phone: "", password: "" });
+  const [form, setForm]         = useState({ name: "", username: "", phone: "", password: "" });
   const [showPw, setShowPw]     = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -88,21 +88,23 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
   const totalActive  = tasks.filter((t) => t.status === "pending" || t.status === "in_progress").length;
   const totalOverdue = tasks.filter((t) => t.deadline && t.status !== "completed" && t.status !== "cancelled" && new Date(t.deadline).getTime() < now).length;
 
-  function openCreate() { setEditEmp(null); setForm({ name: "", email: "", phone: "", password: "" }); setFormError(""); setShowPw(false); setShowModal(true); }
-  function openEdit(emp: Employee) { setEditEmp(emp); setForm({ name: emp.name, email: emp.email, phone: emp.phone, password: "" }); setFormError(""); setShowPw(false); setShowModal(true); }
+  function openCreate() { setEditEmp(null); setForm({ name: "", username: "", phone: "", password: "" }); setFormError(""); setShowPw(false); setShowModal(true); }
+  function openEdit(emp: Employee) { setEditEmp(emp); setForm({ name: emp.name, username: emp.username || "", phone: emp.phone, password: "" }); setFormError(""); setShowPw(false); setShowModal(true); }
 
   async function save() {
     setFormError("");
-    if (!form.name.trim() || !form.email.trim()) { setFormError("Name and email are required."); return; }
+    if (!form.name.trim())     { setFormError("Full name is required."); return; }
+    if (!form.phone.trim())    { setFormError("Phone number is required."); return; }
+    if (!form.username.trim()) { setFormError("Username is required."); return; }
     if (!editEmp && form.password.length < 6) { setFormError("Password must be at least 6 characters."); return; }
     setSaving(true);
     try {
       if (editEmp) {
-        const body: any = { name: form.name, phone: form.phone };
+        const body: any = { name: form.name, phone: form.phone, username: form.username };
         if (form.password.length >= 6) body.password = form.password;
         await api.patch(`/api/users/employee/${editEmp.id}`, body);
       } else {
-        await api.post("/api/users/employee", { name: form.name, email: form.email, phone: form.phone, password: form.password });
+        await api.post("/api/users/employee", { name: form.name, username: form.username, phone: form.phone, password: form.password });
       }
       setShowModal(false); loadEmployees();
     } catch (err: any) {
@@ -125,7 +127,7 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
 
   const displayed = employees.filter((e) => {
     const q = search.toLowerCase();
-    return !q || e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q) || e.phone.includes(q);
+    return !q || e.name.toLowerCase().includes(q) || (e.username || "").toLowerCase().includes(q) || e.phone.includes(q);
   });
 
   // Group team tasks by employee for the board view
@@ -176,7 +178,7 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
         .ep-btn.danger { color:${ACCENT}; border-color:#f5c4bb; flex:0 0 auto; padding:8px 12px; }
         .ep-btn.danger:hover { background:#fef2ee; }
 
-        /* ── Team Board ── */
+        /* Team Board */
         .ep-board { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
         .ep-bcol { background:#fff; border:1px solid #e8e8ee; }
         .ep-bcol-head { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid #f0f0f4; background:#fafaf8; }
@@ -220,14 +222,14 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
 
       {/* Toolbar */}
       <div className="ep-bar">
-        {!teamView && <input className="ep-search" placeholder="Search name, email or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />}
+        {!teamView && <input className="ep-search" placeholder="Search name, username or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />}
         <button className="ep-add" onClick={openCreate}>+ Add Employee</button>
         <button className={`ep-toggle${teamView ? " on" : ""}`} onClick={() => setTeamView((v) => !v)}>
-          {teamView ? "👥 Team Board" : "👥 Team Board"}
+          👥 Team Board
         </button>
       </div>
 
-      {/* ── Team Board View ── */}
+      {/* Team Board View */}
       {teamView ? (
         <div>
           <div style={{ fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em", color: "#6b7280", marginBottom: 12 }}>
@@ -243,7 +245,7 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
                     <div className="ep-bcol-av">{emp.name[0].toUpperCase()}</div>
                     <div>
                       <div className="ep-bcol-name">{emp.name}</div>
-                      <div style={{ fontSize: ".72rem", color: "#6b7280" }}>{emp.email}</div>
+                      <div style={{ fontSize: ".72rem", color: "#6b7280" }}>{emp.username || emp.phone}</div>
                     </div>
                     <div className="ep-bcol-count">{active.length + pending.length} task{active.length + pending.length !== 1 ? "s" : ""}</div>
                   </div>
@@ -271,7 +273,7 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
           )}
         </div>
       ) : (
-        /* ── Employee Cards View ── */
+        /* Employee Cards View */
         loading ? (
           <p style={{ color: "#9ca3af", fontSize: ".88rem" }}>Loading…</p>
         ) : displayed.length === 0 ? (
@@ -282,13 +284,14 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
           <div className="ep-grid">
             {displayed.map((emp) => {
               const s = statsFor(emp.id);
+              const contact = [emp.username, emp.phone].filter(Boolean).join(" · ");
               return (
                 <div key={emp.id} className="ep-card">
                   <div className="ep-card-top">
                     <div className="ep-avatar">{emp.name[0].toUpperCase()}</div>
                     <div style={{ minWidth: 0 }}>
                       <div className="ep-name">{emp.name}</div>
-                      <div className="ep-contact">{emp.email}{emp.phone ? ` · ${emp.phone}` : ""}</div>
+                      <div className="ep-contact">{contact || "—"}</div>
                     </div>
                   </div>
                   <div className={`ep-status ${s.current ? "working" : "idle"}`}>
@@ -327,15 +330,15 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (employeeId
                 <input className="ep-inp" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Rahul Das" />
               </div>
               <div>
-                <label className="ep-lbl">Email *</label>
-                <input className="ep-inp" type="email" value={form.email} disabled={!!editEmp}
-                  style={editEmp ? { opacity: .5, cursor: "not-allowed" } : {}}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="rahul@abhijitart.com" />
-                {editEmp && <div className="ep-hint">Email can't be changed after creation.</div>}
+                <label className="ep-lbl">Phone *</label>
+                <input className="ep-inp" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="9876543210" />
               </div>
               <div>
-                <label className="ep-lbl">Phone</label>
-                <input className="ep-inp" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="9876543210" />
+                <label className="ep-lbl">Username *</label>
+                <input className="ep-inp" value={form.username}
+                  onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+                  placeholder="e.g. EMP001 / COM001" autoCapitalize="characters" autoComplete="off" />
+                <div className="ep-hint">The employee logs in with this + their password.</div>
               </div>
               <div>
                 <label className="ep-lbl">{editEmp ? "New Password" : "Password *"}</label>

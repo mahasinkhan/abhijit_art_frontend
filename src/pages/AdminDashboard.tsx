@@ -8,7 +8,7 @@ const Inventory        = lazy(() => import("../components/inventory"));
 const InvoiceMaker     = lazy(() => import("../components/billing"));
 const Invoices         = lazy(() => import("../components/invoices"));
 const PaymentReminders = lazy(() => import("../components/PaymentReminders"));
-const Expenses         = lazy(() => import("../components/expenses"));
+const IncomeExpense    = lazy(() => import("../components/income-expense"));
 const Activity         = lazy(() => import("../components/Activity"));
 const AdminPostUpload  = lazy(() => import("../components/AdminPostUpload"));
 const PostFeed         = lazy(() => import("../components/PostFeed"));
@@ -17,7 +17,7 @@ const Tasks            = lazy(() => import("../components/tasks"));
 const Employees        = lazy(() => import("../components/employees"));
 const QuickOrders      = lazy(() => import("../components/quick-order"));
 
-type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "expenses" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
+type Tab = "bookings" | "customers" | "inventory" | "billing" | "billing50" | "invoices" | "reminders" | "expenses" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
 
 const ACCENT = "#d9542f";
 
@@ -26,6 +26,7 @@ const ico = { width: 19, height: 19, viewBox: "0 0 24 24", fill: "none", stroke:
 const IconBookings  = () => (<svg {...ico}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M9 12h6M9 16h6" /></svg>);
 const IconBilling   = () => (<svg {...ico}><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>);
 const IconInvoices  = () => (<svg {...ico}><path d="M16 3H6a2 2 0 0 0-2 2v11" /><rect x="8" y="6" width="12" height="15" rx="2" /><path d="M11 11h6M11 15h4" /></svg>);
+const IconBilling50 = () => (<svg {...ico}><rect x="4" y="3" width="16" height="18" rx="1" /><path d="M4 12h16" strokeDasharray="3 2" /><path d="M7 6h7M7 9h5" /></svg>);
 const IconReminders = () => (<svg {...ico}><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>);
 const IconExpenses  = () => (<svg {...ico}><path d="M3 7V6a2 2 0 0 1 2-2h11" /><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M17 13h2" /><path d="M8 11h5M8 14h5l-3.5 3.5" /></svg>);
 const IconActivity  = () => (<svg {...ico}><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z" /><path d="m9 12 2 2 4-4" /></svg>);
@@ -41,10 +42,11 @@ const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "bookings",  label: "Bookings",  Icon: IconBookings  },
   { id: "customers", label: "Customers", Icon: IconCustomers },
   { id: "inventory", label: "Inventory", Icon: IconInventory },
-  { id: "billing",   label: "Billing",   Icon: IconBilling   },
+  { id: "billing",   label: "Billing 100%",  Icon: IconBilling   },
+  { id: "billing50", label: "Billing 50%",   Icon: IconBilling50 },
   { id: "invoices",  label: "Invoices",  Icon: IconInvoices  },
   { id: "reminders", label: "Reminders", Icon: IconReminders },
-  { id: "expenses",  label: "Daily Expense", Icon: IconExpenses },
+  { id: "expenses",  label: "Income & Expense", Icon: IconExpenses },
   { id: "activity",  label: "Activity",  Icon: IconActivity  },
   { id: "posts",     label: "Posts",     Icon: IconPosts     },
   { id: "khata",     label: "Quick Orders", Icon: IconKhata },
@@ -57,10 +59,11 @@ const TITLES: Record<Tab, string> = {
   bookings:  "Bookings",
   customers: "Customers",
   inventory: "Inventory",
-  billing:   "Billing",
+  billing:   "Billing 100% — full page",
+  billing50: "Billing 50% — half page",
   invoices:  "Invoices",
   reminders: "Payment reminders",
-  expenses:  "Daily Expense",
+  expenses:  "Income & Expense",
   activity:  "Activity",
   posts:     "Posts",
   khata:     "Quick Orders",
@@ -145,10 +148,11 @@ export default function AdminDashboard() {
             {activeTab === "bookings"  && <Bookings />}
             {activeTab === "customers" && <Customers />}
             {activeTab === "inventory" && <Inventory />}
-            {activeTab === "billing"   && <InvoiceMaker />}
+            {activeTab === "billing"   && <InvoiceMaker variant="full" />}
+            {activeTab === "billing50" && <InvoiceMaker variant="half" />}
             {activeTab === "invoices"  && <Invoices />}
             {activeTab === "reminders" && <PaymentReminders />}
-            {activeTab === "expenses"  && <Expenses />}
+            {activeTab === "expenses"  && <IncomeExpense />}
             {activeTab === "activity"  && <Activity />}
             {activeTab === "posts"     && (
               <div>

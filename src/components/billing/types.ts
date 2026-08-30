@@ -96,7 +96,7 @@ export const SEQ_KEY      = "aa_invoice_seq";
 export const loadBiz = (): Party => {
   try { const s = localStorage.getItem(BIZ_KEY); if (s) return JSON.parse(s); } catch {}
   return {
-    name:    "Abhijit Art",
+        name:    "",
     address: "Rabindra Sadan, Shakti Mandir Club, SS Sen Road\nBerhampore, West Bengal - 742101",
     phone:   "7478482106 (Office) | 9932913826 (Abhijit)",
     email:   "abhijitart85@gmail.com",

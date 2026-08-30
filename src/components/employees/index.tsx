@@ -26,13 +26,13 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (id: string
   const displayed = employees.filter((e) => {
     const q = search.toLowerCase();
     return !q || e.name.toLowerCase().includes(q) ||
-      e.email.toLowerCase().includes(q) || e.phone.includes(q);
+      (e.username || "").toLowerCase().includes(q) || e.phone.includes(q);
   });
 
   function openCreate() { setEditEmp(null); setFormError(""); setShowModal(true); }
   function openEdit(emp: Employee) { setEditEmp(emp); setFormError(""); setShowModal(true); }
 
-  async function handleSave(data: { name: string; email: string; phone: string; password: string }) {
+  async function handleSave(data: { name: string; username: string; phone: string; password: string }) {
     setSaving(true); setFormError("");
     try {
       if (editEmp) await employeeApi.update(editEmp.id, data);
@@ -138,7 +138,7 @@ export default function Employees({ onAssignTask }: { onAssignTask?: (id: string
       {/* Toolbar */}
       <div className="ep-bar">
         {!teamView && (
-          <input className="ep-search" placeholder="Search name, email or phone…"
+          <input className="ep-search" placeholder="Search name, username or phone…"
             value={search} onChange={(e) => setSearch(e.target.value)} />
         )}
         <button className="ep-add" onClick={openCreate}>+ Add Employee</button>

@@ -2,13 +2,13 @@
 import api from "../api";
 
 export interface Employee {
-  id: string; name: string; email: string; phone: string;
+  id: string; name: string; username: string | null; phone: string;
   createdAt: string;
   _count: { tasksAssigned: number };
 }
 
 export interface EmployeeFormData {
-  name: string; email: string; phone: string; password: string;
+  name: string; username: string; phone: string; password: string;
 }
 
 export const employeeApi = {

@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [remember, setRemember] = useState(true);
@@ -17,7 +17,7 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      const user = await login(email, password);
+      const user = await login(identifier, password);
       if (user.role === "admin") navigate("/admin");
       else if (user.role === "employee") navigate("/employee");
       else navigate("/services");
@@ -222,10 +222,10 @@ export default function Login() {
 
             <form onSubmit={submit} className="aa-form">
               <div className="aa-field">
-                <label htmlFor="email">Email address</label>
+                <label htmlFor="identifier">Email or Username</label>
                 <div className="aa-inputwrap">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
-                  <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+                  <input id="identifier" type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@example.com or EMP001" autoCapitalize="none" autoComplete="username" required />
                 </div>
               </div>
 

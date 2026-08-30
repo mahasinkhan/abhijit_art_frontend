@@ -6,14 +6,19 @@ const ACCENT = "#d9542f";
 
 interface Props {
   editEmp:  Employee | null;
-  onSave:   (data: { name: string; email: string; phone: string; password: string }) => Promise<void>;
+  onSave:   (data: { name: string; username: string; phone: string; password: string }) => Promise<void>;
   onClose:  () => void;
   saving:   boolean;
   error:    string;
 }
 
 export function EmployeeModal({ editEmp, onSave, onClose, saving, error }: Props) {
-  const [form,   setForm]   = useState({ name: editEmp?.name || "", email: editEmp?.email || "", phone: editEmp?.phone || "", password: "" });
+  const [form,   setForm]   = useState({
+    name:     editEmp?.name || "",
+    username: editEmp?.username || "",
+    phone:    editEmp?.phone || "",
+    password: "",
+  });
   const [showPw, setShowPw] = useState(false);
 
   return (
@@ -32,19 +37,18 @@ export function EmployeeModal({ editEmp, onSave, onClose, saving, error }: Props
               placeholder="e.g. Rahul Das" />
           </div>
           <div>
-            <label className="ep-lbl">Email *</label>
-            <input className="ep-inp" type="email" value={form.email}
-              disabled={!!editEmp}
-              style={editEmp ? { opacity: .5, cursor: "not-allowed" } : {}}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              placeholder="rahul@abhijitart.com" />
-            {editEmp && <div className="ep-hint">Email can't be changed after creation.</div>}
-          </div>
-          <div>
-            <label className="ep-lbl">Phone</label>
+            <label className="ep-lbl">Phone *</label>
             <input className="ep-inp" value={form.phone}
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
               placeholder="9876543210" />
+          </div>
+          <div>
+            <label className="ep-lbl">Username *</label>
+            <input className="ep-inp" value={form.username}
+              onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+              placeholder="e.g. EMP001 / COM001"
+              autoCapitalize="characters" autoComplete="off" />
+            <div className="ep-hint">The employee logs in with this + their password.</div>
           </div>
           <div>
             <label className="ep-lbl">{editEmp ? "New Password" : "Password *"}</label>

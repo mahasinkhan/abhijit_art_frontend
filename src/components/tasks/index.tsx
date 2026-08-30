@@ -309,14 +309,15 @@ export default function Tasks({
         .tk-save:hover:not(:disabled) { background:${ACCENT_DK}; }
         .tk-save:disabled { opacity:.45; cursor:not-allowed; }
         .tk-grid { display:grid; gap:14px; }
-        .tk-fieldset { border:1px solid ${LINE}; border-radius:3px; padding:16px; }
+        .tk-fieldset { border:1px solid ${LINE}; border-radius:3px; padding:16px; overflow:visible; }
         .tk-fs-l { display:flex; align-items:center; gap:9px; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:${INK}; margin-bottom:14px; }
         .tk-fs-num { width:20px; height:20px; border-radius:3px; background:${ACCENT}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:.72rem; }
         .tk-fs-right { margin-left:auto; display:flex; align-items:center; gap:7px; text-transform:none; letter-spacing:0; font-weight:600; color:${MUTED}; font-size:.72rem; }
         .tk-fs-right select { padding:5px 8px; border:1px solid ${LINE}; border-radius:3px; font-size:.75rem; font-family:inherit; color:${INK}; background:#fff; }
         .tk-bp { position:relative; }
-        .tk-bp-dd { position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid ${LINE}; border-top:none; border-radius:0 0 3px 3px; z-index:30; max-height:260px; overflow-y:auto; box-shadow:0 10px 26px rgba(20,20,25,.1); }
+        .tk-bp-dd { margin-top:6px; background:#fff; border:1px solid ${LINE}; border-radius:3px; max-height:240px; overflow-y:auto; box-shadow:0 6px 18px rgba(20,20,25,.08); }
         .tk-bp-item { padding:11px 13px; cursor:pointer; border-bottom:1px solid ${LINE_SOFT}; display:flex; justify-content:space-between; gap:10px; align-items:center; }
+        .tk-bp-item:last-child { border-bottom:none; }
         .tk-bp-item:hover { background:${WASH}; }
         .tk-bp-item .l b { font-size:.86rem; } .tk-bp-item .l span { font-size:.76rem; color:${MUTED}; margin-left:8px; }
         .tk-bp-item .r { font-size:.83rem; font-weight:700; white-space:nowrap; }

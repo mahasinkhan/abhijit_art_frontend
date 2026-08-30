@@ -17,13 +17,14 @@ interface Props {
 }
 
 export function EmployeeCard({ emp, stats, deleting, onAssign, onEdit, onDelete }: Props) {
+  const contact = [emp.username, emp.phone].filter(Boolean).join(" · ");
   return (
     <div className="ep-card">
       <div className="ep-card-top">
         <div className="ep-avatar">{emp.name[0].toUpperCase()}</div>
         <div style={{ minWidth: 0 }}>
           <div className="ep-name">{emp.name}</div>
-          <div className="ep-contact">{emp.email}{emp.phone ? ` · ${emp.phone}` : ""}</div>
+          <div className="ep-contact">{contact || "—"}</div>
         </div>
       </div>
 

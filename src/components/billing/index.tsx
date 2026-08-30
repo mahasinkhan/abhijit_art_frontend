@@ -1,5 +1,9 @@
 // src/components/billing/index.tsx
 // ── Thin shell: all state + data fetching + actions, zero UI ─────────────────
+// One component serves both billing pages:
+//   variant "full" → Billing 100% — one bill fills an A4 sheet
+//   variant "half" → Billing 50%  — bill on the top half, cut line, blank below
+// Everything else (save, stock consumption, email, WhatsApp) is identical.
 import { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../api";
 import {
@@ -8,9 +12,9 @@ import {
   nextInvoiceNo, computeTotals,
   btnSt, TERRA, TERRA_DK, WA, MUTE, SANS, INK, GREEN,
 } from "./types";
-import { buildFullA4HTML, type InvoicePrintData } from "../invoicePrint";
+import { buildFullA4HTML, buildSingleHalfA4HTML, type InvoicePrintData } from "../invoicePrint";
 import BillingForm    from "./BillingForm";
-import BillingPreview from "./BillingPreview";
+import BillingPreview, { type BillVariant } from "./BillingPreview";
 import EmailModal     from "./modals/EmailModal";
 import WhatsAppModal  from "./modals/WhatsAppModal";
 import AddCustomerModal from "./modals/AddCustomerModal";
@@ -57,7 +61,9 @@ function describeStock(stock: any): { text: string; warn: boolean } {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-export default function Billing() {
+export default function Billing({ variant = "full" }: { variant?: BillVariant }) {
+
+  const half = variant === "half";
 
   const [biz,       setBiz]      = useState<Party>(loadBiz);
   const [client,    setClient]   = useState<Party>({ name:"",address:"",phone:"",email:"",gstin:"",pan:"" });
@@ -185,7 +191,7 @@ export default function Billing() {
   };
 
   const invoicePayload = () => ({
-    invNo, date, biz, client,
+    invNo, date, biz: { ...biz, format: variant }, client,
     items: items.filter(it=>it.desc.trim()||num(it.rate)>0).map(it=>({
       desc:it.desc, qty:num(it.qty), rate:num(it.rate),
       ...(it.itemId?{itemId:it.itemId}:{}),
@@ -255,15 +261,16 @@ export default function Billing() {
     };
     const w = window.open("","_blank","width=1280,height=820");
     if (!w) { setSaveErr("Popup blocked — allow popups for this site to get the PDF."); return; }
-    const html = buildFullA4HTML(payload).replace(/src="\/images\/Signature\.png"/g, `src="${sigBase64||'/images/Signature.png'}"`);
+    const build = half ? buildSingleHalfA4HTML : buildFullA4HTML;
+    const html = build(payload).replace(/src="\/images\/Signature\.png"/g, `src="${sigBase64||'/images/Signature.png'}"`);
     w.document.write(html); w.document.close();
   };
 
   const openMail = () => {
     if (!savedInv) return;
     setMailErr(""); setMailSent(""); setMailTo(client.email||"");
-    setMailSubj(`Invoice ${savedInv.invNo} from ${biz.name||"Abhijit Art"}`);
-    setMailMsg(`Dear ${client.name||"Customer"},\n\nPlease find your invoice ${savedInv.invNo} for a total of ${rupee(totals.total)}.\n\nWarm regards,\n${biz.name||"Abhijit Art"}`);
+    setMailSubj(`Invoice ${savedInv.invNo} from ${biz.name||""}`);
+    setMailMsg(`Dear ${client.name||"Customer"},\n\nPlease find your invoice ${savedInv.invNo} for a total of ${rupee(totals.total)}.\n\nWarm regards,\n${biz.name||""}`);
     setMailOpen(true);
   };
 
@@ -281,7 +288,7 @@ export default function Billing() {
   const openWA = () => {
     if (!savedInv) return;
     setWaErr(""); setWaSent(""); setWaTo(client.phone||"");
-    setWaMsg(`Dear ${client.name||"Customer"},\n\nHere is your invoice ${savedInv.invNo} from ${biz.name||"Abhijit Art"}.\n\nTotal: ${rupee(totals.total)}${advancePaid>0?`\nAdvance paid: ${rupee(advancePaid)}\nBalance due: ${rupee(balanceDue)}`:""}\n\nThank you for your business!`);
+    setWaMsg(`Dear ${client.name||"Customer"},\n\nHere is your invoice ${savedInv.invNo} from ${biz.name||""}.\n\nTotal: ${rupee(totals.total)}${advancePaid>0?`\nAdvance paid: ${rupee(advancePaid)}\nBalance due: ${rupee(balanceDue)}`:""}\n\nThank you for your business!`);
     setWaOpen(true);
   };
 
@@ -313,8 +320,14 @@ export default function Billing() {
 
       <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", gap:20, flexWrap:"wrap", marginBottom:22 }}>
         <div>
-          <h1 style={{ fontSize:26, fontWeight:800, margin:0, letterSpacing:-.6, color:INK }}>Invoice maker</h1>
-          <p style={{ color:MUTE, fontSize:13.5, margin:"6px 0 0" }}>Save the invoice, then download / WhatsApp / email it.</p>
+          <h1 style={{ fontSize:26, fontWeight:800, margin:0, letterSpacing:-.6, color:INK }}>
+            {half ? "Invoice maker — half page" : "Invoice maker"}
+          </h1>
+          <p style={{ color:MUTE, fontSize:13.5, margin:"6px 0 0" }}>
+            {half
+              ? "For short bills — prints on the top half of an A4, cut along the dashed line."
+              : "Save the invoice, then download / WhatsApp / email it."}
+          </p>
         </div>
         <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
           <button className="bl-toolbar" style={btnSt.ghost} onClick={resetBilling}><Icon name="reset" size={15}/> New invoice</button>
@@ -329,7 +342,9 @@ export default function Billing() {
           </button>
           <button className="bl-toolbar" style={btnSt.ghost} onClick={openMail} disabled={!canExport}><Icon name="mail" size={15}/> Send by email</button>
           <button className="bl-toolbar-wa" style={btnSt.ghost} onClick={openWA} disabled={!canExport}><span style={{color:WA,display:"inline-flex"}}><Icon name="whatsapp" size={16}/></span> WhatsApp</button>
-          <button className="bl-toolbar-cta" style={btnSt.cta} onClick={download} disabled={!canExport}><Icon name="download" size={16}/> Download PDF</button>
+          <button className="bl-toolbar-cta" style={btnSt.cta} onClick={download} disabled={!canExport}>
+            <Icon name="download" size={16}/> {half ? "Download half-page PDF" : "Download PDF"}
+          </button>
         </div>
       </div>
 
@@ -409,7 +424,7 @@ export default function Billing() {
           biz={biz} client={client} invNo={invNo} date={date}
           items={items} totals={totals} advancePaid={advancePaid} balanceDue={balanceDue}
           taxPct={taxPct} qrBase64={qrBase64} logoBase64={logoBase64} sigBase64={sigBase64}
-          notes={notes} warranty={warranty}
+          notes={notes} warranty={warranty} variant={variant}
         />
       </div>
 

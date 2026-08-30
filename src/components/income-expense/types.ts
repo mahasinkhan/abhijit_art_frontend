@@ -1,4 +1,4 @@
-// src/components/expenses/types.ts
+// src/components/income-expense/types.ts
 
 // ── Design tokens (same admin palette as inventory / billing) ──
 export const ACCENT    = "#d9542f";
@@ -10,12 +10,19 @@ export const FAINT     = "#b3ab9f";
 export const LINE      = "#e7e1d7";
 export const LINE_SOFT = "#f1ece3";
 export const WASH      = "#faf8f3";
-export const GREEN     = "#2f7a3f";
+export const GREEN     = "#15803d";
+export const RED       = "#be123c";
 export const BLUE      = "#1e5fa8";
 
+/** Money in is green and reads "+", money out is red and reads "−". */
+export const KIND_META = {
+  income:  { label: "Money in",  short: "IN",  sign: "+", color: GREEN, bg: "#e7f5eb" },
+  expense: { label: "Money out", short: "OUT", sign: "−", color: RED,   bg: "#fdeaee" },
+} as const;
+
 export const METHOD_META = {
-  cash:   { label: "Cash",   color: GREEN, bg: "#e5f2e8" },
-  online: { label: "Online", color: BLUE,  bg: "#e6eff9" },
+  cash:   { label: "Cash",   color: "#7a6f66", bg: "#f1ece3" },
+  online: { label: "Online", color: BLUE,      bg: "#e6eff9" },
 } as const;
 
 // ── Money ──
@@ -30,6 +37,10 @@ export const rupeesExact = (n?: number) => {
   })}`;
 };
 
+/** Adds the direction sign — used wherever both kinds sit in one list. */
+export const signed = (n: number, kind: "income" | "expense") =>
+  `${KIND_META[kind].sign}${rupeesExact(Math.abs(n))}`;
+
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // ── Dates ──
@@ -38,12 +49,7 @@ export function fmtDate(d?: string) {
   return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function fmtDay(d?: string) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-}
-
-/** "Today" / "Yesterday" / "29 Aug 2026" — used for the day group headers. */
+/** "Today" / "Yesterday" / "Fri, 29 Aug 2026" — for the day group headers. */
 export function fmtDayLabel(dateStr: string) {
   const d = new Date(`${dateStr}T00:00:00`);
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -52,6 +58,9 @@ export function fmtDayLabel(dateStr: string) {
   if (diff === 1) return "Yesterday";
   return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 }
+
+export const monthLabel = (m: string) =>
+  new Date(`${m}-01T00:00:00`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
 /** Local YYYY-MM-DD — never toISOString(), which shifts the day in IST. */
 export function isoDate(d: Date = new Date()) {

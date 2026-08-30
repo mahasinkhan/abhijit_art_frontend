@@ -26,7 +26,7 @@ export function usePayees() {
 
   useEffect(() => { load(); }, [load]);
 
-  /** Filtering happens client-side — the list is small and it feels instant. */
+  /** Filtering is client-side — the list is small and it feels instant. */
   const shown = useMemo(() => {
     const q      = search.trim().toLowerCase();
     const digits = normalisePhone(search);
@@ -39,12 +39,18 @@ export function usePayees() {
     });
   }, [payees, kind, search]);
 
-  const totals = useMemo(() => ({
-    people:    payees.length,
-    employees: payees.filter((p) => p.kind === "employee").length,
-    outsiders: payees.filter((p) => p.kind === "outsider").length,
-    paid:      Math.round(payees.reduce((s, p) => s + p.totalPaid, 0) * 100) / 100,
-  }), [payees]);
+  const totals = useMemo(() => {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      people:    payees.length,
+      employees: payees.filter((p) => p.kind === "employee").length,
+      outsiders: payees.filter((p) => p.kind === "outsider").length,
+      paid:      r2(payees.reduce((s, p) => s + p.paid, 0)),
+      received:  r2(payees.reduce((s, p) => s + p.received, 0)),
+      /** everything still owed to us, ignoring people who owe nothing */
+      owed:      r2(payees.reduce((s, p) => s + Math.max(0, p.net), 0)),
+    };
+  }, [payees]);
 
   /** Finds an existing person by phone before creating a duplicate. */
   const findByPhone = useCallback((phone: string) => {
