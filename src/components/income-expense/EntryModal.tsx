@@ -4,11 +4,12 @@ import type { Entry, EntryInput, PayMethod, TxnCategory, TxnKind } from "../../s
 import { CATEGORY_META, catsFor, NEEDS_PAYEE } from "../../services/incomeExpense.api";
 import type { Payee, PayeeKind } from "../../services/payee.api";
 import { PayeePicker } from "./PayeePicker";
-import { isoDate, rupees, KIND_META, GREEN, RED, MUTED, LINE, ACCENT, ACCENT_DK, INK, FAINT, GOLD } from "./types";
+import { isoDate, rupees, KIND_META, RED, MUTED, LINE, INK, FAINT } from "./types";
 
 interface Props {
   editing:          Entry | null;
-  startKind:        TxnKind;
+  startKind?:       TxnKind;            // ignored — tracker is expense-only, kept for caller compat
+  defaultCategory?: TxnCategory;        // preselect a category (Salary / Outside quick buttons)
   payees:           Payee[];
   saving:           boolean;
   error:            string;
@@ -21,12 +22,11 @@ interface Props {
 }
 
 export function EntryModal({
-  editing, startKind, payees, saving, error, defaultPayeeId,
+  editing, defaultCategory, payees, saving, error, defaultPayeeId,
   onCreatePayee, onSyncEmployees, syncing, onSave, onClose,
 }: Props) {
-  const [kind,     setKind]     = useState<TxnKind>(editing?.kind || startKind);
   const [date,     setDate]     = useState(editing ? editing.date.slice(0,10) : isoDate());
-  const [category, setCategory] = useState<TxnCategory>(editing?.category || "" as TxnCategory);
+  const [category, setCategory] = useState<TxnCategory>(editing?.category || defaultCategory || "" as TxnCategory);
   const [title,    setTitle]    = useState(editing?.title || "");
   const [amount,   setAmount]   = useState(editing ? String(editing.amount) : "");
   const [method,   setMethod]   = useState<PayMethod>(editing?.method || "cash");
@@ -42,26 +42,19 @@ export function EntryModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  function switchKind(k: TxnKind) {
-    if (k === kind) return;
-    setKind(k);
-    setCategory("" as TxnCategory);
-  }
-
-  const km            = KIND_META[kind];
+  const km            = KIND_META.expense;
   const amt           = Number(amount);
   const validAmount   = Number.isFinite(amt) && amt > 0;
   const payeeRequired = NEEDS_PAYEE.includes(category);
   const canSave       = !!title.trim() && validAmount && (!payeeRequired || !!payeeId);
-  const isIncome      = kind === "income";
 
   const sortedPayees = [...payees].sort((a, b) => a.name.localeCompare(b.name));
 
   function submit() {
     if (!canSave || saving) return;
     onSave({
-      kind, date,
-      category: (category || (isIncome ? "sale" : "other")) as TxnCategory,
+      kind: "expense", date,
+      category: (category || "other") as TxnCategory,
       title:    title.trim(),
       amount:   Math.round(amt * 100) / 100,
       method,
@@ -81,16 +74,12 @@ export function EntryModal({
       }}>
         {/* Header */}
         <div style={{ padding:"16px 20px 14px", borderBottom:`1px solid ${LINE}`, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
-          <div style={{ display:"flex", borderRadius:4, overflow:"hidden", border:`1px solid ${LINE}` }}>
-            <button onClick={() => switchKind("income")} style={{
-              padding:"9px 24px", border:"none", fontFamily:"inherit", fontSize:14, fontWeight:700,
-              cursor:"pointer", background:isIncome?GREEN:"#fff", color:isIncome?"#fff":MUTED, transition:"all .15s",
-            }}>+ Income</button>
-            <button onClick={() => switchKind("expense")} style={{
-              padding:"9px 24px", border:"none", borderLeft:`1px solid ${LINE}`, fontFamily:"inherit",
-              fontSize:14, fontWeight:700, cursor:"pointer",
-              background:!isIncome?RED:"#fff", color:!isIncome?"#fff":MUTED, transition:"all .15s",
-            }}>− Expense</button>
+          <div style={{ display:"flex", alignItems:"center", gap:11 }}>
+            <span style={{ width:34, height:34, borderRadius:8, background:"#fdeaee", color:RED, display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:20, fontWeight:900, lineHeight:1 }}>−</span>
+            <div>
+              <div style={{ fontSize:15, fontWeight:800, color:INK }}>{editing ? "Edit expense" : "Add expense"}</div>
+              <div style={{ fontSize:12, color:MUTED }}>Money going out</div>
+            </div>
           </div>
           <button onClick={onClose} style={{ background:"none", border:"none", fontSize:24, cursor:"pointer", color:MUTED, lineHeight:1 }}>×</button>
         </div>
@@ -118,9 +107,9 @@ export function EntryModal({
                   onKeyDown={e => e.key === "Enter" && submit()}
                   placeholder="0"
                   style={{
-                    border:"none", borderBottom:`3px solid ${isIncome?GREEN:RED}`,
+                    border:"none", borderBottom:`3px solid ${RED}`,
                     outline:"none", fontSize:38, fontWeight:900,
-                    color:isIncome?GREEN:RED, width:200,
+                    color:RED, width:200,
                     textAlign:"center", fontFamily:"inherit", background:"transparent",
                   }}
                 />
@@ -133,9 +122,9 @@ export function EntryModal({
                 <button key={m} onClick={() => setMethod(m)} style={{
                   padding:"9px 28px", fontFamily:"inherit", fontSize:13, fontWeight:700,
                   cursor:"pointer", borderRadius:4, transition:"all .15s",
-                  border:`2px solid ${method===m?(isIncome?GREEN:RED):LINE}`,
-                  background:method===m?(isIncome?"#e7f5eb":"#fdeaee"):"#fff",
-                  color:method===m?(isIncome?GREEN:RED):MUTED,
+                  border:`2px solid ${method===m?RED:LINE}`,
+                  background:method===m?"#fdeaee":"#fff",
+                  color:method===m?RED:MUTED,
                 }}>
                   {m === "cash" ? "💵 Cash" : "📱 Online"}
                 </button>
@@ -149,7 +138,7 @@ export function EntryModal({
                 value={title}
                 onChange={e => setTitle(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && submit()}
-                placeholder={isIncome ? "e.g. counter sale, payment received" : "e.g. lunch, auto fare, salary, recharge"}
+                placeholder="e.g. lunch, auto fare, salary, flex printing"
                 style={{ width:"100%", padding:"10px 14px", border:`1px solid ${LINE}`, fontSize:14, fontFamily:"inherit", color:INK, outline:"none", boxSizing:"border-box" as const }}
               />
             </div>
@@ -160,7 +149,7 @@ export function EntryModal({
                 Category <span style={{ fontWeight:400, textTransform:"none" as const, letterSpacing:0, color:FAINT }}>— tap to select</span>
               </div>
               <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                {catsFor(kind).map(c => {
+                {catsFor("expense").map(c => {
                   const meta = CATEGORY_META[c];
                   const on   = category === c;
                   return (
@@ -201,7 +190,7 @@ export function EntryModal({
             {/* Save button */}
             <button onClick={submit} disabled={!canSave || saving} style={{
               width:"100%", padding:"14px", border:"none", borderRadius:4,
-              background: canSave?(isIncome?GREEN:RED):"#e7e1d7",
+              background: canSave?RED:"#e7e1d7",
               color: canSave?"#fff":"#a8a49c",
               fontFamily:"inherit", fontSize:16, fontWeight:800,
               cursor: canSave?"pointer":"not-allowed", transition:"all .15s",
@@ -219,7 +208,7 @@ export function EntryModal({
           {/* ── RIGHT COLUMN — Person picker ── */}
           <div style={{ borderLeft:`1px solid ${LINE}`, paddingLeft:20 }}>
             <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase" as const, letterSpacing:.8, color:MUTED, marginBottom:8 }}>
-              {isIncome ? "Received from" : "Paid to"}
+              Paid to
               {payeeRequired
                 ? <span style={{ color:RED, marginLeft:4 }}>*</span>
                 : <span style={{ fontWeight:400, textTransform:"none" as const, letterSpacing:0, color:FAINT, marginLeft:4 }}>— optional</span>

@@ -6,8 +6,8 @@ export type TxnKind = "income" | "expense";
 export type PayMethod = "cash" | "online";
 
 export type ExpenseCat =
-  | "salary" | "transport"
-  | "materials" | "food" | "utilities" | "other";
+  | "salary" | "outside"
+  | "materials" | "transport" | "food" | "utilities" | "other";
 
 export type IncomeCat = "sale" | "loan_back" | "refund" | "other_income";
 
@@ -75,11 +75,12 @@ export const cashbookApi = {
 };
 
 export const CATEGORY_META: Record<TxnCategory, { label: string; color: string; hint?: string }> = {
-  food:         { label: "Food & Tea",   color: "#a16207", hint: "Lunch, tea, snacks" },
+  salary:       { label: "Salary",       color: "#1e5fa8", hint: "Staff salary" },
+  outside:      { label: "Outside",      color: "#0891b2", hint: "Outsourced / outside work" },
+  materials:    { label: "Materials",    color: "#c2974a", hint: "Paper, ink, boards" },
   transport:    { label: "Transport",    color: "#b45309", hint: "Auto, delivery, fuel" },
-  salary:       { label: "Salary",       color: "#1e5fa8" },
-  materials:    { label: "Materials",    color: "#c2974a" },
-  utilities:    { label: "Bills",        color: "#0f766e" },
+  food:         { label: "Food & Tea",   color: "#a16207", hint: "Lunch, tea, snacks" },
+  utilities:    { label: "Bills",        color: "#0f766e", hint: "Electric, rent, internet" },
   other:        { label: "Other",        color: "#8a8378" },
   sale:         { label: "Sale",         color: "#15803d", hint: "Counter cash" },
   loan_back:    { label: "Loan repaid",  color: "#0369a1", hint: "Someone paid you back" },
@@ -88,7 +89,7 @@ export const CATEGORY_META: Record<TxnCategory, { label: string; color: string; 
 };
 
 export const EXPENSE_CATS: ExpenseCat[] = [
-  "food", "transport", "salary", "materials", "utilities", "other",
+  "salary", "outside", "materials", "transport", "food", "utilities", "other",
 ];
 
 export const INCOME_CATS: IncomeCat[] = ["sale", "loan_back", "refund", "other_income"];
@@ -96,4 +97,4 @@ export const INCOME_CATS: IncomeCat[] = ["sale", "loan_back", "refund", "other_i
 export const catsFor = (kind: TxnKind): TxnCategory[] =>
   kind === "income" ? INCOME_CATS : EXPENSE_CATS;
 
-export const NEEDS_PAYEE: TxnCategory[] = ["loan_back", "salary"];
+export const NEEDS_PAYEE: TxnCategory[] = ["salary", "loan_back"];
