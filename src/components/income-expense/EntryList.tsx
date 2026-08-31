@@ -51,7 +51,6 @@ export function EntryList({
     ? entries.find((e) => e.payeeId === payeeId)?.payee?.name || "this person"
     : "";
 
-  // categories offered depend on which direction is being viewed
   const catOptions = kind === "income" ? catsFor("income")
     : kind === "expense" ? catsFor("expense")
     : [...catsFor("expense"), ...catsFor("income")];
@@ -72,9 +71,9 @@ export function EntryList({
         e.createdBy?.name || "",
       ]),
       [],
-      ["Money in", "", "", "", "", "", "", shown.income],
-      ["Money out", "", "", "", "", "", "", shown.expense],
-      ["Net", "", "", "", "", "", "", shown.net],
+      ["Income",  "", "", "", "", "", "", shown.income],
+      ["Expense", "", "", "", "", "", "", shown.expense],
+      ["Net",     "", "", "", "", "", "", shown.net],
     ];
     downloadCsv(`cashbook-${range.from}-to-${range.to}.csv`, toCsv(rows));
   }
@@ -100,8 +99,8 @@ export function EntryList({
         </div>
 
         <div className="ie-addwrap">
-          <button className="ie-add in"  onClick={onAddIncome}>+ Money in</button>
-          <button className="ie-add out" onClick={onAddExpense}>+ Money out</button>
+          <button className="ie-add in"  onClick={onAddIncome}>+ Income</button>
+          <button className="ie-add out" onClick={onAddExpense}>+ Expense</button>
         </div>
       </div>
 

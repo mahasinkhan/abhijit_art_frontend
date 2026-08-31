@@ -1,5 +1,4 @@
 // src/components/income-expense/types.ts
-
 // ── Design tokens (same admin palette as inventory / billing) ──
 export const ACCENT    = "#d9542f";
 export const ACCENT_DK = "#b8421f";
@@ -14,10 +13,10 @@ export const GREEN     = "#15803d";
 export const RED       = "#be123c";
 export const BLUE      = "#1e5fa8";
 
-/** Money in is green and reads "+", money out is red and reads "−". */
+/** Income is green and reads "+", Expense is red and reads "−". */
 export const KIND_META = {
-  income:  { label: "Money in",  short: "IN",  sign: "+", color: GREEN, bg: "#e7f5eb" },
-  expense: { label: "Money out", short: "OUT", sign: "−", color: RED,   bg: "#fdeaee" },
+  income:  { label: "Income",  short: "IN",  sign: "+", color: GREEN, bg: "#e7f5eb" },
+  expense: { label: "Expense", short: "OUT", sign: "−", color: RED,   bg: "#fdeaee" },
 } as const;
 
 export const METHOD_META = {

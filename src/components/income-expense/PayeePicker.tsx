@@ -47,7 +47,7 @@ export function PayeePicker({
           || (p.role || "").toLowerCase().includes(q)
           || (!!d && p.phone.includes(d));
       })
-      .sort((a, b) => (b.paid + b.received) - (a.paid + a.received))
+            .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 20);
   }, [payees, query, filter]);
 
@@ -96,9 +96,9 @@ export function PayeePicker({
           </div>
           {selected.net !== 0 && (
             <div className="ie-picked-bal" style={{ color: selected.net > 0 ? RED : GREEN }}>
-              {selected.net > 0
-                ? `To collect ${rupees(selected.net)}`
-                : `To pay ${rupees(-selected.net)}`}
+                        {selected.net > 0
+            ? `Balance due from them: ${rupees(selected.net)}`
+            : `We owe them: ${rupees(-selected.net)}`}
             </div>
           )}
         </div>
@@ -178,7 +178,7 @@ export function PayeePicker({
         value={query} onChange={(e) => setQuery(e.target.value)}
         placeholder="Search by name or phone…" autoComplete="off" />
 
-      <div className="ie-plist">
+            <div className="ie-plist" style={{ maxHeight:220, overflowY:"auto" }}>
         {nobodyAtAll ? (
           <div className="ie-pempty">
             <b>Nobody in the list yet</b>
