@@ -29,7 +29,7 @@ export function EntryModal({
   const [category, setCategory] = useState<TxnCategory>(editing?.category || defaultCategory || "" as TxnCategory);
   const [title,    setTitle]    = useState(editing?.title || "");
   const [amount,   setAmount]   = useState(editing ? String(editing.amount) : "");
-  const [method,   setMethod]   = useState<PayMethod>(editing?.method || "cash");
+  const [method,   setMethod]   = useState<PayMethod | "">(editing?.method || "");
   const [notes,    setNotes]    = useState(editing?.notes || "");
   const [payeeId,  setPayeeId]  = useState(editing?.payeeId || defaultPayeeId || "");
 
@@ -46,7 +46,7 @@ export function EntryModal({
   const amt           = Number(amount);
   const validAmount   = Number.isFinite(amt) && amt > 0;
   const payeeRequired = NEEDS_PAYEE.includes(category);
-  const canSave       = !!title.trim() && validAmount && (!payeeRequired || !!payeeId);
+    const canSave       = !!title.trim() && validAmount && !!method && (!payeeRequired || !!payeeId);
 
   const sortedPayees = [...payees].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -57,7 +57,7 @@ export function EntryModal({
       category: (category || "other") as TxnCategory,
       title:    title.trim(),
       amount:   Math.round(amt * 100) / 100,
-      method,
+            method: method as PayMethod,
       payeeId:  payeeId || null,
       notes:    notes.trim(),
     });
@@ -116,19 +116,31 @@ export function EntryModal({
               </div>
             </div>
 
-            {/* Cash / Online */}
+                        {/* Cash / Online */}
             <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
-              {(["cash","online"] as PayMethod[]).map(m => (
-                <button key={m} onClick={() => setMethod(m)} style={{
-                  padding:"9px 28px", fontFamily:"inherit", fontSize:13, fontWeight:700,
-                  cursor:"pointer", borderRadius:4, transition:"all .15s",
-                  border:`2px solid ${method===m?RED:LINE}`,
-                  background:method===m?"#fdeaee":"#fff",
-                  color:method===m?RED:MUTED,
-                }}>
-                  {m === "cash" ? "💵 Cash" : "📱 Online"}
-                </button>
-              ))}
+              {(["cash","online"] as PayMethod[]).map(m => {
+                const on = method === m;
+                return (
+                  <button key={m} onClick={() => setMethod(m)} style={{
+                    display:"inline-flex", alignItems:"center", justifyContent:"center", gap:8,
+                    padding:"10px 26px", fontFamily:"inherit", fontSize:13, fontWeight:700,
+                    cursor:"pointer", borderRadius:0, transition:"all .15s", minWidth:130,
+                    border:`1px solid ${on?RED:LINE}`, borderLeft:`3px solid ${on?RED:LINE}`,
+                    background:on?"#fdeaee":"#fff", color:on?RED:INK,
+                  }}>
+                    {m === "cash" ? (
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>
+                      </svg>
+                    ) : (
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>
+                      </svg>
+                    )}
+                    {m === "cash" ? "Cash" : "Online"}
+                  </button>
+                );
+              })}
             </div>
 
             {/* What Purpose */}
@@ -148,20 +160,21 @@ export function EntryModal({
               <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase" as const, letterSpacing:.8, color:MUTED, marginBottom:8 }}>
                 Category <span style={{ fontWeight:400, textTransform:"none" as const, letterSpacing:0, color:FAINT }}>— tap to select</span>
               </div>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
                 {catsFor("expense").map(c => {
                   const meta = CATEGORY_META[c];
                   const on   = category === c;
                   return (
                     <button key={c} onClick={() => setCategory(on ? "" as TxnCategory : c)} style={{
-                      padding:"7px 14px", fontFamily:"inherit", fontSize:13, fontWeight:700,
-                      cursor:"pointer", borderRadius:20, transition:"all .15s",
-                      border:`2px solid ${on?meta.color:LINE}`,
-                      background:on?`${meta.color}18`:"#fff",
-                      color:on?meta.color:MUTED,
-                      display:"flex", alignItems:"center", gap:5,
+                      padding:"8px 16px", fontFamily:"inherit", fontSize:13, fontWeight:700,
+                      cursor:"pointer", borderRadius:0, transition:"all .15s",
+                      borderLeft:`3px solid ${meta.color}`,
+                      borderTop:`1px solid ${on?meta.color:LINE}`,
+                      borderRight:`1px solid ${on?meta.color:LINE}`,
+                      borderBottom:`1px solid ${on?meta.color:LINE}`,
+                      background:on?`${meta.color}14`:"#fff",
+                      color:on?meta.color:INK,
                     }}>
-                      <span style={{ width:7, height:7, borderRadius:"50%", background:on?meta.color:MUTED, flexShrink:0, display:"inline-block" }}/>
                       {meta.label}
                     </button>
                   );
@@ -200,7 +213,7 @@ export function EntryModal({
 
             {!canSave && !saving && (
               <div style={{ textAlign:"center", fontSize:13, color:FAINT }}>
-                {!validAmount ? "Enter an amount." : !title.trim() ? "Write what it was for." : "Pick the person."}
+                                {!validAmount ? "Enter an amount." : !title.trim() ? "Write what it was for." : !method ? "Choose Cash or Online." : "Pick the person."}
               </div>
             )}
           </div>

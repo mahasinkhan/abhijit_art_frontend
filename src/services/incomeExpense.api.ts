@@ -75,17 +75,17 @@ export const cashbookApi = {
 };
 
 export const CATEGORY_META: Record<TxnCategory, { label: string; color: string; hint?: string }> = {
-  salary:       { label: "Salary",       color: "#1e5fa8", hint: "Staff salary" },
-  outside:      { label: "Outside",      color: "#0891b2", hint: "Outsourced / outside work" },
-  materials:    { label: "Materials",    color: "#c2974a", hint: "Paper, ink, boards" },
-  transport:    { label: "Transport",    color: "#b45309", hint: "Auto, delivery, fuel" },
-  food:         { label: "Food & Tea",   color: "#a16207", hint: "Lunch, tea, snacks" },
-  utilities:    { label: "Bills",        color: "#0f766e", hint: "Electric, rent, internet" },
-  other:        { label: "Other",        color: "#8a8378" },
-  sale:         { label: "Sale",         color: "#15803d", hint: "Counter cash" },
-  loan_back:    { label: "Loan repaid",  color: "#0369a1", hint: "Someone paid you back" },
-  refund:       { label: "Refund",       color: "#7c3aed" },
-  other_income: { label: "Other Income", color: "#65a30d" },
+  salary:       { label: "Salary",       color: "#60a5fa", hint: "Staff salary" },
+  outside:      { label: "Outside",      color: "#22d3ee", hint: "Outsourced / outside work" },
+  materials:    { label: "Materials",    color: "#e0b978", hint: "Paper, ink, boards" },
+  transport:    { label: "Transport",    color: "#fbbf70", hint: "Auto, delivery, fuel" },
+  food:         { label: "Food & Tea",   color: "#fcd34d", hint: "Lunch, tea, snacks" },
+  utilities:    { label: "Bills",        color: "#5eead4", hint: "Electric, rent, internet" },
+  other:        { label: "Other",        color: "#c4bdb2" },
+  sale:         { label: "Sale",         color: "#86efac", hint: "Counter cash" },
+  loan_back:    { label: "Loan repaid",  color: "#7dd3fc", hint: "Someone paid you back" },
+  refund:       { label: "Refund",       color: "#c4b5fd" },
+  other_income: { label: "Other Income", color: "#bef264" },
 };
 
 export const EXPENSE_CATS: ExpenseCat[] = [
