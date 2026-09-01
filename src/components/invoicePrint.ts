@@ -70,7 +70,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8.5pt;color:#1a1a2e;backgrou
 .bt-lbl{font-size:7pt;font-weight:800;color:#c56a3a;text-transform:uppercase;letter-spacing:.7px;border-bottom:1.5px solid #e89a3c;padding-bottom:.5mm}
 .bt-name{font-size:9.5pt;font-weight:800}
 .bt-line{font-size:6.5pt;color:#555}
-.tblwrap{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.tblwrap{min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .tbl{width:100%;border-collapse:collapse}
 .th{background:#c56a3a;color:#fff;padding:2.2mm 3mm;font-size:6.8pt;font-weight:700;text-align:left}
 .td{padding:2.2mm 3mm;border-bottom:.5px solid #ede8dc;font-size:8pt;vertical-align:top}
@@ -78,7 +78,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8.5pt;color:#1a1a2e;backgrou
 .tbl tbody tr:nth-child(even) td{background:#fdfaf5}
 .sub-row td{background:#f5f0e8;font-weight:800;font-size:8.5pt;padding:2.4mm 3mm;border-top:1.5px solid #c8a84b}
 .r{text-align:right}.c{text-align:center}.bold{font-weight:700}
-.bot{display:flex;border-top:1px solid #e8e0cc;flex-shrink:0}
+.bot{display:flex;border-top:1px solid #e8e0cc;flex-shrink:0;margin-top:auto}
 .bot-l{flex:1.15;padding:3.5mm 5mm;display:flex;flex-direction:column;gap:2.5mm;border-right:1px solid #e8e0cc}
 .bot-r{flex:1;padding:3.5mm 5mm;display:flex;flex-direction:column;gap:1mm}
 .t-lbl{font-size:7pt;font-weight:800;color:#c56a3a;margin-bottom:.4mm}
@@ -416,7 +416,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:7.5pt;color:#1a1a2e;backgrou
 .tbl tbody tr:nth-child(even) td{background:#fdfaf5}
 .sub-row td{background:#f5f0e8;font-weight:800;font-size:7pt;padding:1.5mm 2mm;border-top:1.5px solid #c8a84b}
 .r{text-align:right}.c{text-align:center}.bold{font-weight:700}
-.bot{display:flex;flex:1;border-top:1px solid #e8e0cc;min-height:0}
+.bot{display:flex;flex:1;border-top:1px solid #e8e0cc;min-height:0;margin-top:auto}
 .bot-l{flex:1.1;padding:2mm 3mm;display:flex;flex-direction:column;border-right:1px solid #e8e0cc}
 .bot-r{flex:1;padding:2mm 2.5mm;display:flex;flex-direction:column;gap:.8mm}
 .t-lbl{font-size:5.5pt;font-weight:800;color:#c56a3a;margin-bottom:.2mm}
@@ -477,7 +477,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 .bt-lbl{font-size:6pt;font-weight:800;color:#c56a3a;text-transform:uppercase;letter-spacing:.6px;border-bottom:1.5px solid #e89a3c;padding-bottom:.4mm}
 .bt-name{font-size:8.5pt;font-weight:800}
 .bt-line{font-size:6pt;color:#555}
-.tblwrap{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.tblwrap{min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .tbl{width:100%;border-collapse:collapse}
 .th{background:#c56a3a;color:#fff;padding:1.8mm 2mm;font-size:5.6pt;font-weight:700;text-align:left}
 .td{padding:1.8mm 2mm;border-bottom:.5px solid #ede8dc;font-size:6.6pt;vertical-align:top}
@@ -485,7 +485,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 .tbl tbody tr:nth-child(even) td{background:#fdfaf5}
 .sub-row td{background:#f5f0e8;font-weight:800;font-size:7pt;padding:1.8mm 2mm;border-top:1.5px solid #c8a84b}
 .r{text-align:right}.c{text-align:center}.bold{font-weight:700}
-.bot{display:flex;border-top:1px solid #e8e0cc;flex-shrink:0}
+.bot{display:flex;border-top:1px solid #e8e0cc;flex-shrink:0;margin-top:auto}
 .bot-l{flex:1.15;padding:2.5mm 3.5mm;display:flex;flex-direction:column;gap:1.5mm;border-right:1px solid #e8e0cc}
 .bot-r{flex:1;padding:2.5mm 3.5mm;display:flex;flex-direction:column;gap:.8mm}
 .t-lbl{font-size:6pt;font-weight:800;color:#c56a3a;margin-bottom:.3mm}
@@ -673,7 +673,7 @@ export function buildTwoUpA4HTML(p: InvoicePrintData): string {
     .td small{font-size:4.5pt;color:#888;display:block}
     .sub-row td{background:#f5f0e8;font-weight:800;font-size:7pt;padding:1.5mm 2mm;border-top:1.5px solid #c8a84b}
     .r{text-align:right}.c{text-align:center}.bold{font-weight:700}
-    .bot{display:flex;flex:1;border-top:1px solid #e8e0cc;min-height:0}
+    .bot{display:flex;flex:1;border-top:1px solid #e8e0cc;min-height:0;margin-top:auto}
     .bot-l{flex:1.1;padding:2.5mm 3.5mm;display:flex;flex-direction:column;gap:1.5mm;border-right:1px solid #e8e0cc}
     .bot-r{flex:1;padding:2.5mm 3.5mm;display:flex;flex-direction:column;gap:.8mm}
     .t-lbl{font-size:6pt;font-weight:800;color:#1a2a6e;margin-bottom:.3mm}

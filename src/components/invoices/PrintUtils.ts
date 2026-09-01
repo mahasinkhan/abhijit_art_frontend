@@ -112,14 +112,14 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 .bt-lbl{font-size:5.5pt;font-weight:700;color:#c56a3a;text-transform:uppercase;letter-spacing:.9px;margin-bottom:.8mm}
 .bt-name{font-size:9pt;font-weight:800;color:#2a231d}
 .bt-line{font-size:6pt;color:#8a8378;margin-top:.4mm}
-.tblwrap{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.tblwrap{min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .tbl{width:100%;border-collapse:collapse}
 .th{background:#fdf0e7;color:#7a5240;padding:1.8mm 2mm;font-size:5.6pt;font-weight:700;text-align:left;border-top:.3mm solid #f2ddd0;border-bottom:.3mm solid #f2ddd0}
 .td{padding:1.8mm 2mm;border-bottom:.3px solid #f6ece4;font-size:6.6pt;vertical-align:top}
 .td small{font-size:4.5pt;color:#8a8378;display:block}
 .sub-row td{background:#fdf0e7;font-weight:800;font-size:7pt;padding:1.8mm 2mm;border-top:.3mm solid #f2ddd0}
 .r{text-align:right}.c{text-align:center}.bold{font-weight:700}
-.bot{display:flex;border-top:1px solid #f2ddd0;flex-shrink:0}
+.bot{display:flex;border-top:1px solid #f2ddd0;flex-shrink:0;margin-top:auto}
 .bot-l{flex:1.15;padding:2.5mm 3.5mm;display:flex;flex-direction:column;gap:1.5mm;border-right:1px solid #f2ddd0}
 .bot-r{flex:1;padding:2.5mm 3.5mm;display:flex;flex-direction:column;gap:.8mm}
 .t-lbl{font-size:6pt;font-weight:800;color:#c56a3a;margin-bottom:.3mm}
@@ -252,16 +252,11 @@ async function loadAssets(): Promise<{ logoB64:string; qrB64:string; sigB64:stri
   return { logoB64, qrB64, sigB64 };
 }
 
-// ── Print — sends straight to the printer via a hidden iframe ────────────
-// No new tab, no download step. Fires the browser print dialog on the
-// current page; when done (printed or cancelled) the iframe cleans itself up.
-// If the browser blocks iframe printing (rare), it falls back to a popup.
 export async function printInvoice(inv: Invoice) {
   const { logoB64, qrB64, sigB64 } = await loadAssets();
   const biz = (inv.business || {}) as any;
   const build = biz.format === "half" ? buildSingleHalfA4HTML : buildFullA4HTML;
   let html = build(buildParams(inv, logoB64, qrB64));
-  // strip the in-document auto-print; we drive printing from the parent
   html = html.replace(/<script>setTimeout\(\(\)=>window\.print\(\),\d+\)<\/script>/g, "");
   if (sigB64) html = html.replace(/src="\/images\/Signature\.png"/g, `src="${sigB64}"`);
 
@@ -276,7 +271,6 @@ export async function printInvoice(inv: Invoice) {
 
   const doc = iframe.contentWindow?.document;
   if (!doc) {
-    // fallback: old popup behaviour
     document.body.removeChild(iframe);
     const w = window.open("", "_blank", "width=820,height=1160");
     if (!w) return;
@@ -291,29 +285,24 @@ export async function printInvoice(inv: Invoice) {
 
   const cleanup = () => { setTimeout(() => { try { document.body.removeChild(iframe); } catch {} }, 1000); };
 
-    let fired = false;
+  let fired = false;
   const fire = () => {
-    if (fired) return;          // only ever print once
+    if (fired) return;
     fired = true;
     const win = iframe.contentWindow;
     if (!win) { cleanup(); return; }
-    // remove the iframe once the dialog closes (works in Chrome/Brave/Edge)
     win.onafterprint = cleanup;
     win.focus();
     win.print();
-    // safety net for browsers that don't fire onafterprint
     setTimeout(cleanup, 60000);
   };
 
-  // wait for the images (logo / QR / signature) to render before printing
   if (iframe.contentWindow) {
     iframe.contentWindow.onload = () => setTimeout(fire, 300);
   }
-  // fallback in case onload already passed
   setTimeout(() => { if (iframe.parentNode) fire(); }, 800);
 }
 
-// ── Preview (no auto-print — view only) ──────────────────────────────────
 export async function previewInvoice(inv: Invoice) {
   const { logoB64, qrB64, sigB64 } = await loadAssets();
   const biz = (inv.business || {}) as any;
@@ -321,7 +310,6 @@ export async function previewInvoice(inv: Invoice) {
   const w = window.open("","_blank","width=820,height=1160");
   if (!w) return;
   let html = build(buildParams(inv, logoB64, qrB64));
-  // Remove auto-print
   html = html.replace(/<script>setTimeout\(\(\)=>window\.print\(\),\d+\)<\/script>/g, "");
   if (sigB64) html = html.replace(/src="\/images\/Signature\.png"/g, `src="${sigB64}"`);
   w.document.write(html); w.document.close();
