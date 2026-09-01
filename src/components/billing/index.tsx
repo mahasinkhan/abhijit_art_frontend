@@ -114,6 +114,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
   const advancePaid = Math.min(Math.max(num(advance), 0), totals.total);
   const balanceDue  = Math.max(totals.total - advancePaid, 0);
   const hasLines    = items.some(it => it.desc.trim() || num(it.rate) > 0);
+  const hasClient   = !!client.name.trim();
   const canExport   = !!savedInv;
 
   useEffect(() => {
@@ -162,6 +163,16 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
   };
   useEffect(() => { loadStock(); }, []);
 
+  // Ask the SERVER for the next invoice number (it checks the DB), so the
+  // number is guaranteed unique — even across devices, browsers, or a cleared
+  // localStorage. nextInvoiceNo() stays as an offline fallback if this fails.
+  const fetchNextNumber = () => {
+    api.get("/api/invoices/next-number")
+      .then(r => { if (r?.data?.invoiceNo) setInvNo(r.data.invoiceNo); })
+      .catch(() => { /* keep the local nextInvoiceNo() fallback */ });
+  };
+  useEffect(() => { fetchNextNumber(); }, []);
+
   const normPhone = (v: string) => v.replace(/[\s\-()]/g,"").replace(/^\+91/,"").replace(/^0+/,"");
 
   const clientIsRegistered = () => {
@@ -203,6 +214,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
 
   const persistInvoice = async (): Promise<boolean> => {
     if (!hasLines || savingNow) return false;
+    if (!hasClient) { setSaveErr("Customer name is required. Enter a client name before saving."); return false; }
     if (customerNeeded) { openAddCustomer(); return false; }
     setSaveErr(""); setSavingNow(true);
     try {
@@ -263,6 +275,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
     setWarranty(""); setAdvance("0"); setPayMethod("cash");
     setDate(today()); setInvNo(nextInvoiceNo()); setCatFilter("");
     setSavedInv(null); setSaveErr("");
+    fetchNextNumber();   // ask the server for the real next number
   };
 
   const saveBiz = () => { saveBizToStorage(biz); setBizSaved(true); setTimeout(()=>setBizSaved(false),2000); };
@@ -360,7 +373,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
             className="bl-toolbar-save"
             style={saveBtnStyle}
             onClick={saveNow}
-            disabled={!hasLines || savingNow || customerNeeded}
+            disabled={!hasLines || !hasClient || savingNow || customerNeeded}
           >
             <Icon name={savedInv ? "check" : "save"} size={15}/>
             {savingNow ? "Saving…" : savedInv ? "Saved" : "Save invoice"}
@@ -394,6 +407,13 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
       {!hasLines && (
         <div style={{ marginBottom:16, padding:"11px 15px", background:"#fbf3e3", border:"1px solid #efdcb2", fontSize:12.5, color:"#8a6a1c", lineHeight:1.55 }}>
           Add a line item below to begin.
+        </div>
+      )}
+
+      {hasLines && !hasClient && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, padding:"11px 15px", background:"#fdecea", border:"1px solid #f3cfc2", fontSize:12.5, color:"#8a2f16", lineHeight:1.55 }}>
+          <span style={{ flexShrink:0 }}><Icon name="warn" size={15}/></span>
+          <span style={{ flex:1 }}>Enter a <b>customer name</b> to save this invoice.</span>
         </div>
       )}
 

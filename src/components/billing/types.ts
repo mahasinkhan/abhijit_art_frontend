@@ -122,8 +122,10 @@ export const loadAutosave = (): "on" | "off" | "" => {
 // (writes it back), so two "New invoice" clicks — or a reload mid-edit — can
 // never hand out the same number twice. This is what prevents a re-saved bill
 // from silently overwriting an existing one (which left stock un-deducted).
-const dayStamp = (d = new Date()) =>
-  `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+// Always the IST calendar date ("YYMMDD"), so the per-day counter rolls over at
+// midnight IST regardless of the device/server timezone. en-CA gives YYYY-MM-DD.
+const dayStamp = () =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(2).replace(/-/g, "");
 
 export const nextInvoiceNo = () => {
   const stamp = dayStamp();
