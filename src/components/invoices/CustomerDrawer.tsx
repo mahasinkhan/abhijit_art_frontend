@@ -294,13 +294,10 @@ function PaymentHistory({
   onRemove: (id: string) => void;
   onClose: () => void;
 }) {
-  const stamp = (iso: string) => {
+    const stamp = (iso: string) => {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleString("en-IN", {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", hour12: true,
-    });
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   };
 
   // oldest first so the running total reads like a passbook
