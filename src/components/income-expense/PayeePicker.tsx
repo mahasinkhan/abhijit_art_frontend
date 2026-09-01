@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import type { Payee, PayeeKind } from "../../services/payee.api";
 import { normalisePhone, formatPhone } from "../../services/payee.api";
-import { initials, rupees, ACCENT, GOLD, GREEN, RED, MUTED } from "./types";
+import { initials, ACCENT, GOLD } from "./types";
 
 interface Props {
   payees:   Payee[];
@@ -47,7 +47,7 @@ export function PayeePicker({
           || (p.role || "").toLowerCase().includes(q)
           || (!!d && p.phone.includes(d));
       })
-            .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 20);
   }, [payees, query, filter]);
 
@@ -94,13 +94,6 @@ export function PayeePicker({
             {" · "}{selected.kind === "employee" ? "Employee" : "Outside"}
             {selected.role ? ` · ${selected.role}` : ""}
           </div>
-          {selected.net !== 0 && (
-            <div className="ie-picked-bal" style={{ color: selected.net > 0 ? RED : GREEN }}>
-                        {selected.net > 0
-            ? `Balance due from them: ${rupees(selected.net)}`
-            : `We owe them: ${rupees(-selected.net)}`}
-            </div>
-          )}
         </div>
         <button className="ie-change" onClick={() => { onChange(""); setQuery(""); }}>Change</button>
       </div>
@@ -178,7 +171,7 @@ export function PayeePicker({
         value={query} onChange={(e) => setQuery(e.target.value)}
         placeholder="Search by name or phone…" autoComplete="off" />
 
-            <div className="ie-plist" style={{ maxHeight:220, overflowY:"auto" }}>
+      <div className="ie-plist" style={{ maxHeight:220, overflowY:"auto" }}>
         {nobodyAtAll ? (
           <div className="ie-pempty">
             <b>Nobody in the list yet</b>
@@ -202,7 +195,6 @@ export function PayeePicker({
                 {p.role ? ` · ${p.role}` : p.kind === "employee" ? " · Employee" : ""}
               </span>
             </span>
-            {p.net > 0 && <span className="ie-pitem-amt" style={{ color: RED }}>{rupees(p.net)} due</span>}
           </button>
         ))}
       </div>

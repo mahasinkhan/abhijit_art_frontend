@@ -23,6 +23,7 @@ function Icon({ name, size=16 }: { name:string; size?:number }) {
     mail:      <path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3.2 6.5 12 13l8.8-6.5" {...p}/>,
     save:      (<><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" {...p}/><path d="M17 21v-8H7v8M7 3v5h8" {...p}/></>),
     check:     <path d="M20 6 9 17l-5-5" {...p}/>,
+    print:     (<><path d="M6 9V3h12v6" {...p}/><rect x="4" y="9" width="16" height="8" rx="2" {...p}/><path d="M7 17h10v4H7z" {...p}/></>),
     warn:      (<><path d="M12 9v4M12 17h.01" {...p}/><path d="M10.3 3.9 2.4 17.4A1.9 1.9 0 0 0 4 20.3h16a1.9 1.9 0 0 0 1.6-2.9L13.7 3.9a1.9 1.9 0 0 0-3.4 0z" {...p}/></>),
     close:     <path d="M6 6l12 12M18 6 6 18" {...p}/>,
     whatsapp:  (<><path d="M3.8 20.2 5 16.4A8.4 8.4 0 1 1 8.2 19l-4.4 1.2z" {...p}/><path d="M9.2 8.6c-.15 0-.4.05-.6.3-.2.25-.75.73-.75 1.77s.77 2.05.88 2.2c.1.14 1.5 2.4 3.68 3.28 1.83.72 2.2.58 2.6.55.4-.04 1.24-.5 1.42-1 .18-.5.18-.9.12-1l-.55-.27s-1.05-.52-1.22-.58c-.16-.06-.28-.1-.4.1l-.55.7c-.1.12-.2.13-.37.05-.16-.08-.9-.33-1.66-1.05-.6-.55-1.02-1.22-1.14-1.42-.1-.2-.01-.3.07-.4l.28-.35c.1-.12.13-.2.2-.34.06-.13.03-.25 0-.35-.05-.1-.4-1.13-.6-1.55-.14-.3-.28-.3-.4-.3H9.2z" fill="currentColor" stroke="none" /></>),
@@ -36,6 +37,7 @@ function saveErrorText(e: any): string {
   if (msg) return `Save failed (${st ?? "?"}): ${msg}`;
   if (st === 401 || st === 403) return "Save failed (401) — session expired. Log out and log in again.";
   if (st === 404) return "Save failed (404) — /api/invoices not found. Check VITE_API_URL (no trailing /api).";
+  if (st === 409) return "Save failed (409) — that invoice number already exists. Press New invoice to get a fresh number.";
   if (st) return `Save failed (${st}).`;
   if (e?.message) return `Save failed — ${e.message} (backend running?)`;
   return "Save failed — could not reach the server.";
@@ -194,6 +196,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
       ...(it.unit?{unit:it.unit}:{}),
       ...(num(it.width)>0?{width:num(it.width)}:{}),
       ...(num(it.height)>0?{height:num(it.height)}:{}),
+      ...(num(it.pcs)>1?{pcs:num(it.pcs)}:{}),
     })),
     discType, discVal, taxPct, notes, warranty, paidAmount:advancePaid, paymentMethod:payMethod,
   });
@@ -205,6 +208,26 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
     try {
       const res = await api.post("/api/invoices", invoicePayload());
       const inv = res?.data || {};
+
+      // ── HARD SAVE CONFIRMATION ──────────────────────────────────────────
+      // Never show "Saved" unless we are 100% sure the invoice is in the DB.
+      // 1) the server must return a real id, and
+      // 2) we re-fetch that id to prove it's actually queryable in the list.
+      // Either check failing = show a loud error and return false (unsaved),
+      // so no invoice can ever silently go missing again.
+      if (!inv.id) {
+        setSaveErr("The invoice didn't save — the server sent no confirmation. Please press Save again.");
+        return false;
+      }
+      try {
+        const check = await api.get(`/api/invoices/${inv.id}`);
+        if (!check?.data?.id) throw new Error("empty");
+      } catch {
+        setSaveErr("The invoice couldn't be confirmed in the database. Open the Invoices tab and press Refresh to check before saving again.");
+        return false;
+      }
+      // ────────────────────────────────────────────────────────────────────
+
       const s = describeStock(inv.stock);
       bumpSeq(invNo);
       setSavedInv({ id:inv.id, invNo, pdfUrl:inv.pdfUrl||"", stock:s.text, stockWarn:s.warn });
@@ -244,11 +267,11 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
 
   const saveBiz = () => { saveBizToStorage(biz); setBizSaved(true); setTimeout(()=>setBizSaved(false),2000); };
 
-  const download = () => {
-    if (!savedInv) return;
-    const printedNo = savedInv.invNo;
+  /** Shared print payload — used by both Print and Download PDF. */
+  const buildPrintPayload = (): InvoicePrintData => {
+    const printedNo = savedInv ? savedInv.invNo : invNo;
     const fmtD = (d:string) => { const dt=new Date(d); if(isNaN(dt.getTime()))return d; return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"2-digit",year:"numeric"}); };
-    const payload: InvoicePrintData = {
+    return {
       logoSrc:logoBase64||"/images/abhijit_art_logo.png", qrSrc:qrBase64,
       bizName:biz.name, bizPan:biz.pan, bizGstin:biz.gstin, bizAddress:biz.address, bizPhone:biz.phone, bizEmail:biz.email,
       invNo:printedNo, invDate:fmtD(date), invTime:new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}),
@@ -257,17 +280,25 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
         desc:it.desc, qty:num(it.qty), rate:num(it.rate),
         size:(num(it.width)>0&&num(it.height)>0)?`${num(it.width)} × ${num(it.height)}`:"",
         unit:it.unit||"",
+        pcs:num(it.pcs),
       })),
       discType, discVal:num(discVal), taxPct:num(taxPct),
       subtotal:totals.subtotal, discountAmt:totals.discountAmt, taxAmt:totals.taxAmt, total:totals.total,
       paidAmount:advancePaid, notes, warranty,
     };
-    const w = window.open("","_blank","width=1280,height=820");
-    if (!w) { setSaveErr("Popup blocked — allow popups for this site to get the PDF."); return; }
-    const build = half ? buildSingleHalfA4HTML : buildFullA4HTML;
-    const html = build(payload).replace(/src="\/images\/Signature\.png"/g, `src="${sigBase64||'/images/Signature.png'}"`);
-    w.document.write(html); w.document.close();
   };
+
+  const openPrintWindow = (w: number, h: number) => {
+    const win = window.open("","_blank",`width=${w},height=${h}`);
+    if (!win) { setSaveErr("Popup blocked — allow popups for this site to print or download."); return null; }
+    const build = half ? buildSingleHalfA4HTML : buildFullA4HTML;
+    const html = build(buildPrintPayload()).replace(/src="\/images\/Signature\.png"/g, `src="${sigBase64||'/images/Signature.png'}"`);
+    win.document.write(html); win.document.close();
+    return win;
+  };
+
+  const printNow = () => { if (!savedInv) return; openPrintWindow(900, 1000); };
+  const download = () => { if (!savedInv) return; openPrintWindow(1280, 820); };
 
   const openMail = () => {
     if (!savedInv) return;
@@ -336,6 +367,9 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
           </button>
           <button className="bl-toolbar" style={btnSt.ghost} onClick={openMail} disabled={!canExport}><Icon name="mail" size={15}/> Send by email</button>
           <button className="bl-toolbar-wa" style={btnSt.ghost} onClick={openWA} disabled={!canExport}><span style={{color:WA,display:"inline-flex"}}><Icon name="whatsapp" size={16}/></span> WhatsApp</button>
+          <button className="bl-toolbar" style={btnSt.ghost} onClick={printNow} disabled={!canExport}>
+            <Icon name="print" size={15}/> Print
+          </button>
           <button className="bl-toolbar-cta" style={btnSt.cta} onClick={download} disabled={!canExport}>
             <Icon name="download" size={16}/> {half ? "Download half-page PDF" : "Download PDF"}
           </button>
@@ -377,7 +411,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
 
       {hasLines && !savedInv && !customerNeeded && (
         <div style={{ marginBottom:16, padding:"11px 15px", background:"#fbf3e3", border:"1px solid #efdcb2", fontSize:12.5, color:"#8a6a1c", lineHeight:1.55 }}>
-          Press <b>Save invoice</b> to store it and consume stock. Download PDF, WhatsApp and Send by email unlock right after.
+          Press <b>Save invoice</b> to store it and consume stock. Print, Download PDF, WhatsApp and Send by email unlock right after.
         </div>
       )}
 
@@ -385,7 +419,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, padding:"11px 15px", background:"#e8f6ee", border:"1px solid #bfe3cd", fontSize:12.5, color:"#1f6b41", lineHeight:1.55 }}>
           <span style={{ display:"inline-flex", flexShrink:0 }}><Icon name="check" size={16}/></span>
           <span style={{ flex:1 }}>
-            Invoice <b>{savedInv.invNo}</b> saved{savedInv.stock && !savedInv.stockWarn ? <> · {savedInv.stock}</> : null}. You can download the PDF, send it on WhatsApp or email it now.
+            Invoice <b>{savedInv.invNo}</b> saved{savedInv.stock && !savedInv.stockWarn ? <> · {savedInv.stock}</> : null}. You can print it, download the PDF, send it on WhatsApp or email it now.
           </span>
         </div>
       )}

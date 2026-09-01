@@ -31,8 +31,9 @@ export interface LineItem {
   rate:   string;
   itemId?: string;   // linked inventory item
   unit?:   string;
-  width?:  string;   // area items: width  (flex, vinyl…)
-  height?: string;   // area items: height — qty auto = width × height
+    width?:  string;   // area items: width  (flex, vinyl…)
+  height?: string;   // area items: height — qty auto = width × height × pcs
+  pcs?:    string;   // pieces of that size (default 1)
 }
 
 export interface Party {
@@ -115,16 +116,42 @@ export const loadAutosave = (): "on" | "off" | "" => {
   try { const v = localStorage.getItem(AUTOSAVE_KEY); return v === "on" || v === "off" ? v : ""; } catch { return ""; }
 };
 
+// ── Invoice number sequence ───────────────────────────────────────────────────
+// SEQ_KEY stores "YYMMDD:NNN" so the counter resets each day AND survives
+// reloads. nextInvoiceNo() returns the next number and RESERVES it right away
+// (writes it back), so two "New invoice" clicks — or a reload mid-edit — can
+// never hand out the same number twice. This is what prevents a re-saved bill
+// from silently overwriting an existing one (which left stock un-deducted).
+const dayStamp = (d = new Date()) =>
+  `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+
 export const nextInvoiceNo = () => {
-  const d = new Date();
-  const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+  const stamp = dayStamp();
   let seq = 1;
-  try { seq = (parseInt(localStorage.getItem(SEQ_KEY)||"0",10)||0)+1; } catch { seq = Math.floor(Math.random()*900)+100; }
+  try {
+    const raw = localStorage.getItem(SEQ_KEY) || "";
+    const [day, n] = raw.split(":");
+    seq = (day === stamp ? (parseInt(n, 10) || 0) : 0) + 1;   // reset on a new day
+    localStorage.setItem(SEQ_KEY, `${stamp}:${seq}`);          // reserve it now
+  } catch {
+    seq = Math.floor(Math.random() * 900) + 100;
+  }
   return `AA-${stamp}-${String(seq).padStart(3,"0")}`;
 };
 
+// Called after a successful save. Records the number that was actually used, so
+// the next New invoice continues from there — also handles a manually-typed
+// number. Stored in the same "YYMMDD:NNN" shape nextInvoiceNo reads.
 export const bumpSeq = (invNo: string) => {
-  try { const m = invNo.match(/(\d+)$/); if (m) localStorage.setItem(SEQ_KEY, m[1]); } catch {}
+  try {
+    const m = invNo.match(/-(\d{6})-(\d+)$/);   // AA-YYMMDD-NNN
+    if (!m) return;
+    const day = m[1];
+    const used = parseInt(m[2], 10) || 0;
+    const cur  = (localStorage.getItem(SEQ_KEY) || "").split(":");
+    const curN = cur[0] === day ? (parseInt(cur[1], 10) || 0) : 0;
+    if (used >= curN) localStorage.setItem(SEQ_KEY, `${day}:${used}`);
+  } catch {}
 };
 
 // ── Amount in words ───────────────────────────────────────────────────────────

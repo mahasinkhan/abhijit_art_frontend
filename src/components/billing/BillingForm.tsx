@@ -49,10 +49,12 @@ interface Props {
 const CUSTOM = "__custom__";
 const normalizePhone = (v: string) => v.replace(/\D/g, "").slice(-10);
 
-const calcArea = (w: string, h: string): string => {
+/** Qty = W × H × Pcs (Pcs defaults to 1 when blank). Returns "" if no size. */
+const calcArea = (w: string, h: string, pcs?: string): string => {
   const W = num(w), H = num(h);
   if (W <= 0 || H <= 0) return "";
-  return String(Math.round(W * H * 100) / 100);
+  const P = num(pcs) > 0 ? num(pcs) : 1;
+  return String(Math.round(W * H * P * 100) / 100);
 };
 
 export default function BillingForm(p: Props) {
@@ -123,8 +125,17 @@ export default function BillingForm(p: Props) {
     p.onItemsChange(p.items.map(it => {
       if (it.id !== id) return it;
       const next = { ...it, [dim]: val } as LineItem;
-      const area = calcArea(next.width || "", next.height || "");
+      const area = calcArea(next.width || "", next.height || "", next.pcs);
       if (area) next.qty = area;
+      return next;
+    }));
+  };
+  const setPcs = (id: string, val: string) => {
+    p.onItemsChange(p.items.map(it => {
+      if (it.id !== id) return it;
+      const next = { ...it, pcs: val } as LineItem;
+      const area = calcArea(next.width || "", next.height || "", next.pcs);
+      if (area) next.qty = area;   // only recompute when size drives the qty
       return next;
     }));
   };
@@ -136,7 +147,8 @@ export default function BillingForm(p: Props) {
   const inpNum = { ...inp, textAlign:"right" as const, fontVariantNumeric:"tabular-nums" as const };
   const inpDim = { ...inp, padding:"9px 6px", fontSize:13, textAlign:"center" as const };
   const card   = { background:GLOW, border:`1px solid ${LINE}`, boxShadow:GLOW_SHADOW, padding:"20px 22px" };
-  const GRID   = "minmax(0,0.8fr) minmax(0,1.25fr) 120px 60px 84px 84px 28px";
+  // Category | Item | Size | Pcs | Qty | Rate | Amount | trash
+  const GRID   = "minmax(0,0.75fr) minmax(0,1.1fr) 112px 52px 62px 78px 78px 28px";
 
   return (
     <div style={{ minWidth:0 }}>
@@ -283,11 +295,11 @@ export default function BillingForm(p: Props) {
       <section style={{ ...card, marginTop:16 }}>
         <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", flexWrap:"wrap", gap:10, marginBottom:14 }}>
           <h2 style={{ fontSize:16, fontWeight:800, margin:0, color:INK }}>Items</h2>
-          <span style={{ fontSize:11.5, color:MUTE }}>Fill Size (W × H) to auto-calc Qty — or leave blank & type Qty</span>
+          <span style={{ fontSize:11.5, color:MUTE }}>Size (W×H) × Pcs auto-calcs Qty — or leave Size blank & type Qty</span>
         </div>
 
         <div style={{ display:"grid", gridTemplateColumns:GRID, gap:8, alignItems:"center", fontSize:10.5, fontWeight:700, color:MUTE, letterSpacing:.7, textTransform:"uppercase" as const, padding:"0 2px 8px" }}>
-          <span>Category</span><span>Item</span><span style={{ textAlign:"center" }}>Size (W × H)</span><span style={{ textAlign:"right" }}>Qty</span><span style={{ textAlign:"right" }}>Rate (₹)</span><span style={{ textAlign:"right" }}>Amount</span><span/>
+          <span>Category</span><span>Item</span><span style={{ textAlign:"center" }}>Size (W × H)</span><span style={{ textAlign:"center" }}>Pcs</span><span style={{ textAlign:"right" }}>Qty</span><span style={{ textAlign:"right" }}>Rate (₹)</span><span style={{ textAlign:"right" }}>Amount</span><span/>
         </div>
 
         {p.items.map(it => {
@@ -298,6 +310,7 @@ export default function BillingForm(p: Props) {
           const avail    = linked ? dec(linked.quantity) : 0;
           const after    = avail - num(it.qty);
           const sized    = num(it.width) > 0 && num(it.height) > 0;
+          const pcsN     = num(it.pcs) > 0 ? num(it.pcs) : 1;
           return (
             <div key={it.id} style={{ marginBottom:10 }}>
               <div style={{ display:"grid", gridTemplateColumns:GRID, gap:8, alignItems:"center" }}>
@@ -319,7 +332,8 @@ export default function BillingForm(p: Props) {
                   <span style={{ color:MUTE, fontSize:12, fontWeight:700 }}>×</span>
                   <input className="bl-in" style={inpDim} type="number" min="0" placeholder="H" value={it.height || ""} onChange={e => setSize(it.id, "height", e.target.value)}/>
                 </div>
-                <input className="bl-in" style={{ ...inpNum, width:"100%", ...(sized?{background:"#faf7f3",color:MUTE}:{}) }} type="number" min="0" value={it.qty} readOnly={sized} title={sized?"Auto-calculated from Size (W × H)":""} onChange={e => setItem(it.id, { qty: e.target.value })}/>
+                <input className="bl-in" style={{ ...inpDim, width:"100%" }} type="number" min="1" placeholder="1" value={it.pcs || ""} onChange={e => setPcs(it.id, e.target.value)} title="Pieces / quantity of this size"/>
+                <input className="bl-in" style={{ ...inpNum, width:"100%", ...(sized?{background:"#faf7f3",color:MUTE}:{}) }} type="number" min="0" value={it.qty} readOnly={sized} title={sized?"Auto = W × H × Pcs":""} onChange={e => setItem(it.id, { qty: e.target.value })}/>
                 <input className="bl-in" style={{ ...inpNum, width:"100%" }} type="number" min="0" placeholder="0" value={it.rate} onChange={e => setItem(it.id, { rate: e.target.value })}/>
                 <span style={{ textAlign:"right", fontSize:13, fontWeight:800, color:INK, fontVariantNumeric:"tabular-nums" }}>{rupee(num(it.qty) * num(it.rate))}</span>
                 <button className="bl-del" style={{ width:28, height:28, display:"grid", placeItems:"center", border:"none", background:"transparent", color:FAINT, cursor:"pointer" }}
@@ -327,7 +341,7 @@ export default function BillingForm(p: Props) {
               </div>
               {sized && (
                 <div style={{ fontSize:11, marginTop:3, paddingLeft:2, color:MUTE }}>
-                  {num(it.width)} × {num(it.height)} = <b style={{ color:INK }}>{num(it.qty)}</b> {linked?.unit || "sqft"}
+                  {num(it.width)} × {num(it.height)}{pcsN > 1 ? ` × ${pcsN} pcs` : ""} = <b style={{ color:INK }}>{num(it.qty)}</b> {linked?.unit || "sqft"}
                 </div>
               )}
               {linked && (

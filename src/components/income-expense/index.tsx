@@ -159,18 +159,24 @@ export default function IncomeExpense() {
   // ── derived data ──────────────────────────────────────────────────────
   const allEntries = cb.entries;
 
-  const filteredEntries = useMemo(() => {
-    const base = allEntries.filter((e) => e.kind === "expense");
-    if (!globalSearch.trim()) return base;
-    const q = globalSearch.toLowerCase();
-    return base.filter((e) =>
+  // all expenses, unaffected by the search box (Salary / Outside / Ledger / totals use this)
+  const allExpense = useMemo(() => allEntries.filter((e) => e.kind === "expense"), [allEntries]);
+
+  const applySearch = (rows: Entry[]) => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((e) =>
       e.title.toLowerCase().includes(q) ||
       (e.payee?.name || "").toLowerCase().includes(q) ||
       (e.notes || "").toLowerCase().includes(q) ||
       String(e.amount).includes(q)
     );
-  }, [allEntries, globalSearch]);
+  };
 
+  // search-applied — used ONLY by the Insights list + its KPIs/charts
+  const filteredEntries = useMemo(() => applySearch(allExpense), [allExpense, globalSearch]);
+
+  // office income (search still applies here, its own tab)
   const incomeEntries = useMemo(() => {
     const base = allEntries.filter((e) => e.kind === "income");
     if (!globalSearch.trim()) return base;
@@ -185,9 +191,10 @@ export default function IncomeExpense() {
   const incOnlineIn = useMemo(() => incomeEntries.filter((e) => e.method === "online").reduce((s, e) => s + e.amount, 0), [incomeEntries]);
   const incTotalIn  = useMemo(() => incomeEntries.reduce((s, e) => s + e.amount, 0), [incomeEntries]);
 
-  const salaryEntries  = useMemo(() => filteredEntries.filter((e) => e.category === "salary"), [filteredEntries]);
-  const outsideEntries = useMemo(() => filteredEntries.filter((e) => e.category !== "salary"), [filteredEntries]);
+  const salaryEntries  = useMemo(() => allExpense.filter((e) => e.category === "salary"), [allExpense]);
+  const outsideEntries = useMemo(() => allExpense.filter((e) => e.category !== "salary"), [allExpense]);
 
+  // Insights KPIs/charts follow the search
   const periodExpense = useMemo(() => filteredEntries.reduce((s, e) => s + e.amount, 0), [filteredEntries]);
   const cashOut       = useMemo(() => filteredEntries.filter((e) => e.method === "cash").reduce((s, e) => s + e.amount, 0), [filteredEntries]);
   const onlineOut     = useMemo(() => filteredEntries.filter((e) => e.method === "online").reduce((s, e) => s + e.amount, 0), [filteredEntries]);
@@ -228,16 +235,16 @@ export default function IncomeExpense() {
   const sortedPayees = useMemo(() => [...pp.payees].sort((a, b) => a.name.localeCompare(b.name)), [pp.payees]);
   const emp8 = sortedPayees.filter((p) => p.kind === "employee").slice(0, 8);
 
-  // ── ledger derived ──
+  // ── ledger derived (search-independent) ──
   const payeeTotals = useMemo(() => {
     const m = new Map<string, { amount: number; count: number }>();
-    for (const e of filteredEntries) {
+    for (const e of allExpense) {
       if (!e.payeeId) continue;
       const cur = m.get(e.payeeId) || { amount: 0, count: 0 };
       cur.amount += e.amount; cur.count += 1; m.set(e.payeeId, cur);
     }
     return m;
-  }, [filteredEntries]);
+  }, [allExpense]);
 
   const ledgerPeople = useMemo(() =>
     sortedPayees
@@ -252,9 +259,9 @@ export default function IncomeExpense() {
     return [...rows].sort(byDate).map((e) => { run = Math.round((run + e.amount) * 100) / 100; return { ...e, running: run }; });
   };
 
-  const fullStatement   = useMemo(() => withRunning(filteredEntries), [filteredEntries]);
-  const incomeStatement = useMemo(() => withRunning(incomeEntries),   [incomeEntries]);
-  const personStatement = useMemo(() => withRunning(ledgerPerson ? filteredEntries.filter((e) => e.payeeId === ledgerPerson) : []), [filteredEntries, ledgerPerson]);
+  const fullStatement   = useMemo(() => withRunning(allExpense), [allExpense]);
+  const incomeStatement = useMemo(() => withRunning(incomeEntries), [incomeEntries]);
+  const personStatement = useMemo(() => withRunning(ledgerPerson ? allExpense.filter((e) => e.payeeId === ledgerPerson) : []), [allExpense, ledgerPerson]);
   const personTotal     = useMemo(() => personStatement.reduce((s, e) => s + e.amount, 0), [personStatement]);
   const selectedLedgerPayee = sortedPayees.find((p) => p.id === ledgerPerson);
 
@@ -377,8 +384,10 @@ export default function IncomeExpense() {
           ))}
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", flex:1, justifyContent:"flex-end", flexWrap:"wrap" }}>
-          <input placeholder="🔍 Search…" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)}
-            style={{ padding:"9px 14px", border:`1px solid ${LINE}`, fontSize:13, fontFamily:"inherit", color:INK, width:200 }} />
+          {tab === "insights" && (
+            <input placeholder="🔍 Search expenses…" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)}
+              style={{ padding:"9px 14px", border:`1px solid ${LINE}`, fontSize:13, fontFamily:"inherit", color:INK, width:200 }} />
+          )}
           {tab !== "income" && (
             <button onClick={() => openAdd("expense")}
               style={{ padding:"10px 20px", background:RED, border:"none", color:"#fff", fontFamily:"inherit", fontWeight:700, fontSize:14, cursor:"pointer" }}>
@@ -391,7 +400,7 @@ export default function IncomeExpense() {
       {/* Period control (right under tabs) */}
       <PeriodBar period={cb.period} range={cb.range} onPeriod={cb.changePeriod} onRange={cb.setCustomRange} />
 
-            {/* Today snapshot (hidden on Office Income) */}
+      {/* Today snapshot (hidden on Office Income) */}
       {tab !== "income" && (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:16 }}>
           <div style={{ background:"#fdeaee", border:`1px solid ${RED}44`, padding:"10px 14px" }}>
@@ -444,16 +453,16 @@ export default function IncomeExpense() {
                 {periodExpense === 0 ? <Empty msg="Nothing spent yet."/> : (
                   <>
                     <div style={{ display:"flex", height:26, borderRadius:4, overflow:"hidden", border:`1px solid ${LINE}` }}>
-                                            <div style={{ width:`${(cashOut/(periodExpense||1))*100}%`, background:"#94a3b8" }}/>
+                      <div style={{ width:`${(cashOut/(periodExpense||1))*100}%`, background:"#94a3b8" }}/>
                       <div style={{ width:`${(onlineOut/(periodExpense||1))*100}%`, background:"#60a5fa" }}/>
                     </div>
                     <div style={{ display:"flex", justifyContent:"space-between", marginTop:12, gap:12 }}>
                       <div>
-                                                <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:MUTED }}><span style={{ width:9, height:9, background:"#94a3b8", borderRadius:2 }}/> Cash</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:MUTED }}><span style={{ width:9, height:9, background:"#94a3b8", borderRadius:2 }}/> Cash</div>
                         <div style={{ fontSize:18, fontWeight:900, color:"#64748b" }}>{rupees(cashOut)}</div>
                       </div>
                       <div style={{ textAlign:"right" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:MUTED, justifyContent:"flex-end" }}><span style={{ width:9, height:9, background:BLUE, borderRadius:2 }}/> Online</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:MUTED, justifyContent:"flex-end" }}><span style={{ width:9, height:9, background:"#60a5fa", borderRadius:2 }}/> Online</div>
                         <div style={{ fontSize:18, fontWeight:900, color:BLUE }}>{rupees(onlineOut)}</div>
                       </div>
                     </div>
@@ -624,12 +633,18 @@ export default function IncomeExpense() {
                 style={{ padding:"9px 12px", border:`1px solid ${LINE}`, fontSize:13, fontFamily:"inherit", color:INK, flex:1, minWidth:160 }} />
               <div style={{ display:"flex", border:`1px solid ${LINE}`, overflow:"hidden" }}>
                 <button onClick={() => setIncMethod("cash")}
-                  style={{ padding:"9px 16px", border:"none", borderRight:`1px solid ${LINE}`, fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer", background:incMethod==="cash"?GREEN:"#fff", color:incMethod==="cash"?"#fff":MUTED }}>
-                  💵 Cash
+                  style={{ padding:"9px 16px", border:"none", borderRight:`1px solid ${LINE}`, fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer", background:incMethod==="cash"?GREEN:"#fff", color:incMethod==="cash"?"#fff":MUTED, display:"inline-flex", alignItems:"center", gap:7 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>
+                  </svg>
+                  Cash
                 </button>
                 <button onClick={() => setIncMethod("online")}
-                  style={{ padding:"9px 16px", border:"none", fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer", background:incMethod==="online"?BLUE:"#fff", color:incMethod==="online"?"#fff":MUTED }}>
-                  📱 Online
+                  style={{ padding:"9px 16px", border:"none", fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer", background:incMethod==="online"?BLUE:"#fff", color:incMethod==="online"?"#fff":MUTED, display:"inline-flex", alignItems:"center", gap:7 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>
+                  </svg>
+                  Online
                 </button>
               </div>
               <input type="date" value={incDate} onChange={(e) => setIncDate(e.target.value)}
@@ -651,8 +666,8 @@ export default function IncomeExpense() {
 
           {(() => {
             const base = incFilter === "all" ? visibleIncome : visibleIncome.filter((e) => e.method === incFilter);
-            const shownTotal = base.reduce((s, e) => s + e.amount, 0);
             const shownStmt = withRunning(incFilter === "all" ? incomeEntries : incomeEntries.filter((e) => e.method === incFilter));
+            const shownTotal = shownStmt.reduce((s, e) => s + e.amount, 0);
             return (
               <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
                 <div style={{ padding:"12px 16px", borderBottom:`1px solid ${LINE_SOFT}`, display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap" }}>
@@ -668,7 +683,7 @@ export default function IncomeExpense() {
                     </div>
                   </div>
                   <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                    <button onClick={() => printIncome(shownStmt, shownStmt.reduce((s,e)=>s+e.amount,0))} disabled={!shownStmt.length}
+                    <button onClick={() => printIncome(shownStmt, shownTotal)} disabled={!shownStmt.length}
                       style={{ padding:"6px 14px", background:INK, border:"none", color:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:700, cursor:shownStmt.length?"pointer":"not-allowed", opacity:shownStmt.length?1:.5 }}>
                       🖨 Statement
                     </button>
@@ -716,7 +731,7 @@ export default function IncomeExpense() {
 
           {ledgerView === "statement" ? (
             <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
-              <CardHead title={`Expense statement · ${fullStatement.length} entries · ${rupees(periodExpense)}`}
+              <CardHead title={`Expense statement · ${fullStatement.length} entries · ${rupees(fullStatement.reduce((s,e)=>s+e.amount,0))}`}
                 right={<button onClick={() => exportStatement(fullStatement, "expense-statement")} disabled={!fullStatement.length}
                   style={{ padding:"6px 14px", border:`1px solid ${LINE}`, background:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:600, cursor:fullStatement.length?"pointer":"not-allowed", color:MUTED, opacity:fullStatement.length?1:.5 }}>⭳ Export CSV</button>} />
               {fullStatement.length === 0 ? <Empty msg="No expenses in this period."/> : <StatementTable rows={fullStatement}/>}
