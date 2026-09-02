@@ -67,6 +67,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
   const [client,    setClient]   = useState<Party>({ name:"",address:"",phone:"",email:"",gstin:"",pan:"" });
   const [invNo,     setInvNo]    = useState(nextInvoiceNo);
   const [date,      setDate]     = useState(today);
+  const [purpose,   setPurpose]  = useState("");
   const [items,     setItems]    = useState<LineItem[]>([{ id:uid(), desc:"", qty:"1", rate:"" }]);
   const [discType,  setDiscType] = useState<DiscType>("amount");
   const [discVal,   setDiscVal]  = useState("0");
@@ -200,7 +201,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
   };
 
   const invoicePayload = () => ({
-    invNo, date, biz: { ...biz, format: variant }, client,
+    invNo, date, purpose: purpose.trim(), biz: { ...biz, format: variant }, client,
     items: items.filter(it=>it.desc.trim()||num(it.rate)>0).map(it=>({
       desc:it.desc, qty:num(it.qty), rate:num(it.rate),
       ...(it.itemId?{itemId:it.itemId}:{}),
@@ -259,8 +260,8 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
   const saveNow = () => { persistInvoice(); };
 
   const contentKey = useMemo(
-    () => JSON.stringify({ items, client, biz, date, invNo, discType, discVal, taxPct, notes, warranty, advance, payMethod }),
-    [items, client, biz, date, invNo, discType, discVal, taxPct, notes, warranty, advance, payMethod]
+    () => JSON.stringify({ items, client, biz, date, invNo, purpose, discType, discVal, taxPct, notes, warranty, advance, payMethod }),
+    [items, client, biz, date, invNo, purpose, discType, discVal, taxPct, notes, warranty, advance, payMethod]
   );
   const firstRun = useRef(true);
   useEffect(() => {
@@ -272,7 +273,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
     setClient({name:"",address:"",phone:"",email:"",gstin:"",pan:""});
     setItems([{id:uid(),desc:"",qty:"1",rate:""}]);
     setDiscVal("0"); setTaxPct("0"); setNotes("Keep the invoices for Future References");
-    setWarranty(""); setAdvance("0"); setPayMethod("cash");
+    setWarranty(""); setAdvance("0"); setPayMethod("cash"); setPurpose("");
     setDate(today()); setInvNo(nextInvoiceNo()); setCatFilter("");
     setSavedInv(null); setSaveErr("");
     fetchNextNumber();   // ask the server for the real next number
@@ -289,6 +290,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
       bizName:biz.name, bizPan:biz.pan, bizGstin:biz.gstin, bizAddress:biz.address, bizPhone:biz.phone, bizEmail:biz.email,
       invNo:printedNo, invDate:fmtD(date), invTime:new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}),
       clientName:client.name, clientAddr:client.address, clientPhone:client.phone, clientGstin:client.gstin,
+      purpose: purpose.trim(),
       items: items.filter(it=>it.desc.trim()||num(it.rate)>0).map(it=>({
         desc:it.desc, qty:num(it.qty), rate:num(it.rate),
         size:(num(it.width)>0&&num(it.height)>0)?`${num(it.width)} × ${num(it.height)}`:"",
@@ -335,7 +337,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
   const openWA = () => {
     if (!savedInv) return;
     setWaErr(""); setWaSent(""); setWaTo(client.phone||"");
-    setWaMsg(`Dear ${client.name||"Customer"},\n\nHere is your invoice ${savedInv.invNo} from ${biz.name||""}.\n\nTotal: ${rupee(totals.total)}${advancePaid>0?`\nAdvance paid: ${rupee(advancePaid)}\nBalance due: ${rupee(balanceDue)}`:""}\n\nThank you for your business!`);
+    setWaMsg(`Dear ${client.name||"Customer"},\n\nHere is your invoice ${savedInv.invNo} from ${biz.name||""}.${purpose.trim()?`\nPurpose: ${purpose.trim()}`:""}\n\nTotal: ${rupee(totals.total)}${advancePaid>0?`\nAdvance paid: ${rupee(advancePaid)}\nBalance due: ${rupee(balanceDue)}`:""}\n\nThank you for your business!`);
     setWaOpen(true);
   };
 
@@ -453,7 +455,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
 
       <div className="bl-layout" style={{ display:"grid", gridTemplateColumns:"minmax(0,1.35fr) minmax(0,1fr)", gap:18, alignItems:"start" }}>
         <BillingForm
-          biz={biz} client={client} invNo={invNo} date={date}
+          biz={biz} client={client} invNo={invNo} date={date} purpose={purpose}
           items={items} discType={discType} discVal={discVal} taxPct={taxPct}
           notes={notes} warranty={warranty} advance={advance} payMethod={payMethod}
           advancePaid={advancePaid} balanceDue={balanceDue} total={totals.total}
@@ -461,6 +463,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
           customers={customers} dbCustomers={dbCustomers} bizSaved={bizSaved}
           onBizChange={setBiz} onClientChange={setClient}
           onInvNoChange={setInvNo} onDateChange={setDate}
+          onPurposeChange={setPurpose}
           onItemsChange={setItems} onDiscTypeChange={setDiscType}
           onDiscValChange={setDiscVal} onTaxPctChange={setTaxPct}
           onNotesChange={setNotes} onWarrantyChange={setWarranty}
@@ -469,7 +472,7 @@ export default function Billing({ variant = "full" }: { variant?: BillVariant })
           onAddCustomer={openAddCustomer}
         />
         <BillingPreview
-          biz={biz} client={client} invNo={invNo} date={date}
+          biz={biz} client={client} invNo={invNo} date={date} purpose={purpose}
           items={items} totals={totals} advancePaid={advancePaid} balanceDue={balanceDue}
           taxPct={taxPct} qrBase64={qrBase64} logoBase64={logoBase64} sigBase64={sigBase64}
           notes={notes} warranty={warranty} variant={variant}

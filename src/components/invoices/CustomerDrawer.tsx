@@ -28,6 +28,15 @@ type PaymentRow = {
   note: string; paidAt: string; createdAt: string;
 };
 
+/** A payment row that knows where it came from:
+ *  - "account" → CustomerPayment (paid against the account, settles oldest first)
+ *  - "invoice" → Payment on one bill (this is where "Advance at billing" lives) */
+type MergedPayment = PaymentRow & {
+  source: "account" | "invoice";
+  invoiceId?: string;
+  invoiceNo?: string;
+};
+
 type Ledger = {
   billed: number; paid: number; balance: number; advance: number;
   invoices: LedgerInvoice[]; payments: PaymentRow[];
@@ -42,6 +51,11 @@ const savedFormat = (inv: Invoice): "half" | "full" =>
   ((inv.business || {}) as any).format === "full" ? "full" : "half";
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+const timeOf = (p: { paidAt?: string; createdAt?: string }) => {
+  const t = new Date(p.paidAt || p.createdAt || "").getTime();
+  return Number.isFinite(t) ? t : 0;
+};
 
 export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPreview, onStatement, onChanged }: Props) {
   const [q, setQ]               = useState("");
@@ -81,6 +95,31 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
   };
   useEffect(loadLedger, [customerId]);
 
+  /** Every payment on this account, from BOTH tables, newest first.
+   *  Invoice-level payments (the advance taken at billing) live on
+   *  invoice.payments; account-level ones come back on the ledger. Without
+   *  the merge the "Received" total counted the advance but the list didn't
+   *  show it, which looked like a missing entry. */
+  const allPayments: MergedPayment[] = useMemo(() => {
+    const fromInvoices: MergedPayment[] = row.invoices.flatMap(inv =>
+      (Array.isArray((inv as any).payments) ? (inv as any).payments : []).map((p: any) => ({
+        id:        String(p.id),
+        amount:    num(p.amount),
+        method:    p.method === "online" ? "online" : "cash",
+        note:      String(p.note || ""),
+        paidAt:    String(p.createdAt || ""),
+        createdAt: String(p.createdAt || ""),
+        source:    "invoice" as const,
+        invoiceId: inv.id,
+        invoiceNo: inv.invoiceNo,
+      })),
+    );
+    const fromAccount: MergedPayment[] = (ledger?.payments || []).map(p => ({
+      ...p, amount: num(p.amount), source: "account" as const,
+    }));
+    return [...fromInvoices, ...fromAccount].sort((a, b) => timeOf(b) - timeOf(a));
+  }, [row.invoices, ledger]);
+
   const savePayment = async () => {
     const n = Number(amt);
     if (!Number.isFinite(n) || n <= 0) { setFormErr("Enter an amount greater than zero."); return; }
@@ -98,18 +137,22 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
     } finally { setSaving(false); }
   };
 
-  const removePayment = async (id: string) => {
+  const removePayment = async (p: MergedPayment) => {
     // deleting a payment moves money → confirm the security PIN, same as
     // invoice delete/cancel. The backend rejects the request without it.
     const enteredPin = window.prompt("Enter the security PIN to remove this payment:");
     if (enteredPin === null) return;          // cancelled
     if (!enteredPin.trim()) { alert("Security PIN is required to remove a payment."); return; }
     try {
-      await api.delete(`/api/customer-payments/${id}`, { data: { pin: enteredPin.trim() } });
+      if (p.source === "invoice") {
+        await api.delete(`/api/invoices/${p.invoiceId}/payments/${p.id}`, { data: { pin: enteredPin.trim() } });
+      } else {
+        await api.delete(`/api/customer-payments/${p.id}`, { data: { pin: enteredPin.trim() } });
+      }
       loadLedger();
       onChanged?.();
     } catch (e: any) {
-      alert(e?.response?.data?.error || "Couldn't remove this payment.");
+      alert(e?.response?.data?.error || e?.response?.data?.message || "Couldn't remove this payment.");
     }
   };
 
@@ -176,8 +219,8 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
           <button style={st.payCta} onClick={() => { setPayOpen(v => !v); setFormErr(""); }} disabled={!customerId}>
             <Icon name="banknote" size={15}/> {payOpen ? "Cancel" : "Record Payment"}
           </button>
-          <button style={st.histCta} onClick={() => setHistOpen(true)} disabled={!ledger?.payments.length}>
-            <Icon name="search" size={15}/> Payment History{ledger?.payments.length ? ` · ${ledger.payments.length}` : ""}
+          <button style={st.histCta} onClick={() => setHistOpen(true)} disabled={!allPayments.length}>
+            <Icon name="search" size={15}/> Payment History{allPayments.length ? ` · ${allPayments.length}` : ""}
           </button>
           <button style={st.stmtCta} onClick={() => onStatement(row.key)}>
             <Icon name="csv" size={15}/> Statement
@@ -268,10 +311,10 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
           }
         </div>
 
-        {histOpen && ledger && (
+        {histOpen && (
           <PaymentHistory
             name={row.name}
-            payments={ledger.payments}
+            payments={allPayments}
             paid={paid}
             billed={billed}
             balance={balance}
@@ -289,9 +332,9 @@ function PaymentHistory({
   name, payments, paid, billed, balance, onRemove, onClose,
 }: {
   name: string;
-  payments: PaymentRow[];
+  payments: MergedPayment[];
   paid: number; billed: number; balance: number;
-  onRemove: (id: string) => void;
+  onRemove: (p: MergedPayment) => void;
   onClose: () => void;
 }) {
     const stamp = (iso: string) => {
@@ -345,21 +388,26 @@ function PaymentHistory({
           <table style={hst.tbl}>
             <thead>
               <tr>
-                {["Date & time", "Method", "Note", "Amount", "Running total", ""].map((h, i) => (
-                  <th key={h + i} style={{ ...hst.th, textAlign: i >= 3 && i < 5 ? "right" : "left" }}>{h}</th>
+                {["Date & time", "Method", "Against", "Note", "Amount", "Running total", ""].map((h, i) => (
+                  <th key={h + i} style={{ ...hst.th, textAlign: i >= 4 && i < 6 ? "right" : "left" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {withRunning.map(p => (
-                <tr key={p.id}>
+                <tr key={p.source + p.id}>
                   <td style={hst.td}>{stamp(p.paidAt)}</td>
                   <td style={hst.td}><span style={hst.method}>{p.method === "cash" ? "Cash" : "Online"}</span></td>
+                  <td style={hst.td}>
+                    {p.source === "invoice"
+                      ? <span style={hst.invTag} title={`Recorded on invoice ${p.invoiceNo}`}>{p.invoiceNo}</span>
+                      : <span style={hst.acctTag}>Account</span>}
+                  </td>
                   <td style={{ ...hst.td, color:"#6b7280", fontStyle: p.note ? "normal" : "italic" }}>{p.note || "—"}</td>
                   <td style={{ ...hst.td, textAlign:"right", fontWeight:800, color:GREEN, fontVariantNumeric:"tabular-nums" }}>{rupee(p.amount)}</td>
                   <td style={{ ...hst.td, textAlign:"right", fontWeight:700, fontVariantNumeric:"tabular-nums" }}>{rupee(p.running)}</td>
                   <td style={{ ...hst.td, textAlign:"right" }}>
-                    <button style={hst.del} onClick={() => onRemove(p.id)} title="Remove this payment">×</button>
+                    <button style={hst.del} onClick={() => onRemove(p)} title="Remove this payment">×</button>
                   </td>
                 </tr>
               ))}
@@ -369,6 +417,7 @@ function PaymentHistory({
 
         <div style={hst.foot}>
           Removing a payment asks for the security PIN, then re-settles every invoice automatically.
+          Rows tagged with an invoice number were taken as an advance on that bill.
         </div>
       </div>
     </div>
@@ -376,7 +425,7 @@ function PaymentHistory({
 }
 
 const hst: Record<string, React.CSSProperties> = {
-  modal:   { width:"min(860px,100%)", maxHeight:"calc(100vh - 60px)", background:"#fff", boxShadow:"0 30px 80px rgba(24,22,28,.34)", display:"flex", flexDirection:"column", overflow:"hidden" },
+  modal:   { width:"min(940px,100%)", maxHeight:"calc(100vh - 60px)", background:"#fff", boxShadow:"0 30px 80px rgba(24,22,28,.34)", display:"flex", flexDirection:"column", overflow:"hidden" },
   head:    { display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, padding:"16px 20px", borderBottom:`1px solid ${LINE}` },
   title:   { fontSize:16, fontWeight:800, color:INK },
   sub:     { fontSize:12.5, color:MUTE, marginTop:3 },
@@ -388,8 +437,10 @@ const hst: Record<string, React.CSSProperties> = {
   th:      { position:"sticky", top:0, background:"#fdf0e7", color:"#7a5240", padding:"9px 10px", fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:.4, borderBottom:`1px solid ${LINE}` },
   td:      { padding:"10px", borderBottom:"1px solid #f6ece4", color:INK },
   method:  { fontSize:10.5, fontWeight:700, padding:"2px 8px", background:"#f1ece3", color:"#7a6f66", textTransform:"uppercase", letterSpacing:.3 },
+  invTag:  { fontSize:10.5, fontWeight:700, padding:"2px 8px", background:"#fff3e0", color:"#b45309", border:"1px solid #fcd34d", whiteSpace:"nowrap" },
+  acctTag: { fontSize:10.5, fontWeight:700, padding:"2px 8px", background:"#eef2ff", color:"#1a56db", border:"1px solid #c7d2fe", whiteSpace:"nowrap" },
   del:     { width:24, height:24, border:"none", background:"transparent", color:"#b3ab9f", fontSize:19, lineHeight:1, cursor:"pointer" },
-  foot:    { padding:"11px 20px", borderTop:`1px solid ${LINE}`, fontSize:11.5, color:MUTE, background:"#fffcf9" },
+  foot:    { padding:"11px 20px", borderTop:`1px solid ${LINE}`, fontSize:11.5, color:MUTE, background:"#fffcf9", lineHeight:1.55 },
 };
 
 // ── Format badge ──────────────────────────────────────────────────────────

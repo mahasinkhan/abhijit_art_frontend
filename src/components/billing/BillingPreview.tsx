@@ -9,6 +9,7 @@ interface Props {
   client:      Party;
   invNo:       string;
   date:        string;
+  purpose?:    string;
   items:       LineItem[];
   totals:      Totals;
   advancePaid: number;
@@ -87,6 +88,14 @@ export default function BillingPreview(p: Props) {
           {p.client.gstin && <span>GSTIN: {p.client.gstin}</span>}
         </div>
       </div>
+
+      {/* ── Purpose ────────────────────────────────────────────── */}
+      {p.purpose?.trim() && (
+        <div style={{ display:"flex", alignItems:"baseline", gap:8, padding:"7px 14px", borderBottom:`1px solid ${RULE}`, background:"#fff", flexShrink:0 }}>
+          <span style={{ fontSize:7.5,fontWeight:700,color:ORANGE,textTransform:"uppercase" as const,letterSpacing:.9,flexShrink:0 }}>Purpose</span>
+          <span style={{ fontSize:10,fontWeight:700,color:INKC,lineHeight:1.3 }}>{p.purpose}</span>
+        </div>
+      )}
 
       {/* ── Items ──────────────────────────────────────────────── */}
       <div style={{ flex:1, minHeight:0, overflow:"hidden", display:"flex", flexDirection:"column" as const }}>

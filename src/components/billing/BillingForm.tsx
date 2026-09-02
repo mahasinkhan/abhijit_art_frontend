@@ -30,7 +30,7 @@ function Field({ label, children, hint, half }: { label:string; children:React.R
 }
 
 interface Props {
-  biz:Party; client:Party; invNo:string; date:string;
+  biz:Party; client:Party; invNo:string; date:string; purpose:string;
   items:LineItem[]; discType:DiscType; discVal:string; taxPct:string;
   notes:string; warranty:string; advance:string; payMethod:PayMethod;
   advancePaid:number; balanceDue:number; total:number;
@@ -38,6 +38,7 @@ interface Props {
   customers:CustomerLite[]; dbCustomers:CustomerLite[]; bizSaved:boolean;
   onBizChange:(biz:Party)=>void; onClientChange:(client:Party)=>void;
   onInvNoChange:(v:string)=>void; onDateChange:(v:string)=>void;
+  onPurposeChange:(v:string)=>void;
   onItemsChange:(items:LineItem[])=>void; onDiscTypeChange:(v:DiscType)=>void;
   onDiscValChange:(v:string)=>void; onTaxPctChange:(v:string)=>void;
   onNotesChange:(v:string)=>void; onWarrantyChange:(v:string)=>void;
@@ -48,6 +49,16 @@ interface Props {
 
 const CUSTOM = "__custom__";
 const normalizePhone = (v: string) => v.replace(/\D/g, "").slice(-10);
+
+/** Quick-pick suggestions for the Purpose note. */
+const PURPOSE_PRESETS = [
+  "School Banner Work",
+  "Shop Signage Work",
+  "Wedding Decoration Work",
+  "Political Campaign Work",
+  "Office Branding Work",
+  "Event / Function Work",
+];
 
 /** Qty = W × H × Pcs (Pcs defaults to 1 when blank). Returns "" if no size. */
 const calcArea = (w: string, h: string, pcs?: string): string => {
@@ -289,6 +300,27 @@ export default function BillingForm(p: Props) {
 
         <Field label="Address" hint="Enter for new line"><textarea className="bl-in" style={{ ...inp, minHeight:58, resize:"vertical" }} rows={2} value={p.client.address} onChange={e => p.onClientChange({ ...p.client, address: e.target.value })}/></Field>
         <Field label="GSTIN (optional)"><input className="bl-in" style={inp} value={p.client.gstin} onChange={e => p.onClientChange({ ...p.client, gstin: e.target.value.toUpperCase() })}/></Field>
+
+        {/* ── Purpose ── */}
+        <Field label="Purpose" hint="short note shown on the bill — e.g. School Banner Work">
+          <input className="bl-in" style={inp} value={p.purpose} maxLength={80}
+            placeholder="e.g. School Banner Work"
+            onChange={e => p.onPurposeChange(e.target.value)}/>
+        </Field>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginTop:8 }}>
+          {PURPOSE_PRESETS.map(pr => (
+            <button key={pr} type="button" className="bl-chip"
+              style={{
+                padding:"5px 11px", fontSize:11.5, fontFamily:SANS, fontWeight:600, cursor:"pointer",
+                border:`1px solid ${p.purpose === pr ? TERRA : "#e6dcd2"}`,
+                background: p.purpose === pr ? TERRA : "transparent",
+                color: p.purpose === pr ? "#fff" : "#545a67",
+              }}
+              onClick={() => p.onPurposeChange(p.purpose === pr ? "" : pr)}>
+              {pr}
+            </button>
+          ))}
+        </div>
       </section>
 
       {/* ── Items ── */}
@@ -431,6 +463,8 @@ export default function BillingForm(p: Props) {
         .bl-sug:hover{background:#fffcf9!important}
         .bl-seg{transition:all .2s}
         .bl-link:hover{color:${TERRA}!important}
+        .bl-chip{transition:all .18s}
+        .bl-chip:hover{border-color:${TERRA}!important;color:${TERRA}!important;background:#fffcf9!important}
       `}</style>
     </div>
   );

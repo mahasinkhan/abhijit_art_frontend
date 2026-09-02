@@ -206,35 +206,24 @@ export default function Invoices() {
   return (
     <div style={{ fontFamily:SANS, color:INK, minWidth:0, maxWidth:"100%" }} ref={rootRef}>
 
-      {/* Top toolbar */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:10, flexWrap:"wrap", marginBottom:16 }}>
-        <button className="ivh-ghost" style={st.ghostBtn} onClick={exportCsv} disabled={!shown.length}>
-          <Icon name="csv" size={15}/> Export CSV
-        </button>
-        <button className="ivh-ghost" style={st.ghostBtn} onClick={() => load(false)} disabled={refreshing}>
-          <Icon name="refresh" size={15}/> {refreshing?"Refreshing…":"Refresh"}
-        </button>
-      </div>
+      {/* ── One control bar: view toggle · period · search · export/refresh ──
+          Everything that filters or acts on this page now lives above the KPI
+          cards, so the numbers below always read as the RESULT of whatever is
+          set here instead of sitting between the controls that drive them. */}
+      <div style={st.controlBar}>
+        <div style={st.viewToggle}>
+          <button className={`ivh-vtab${viewMode==="customers"?" on":""}`} style={st.vtab} onClick={()=>setViewMode("customers")}>
+            <Icon name="user" size={15}/> By Customer
+          </button>
+          <button className={`ivh-vtab${viewMode==="all"?" on":""}`} style={st.vtab} onClick={()=>setViewMode("all")}>
+            <Icon name="receipt" size={15}/> All Invoices
+          </button>
+        </div>
 
-      {/* KPI stats */}
-      <StatsBar {...stats} period={period} onPeriodChange={setPeriod}/>
-
-      {/* View toggle */}
-      <div style={st.viewToggle}>
-        <button className={`ivh-vtab${viewMode==="customers"?" on":""}`} style={st.vtab} onClick={()=>setViewMode("customers")}>
-          <Icon name="user" size={15}/> By Customer
-        </button>
-        <button className={`ivh-vtab${viewMode==="all"?" on":""}`} style={st.vtab} onClick={()=>setViewMode("all")}>
-          <Icon name="receipt" size={15}/> All Invoices
-        </button>
-      </div>
-
-      {/* Search + period */}
-      <div style={st.toolbar}>
-        <div style={{ flex:1 }}/>
         <select className="ivh-datesel" style={st.dateSel} value={period} onChange={e=>setPeriod(e.target.value as Period)}>
           {PERIOD_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+
         <div style={st.searchWrap}>
           <span style={st.searchIcon}><Icon name="search" size={15}/></span>
           <input
@@ -243,7 +232,19 @@ export default function Invoices() {
             value={q} onChange={e=>setQ(e.target.value)}
           />
         </div>
+
+        <div style={st.barActions}>
+          <button className="ivh-ghost" style={st.ghostBtn} onClick={exportCsv} disabled={!shown.length}>
+            <Icon name="csv" size={15}/> Export CSV
+          </button>
+          <button className="ivh-ghost" style={st.ghostBtn} onClick={() => load(false)} disabled={refreshing}>
+            <Icon name="refresh" size={15}/> {refreshing?"Refreshing…":"Refresh"}
+          </button>
+        </div>
       </div>
+
+      {/* KPI stats */}
+      <StatsBar {...stats} period={period} onPeriodChange={setPeriod}/>
 
       {/* Main content */}
       {viewMode === "customers"
@@ -278,16 +279,22 @@ export default function Invoices() {
       {sendTarget && <SendModal      inv={sendTarget.inv} channel={sendTarget.ch} onClose={()=>setSendTarget(null)}/>}
 
       <style>{GLOBAL_CSS}</style>
+      <style>{`
+        @media (max-width: 980px) {
+          .ivh-barmine { margin-left: 0 !important; width: 100%; }
+        }
+      `}</style>
     </div>
   );
 }
 
 const st: Record<string, React.CSSProperties> = {
+  controlBar: { display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:16 },
+  barActions: { display:"flex", alignItems:"center", gap:10, marginLeft:"auto", flexWrap:"wrap" },
   ghostBtn:   { display:"inline-flex", alignItems:"center", gap:7, padding:"10px 16px", borderRadius:0, border:`1px solid ${LINE}`, background:CARD, color:INK, fontFamily:SANS, fontWeight:700, fontSize:13.5, cursor:"pointer" },
-  viewToggle: { display:"flex", gap:0, marginBottom:16, border:"1px solid #f0e6dc", width:"fit-content", overflow:"hidden" },
+  viewToggle: { display:"flex", gap:0, border:"1px solid #f0e6dc", width:"fit-content", overflow:"hidden", flexShrink:0 },
   vtab:       { display:"inline-flex", alignItems:"center", gap:7, padding:"10px 20px", border:"none", background:"#fff", color:MUTE, fontFamily:SANS, fontWeight:700, fontSize:13.5, cursor:"pointer" },
-  toolbar:    { display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:14 },
-  dateSel:    { padding:"9px 12px", border:`1px solid ${LINE}`, borderRadius:0, background:CARD, color:"#545a67", fontFamily:SANS, fontWeight:700, fontSize:13, cursor:"pointer", colorScheme:"light" as const },
+  dateSel:    { padding:"9px 12px", border:`1px solid ${LINE}`, borderRadius:0, background:CARD, color:"#545a67", fontFamily:SANS, fontWeight:700, fontSize:13, cursor:"pointer", colorScheme:"light" as const, flexShrink:0 },
   searchWrap: { position:"relative", flex:"1 1 200px", maxWidth:340, minWidth:180 },
   searchIcon: { position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:"#b6bac3", display:"inline-flex", pointerEvents:"none" },
   searchIn:   { width:"100%", boxSizing:"border-box" as const, padding:"10px 12px 10px 36px", border:"1px solid #e6dcd2", borderRadius:0, fontSize:14, fontFamily:SANS, background:"#fff", color:INK },

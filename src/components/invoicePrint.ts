@@ -4,6 +4,7 @@ export type InvoicePrintData = {
   bizAddress?: string; bizPhone?: string; bizEmail?: string;
   invNo: string; invDate: string; invTime?: string;
   clientName: string; clientAddr?: string; clientPhone?: string; clientGstin?: string;
+  purpose?: string;
   items: { desc: string; qty: number; rate: number; size?: string; unit?: string; pcs?: number }[];
   discType: string; discVal: number; taxPct: number;
   subtotal: number; discountAmt: number; taxAmt: number; total: number; paidAmount: number;
@@ -70,6 +71,9 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8.5pt;color:#1a1a2e;backgrou
 .bt-lbl{font-size:7pt;font-weight:800;color:#c56a3a;text-transform:uppercase;letter-spacing:.7px;border-bottom:1.5px solid #e89a3c;padding-bottom:.5mm}
 .bt-name{font-size:9.5pt;font-weight:800}
 .bt-line{font-size:6.5pt;color:#555}
+.purpose{display:flex;align-items:baseline;gap:2.5mm;padding:2.2mm 6mm;border-bottom:1px solid #f0e0d0;background:#fff;flex-shrink:0}
+.pp-lbl{font-size:6.5pt;font-weight:800;color:#c56a3a;text-transform:uppercase;letter-spacing:.7px;flex-shrink:0}
+.pp-txt{font-size:8.5pt;font-weight:700;color:#2a231d;line-height:1.35}
 .tblwrap{min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .tbl{width:100%;border-collapse:collapse}
 .th{background:#c56a3a;color:#fff;padding:2.2mm 3mm;font-size:6.8pt;font-weight:700;text-align:left}
@@ -128,6 +132,7 @@ ${THEME}`;
       ${p.clientGstin?`<span class="bt-line">GSTIN: ${e(p.clientGstin)}</span>`:""}
       ${p.clientAddr?`<span class="bt-line">${e(p.clientAddr)}</span>`:""}
     </div>
+    ${p.purpose&&p.purpose.trim()?`<div class="purpose"><span class="pp-lbl">Purpose</span><span class="pp-txt">${e(p.purpose)}</span></div>`:""}
     <div class="tblwrap">
       <table class="tbl">
         <thead><tr>
@@ -477,6 +482,9 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 .bt-lbl{font-size:6pt;font-weight:800;color:#c56a3a;text-transform:uppercase;letter-spacing:.6px;border-bottom:1.5px solid #e89a3c;padding-bottom:.4mm}
 .bt-name{font-size:8.5pt;font-weight:800}
 .bt-line{font-size:6pt;color:#555}
+.purpose{display:flex;align-items:baseline;gap:2mm;padding:1.8mm 4mm;border-bottom:1px solid #f0e0d0;background:#fff;flex-shrink:0}
+.pp-lbl{font-size:5.5pt;font-weight:800;color:#c56a3a;text-transform:uppercase;letter-spacing:.7px;flex-shrink:0}
+.pp-txt{font-size:7.5pt;font-weight:700;color:#2a231d;line-height:1.3}
 .tblwrap{min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .tbl{width:100%;border-collapse:collapse}
 .th{background:#c56a3a;color:#fff;padding:1.8mm 2mm;font-size:5.6pt;font-weight:700;text-align:left}
@@ -535,6 +543,7 @@ ${THEME}`;
       ${p.clientGstin?`<span class="bt-line">GSTIN: ${e(p.clientGstin)}</span>`:""}
       ${p.clientAddr?`<span class="bt-line">${e(p.clientAddr)}</span>`:""}
     </div>
+    ${p.purpose&&p.purpose.trim()?`<div class="purpose"><span class="pp-lbl">Purpose</span><span class="pp-txt">${e(p.purpose)}</span></div>`:""}
     <div class="tblwrap">
       <table class="tbl">
         <thead><tr>

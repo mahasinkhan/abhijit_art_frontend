@@ -22,16 +22,24 @@ import api from "../api";
    double-nudging. Read-only on money — this tab never edits an amount, so
    it needs no PIN.
 
+   CONTACT DETAILS: a bill snapshots the client's email/phone at billing
+   time, so an older invoice can have none even though the customer record
+   does. The API therefore also returns contactEmail / contactPhone =
+   the snapshot falling back to the linked Customer record, and this page
+   reads those (via emailOf/phoneOf) everywhere it decides whether a client
+   is reachable. Never gate a send on clientEmail alone.
+
    Same design system as InvoiceMaker / Invoices / Inventory:
    DM Sans, square corners, warm orange-glow cards, hairline borders,
    tabular figures. CSS prefix: pr-.
 
-   Backend contract (invoiceRoutes.ts):
+   Backend contract (invoice.controller.ts):
      POST /api/invoices/:id/remind
        body { channel: "email" | "whatsapp", subject?, message? }
        → email sends the mail (+ PDF), whatsapp just records; both update
          lastRemindedAt/reminderCount and return the updated invoice.
-     GET  /api/invoices  → each invoice carries a signed `pdfUrl` (or null).
+     GET  /api/invoices  → each invoice carries a signed `pdfUrl` (or null)
+                           plus contactEmail / contactPhone.
    ════════════════════════════════════════════════════════════════ */
 
 /* ---------- tokens (mirror the rest of the admin) ---------- */
@@ -80,6 +88,9 @@ interface Invoice {
   clientEmail?: string | null;
   clientGstin?: string | null;
   clientAddr?: string | null;
+  /** snapshot-or-customer-record contact, resolved server-side */
+  contactEmail?: string | null;
+  contactPhone?: string | null;
   source: CustomerSource;
   business?: Business | null;
   items?: unknown;
@@ -92,6 +103,14 @@ interface Invoice {
   notes?: string | null;
   pdfUrl?: string | null; // signed, public link to the invoice PDF (or null)
 }
+
+/* ---------- contact resolution ----------
+   The bill's own snapshot wins; the linked Customer record is the fallback.
+   Everything on this page that asks "can we reach them?" goes through these. */
+const emailOf = (inv: Invoice) =>
+  (inv.contactEmail || inv.clientEmail || "").trim();
+const phoneOf = (inv: Invoice) =>
+  (inv.contactPhone || inv.clientPhone || "").trim();
 
 /* ---------- money / number helpers ---------- */
 const num = (v: unknown) => {
@@ -250,8 +269,8 @@ export default function PaymentReminders() {
       if (!needle) return true;
       return (
         i.clientName?.toLowerCase().includes(needle) ||
-        (i.clientPhone || "").toLowerCase().includes(needle) ||
-        (i.clientEmail || "").toLowerCase().includes(needle) ||
+        phoneOf(i).toLowerCase().includes(needle) ||
+        emailOf(i).toLowerCase().includes(needle) ||
         i.invoiceNo?.toLowerCase().includes(needle)
       );
     });
@@ -284,6 +303,8 @@ export default function PaymentReminders() {
   }, [outstanding]);
 
   const current = openId ? invoices.find((i) => i.id === openId) || null : null;
+  const curEmail = current ? emailOf(current) : "";
+  const curPhone = current ? phoneOf(current) : "";
 
   /* ---- modal open/close ---- */
   function openRemind(inv: Invoice) {
@@ -330,8 +351,10 @@ export default function PaymentReminders() {
   /* ---- send email ---- */
   async function sendEmail() {
     if (!current || sending) return;
-    if (!current.clientEmail) {
-      setModalErr("No email on file for this client — use WhatsApp instead.");
+    if (!curEmail) {
+      setModalErr(
+        "No email on file for this client — add one on their Customers record, or use WhatsApp instead."
+      );
       return;
     }
     setSending("email");
@@ -357,14 +380,14 @@ export default function PaymentReminders() {
   /* ---- send WhatsApp (open link first, then record) ---- */
   async function sendWhatsApp() {
     if (!current || sending) return;
-    if (!current.clientPhone) {
+    if (!curPhone) {
       setModalErr("No phone number on file for this client.");
       return;
     }
     // WhatsApp is plain text — append the figures (+ PDF link) under the note
     const waText = `${message}\n\n${balanceBlock(current)}`;
     // open with the user gesture so the popup isn't blocked
-    window.open(waLink(current.clientPhone, waText), "_blank", "noopener");
+    window.open(waLink(curPhone, waText), "_blank", "noopener");
     setSending("whatsapp");
     setModalErr("");
     setModalNote("");
@@ -405,8 +428,8 @@ export default function PaymentReminders() {
         i.invoiceNo,
         fmtDate(i.date),
         i.clientName,
-        i.clientPhone || "",
-        i.clientEmail || "",
+        phoneOf(i),
+        emailOf(i),
         round2(num(i.total)),
         round2(num(i.paidAmount)),
         balanceOf(i),
@@ -434,55 +457,7 @@ export default function PaymentReminders() {
     <div className="pr-root">
       <style>{CSS}</style>
 
-      {/* header row */}
-      <div className="pr-head">
-        <div>
-          <h2 className="pr-title">Payment reminders</h2>
-          <p className="pr-lead">
-            Invoices still carrying a balance. Nudge clients by email or
-            WhatsApp — settled and cancelled bills drop off automatically.
-          </p>
-        </div>
-        <div className="pr-head-actions">
-          <button
-            className="pr-btn ghost"
-            onClick={() => load(false)}
-            disabled={refreshing}
-          >
-            {refreshing ? "Refreshing…" : "Refresh"}
-          </button>
-          <button
-            className="pr-btn ghost"
-            onClick={exportCsv}
-            disabled={rows.length === 0}
-          >
-            Export CSV
-          </button>
-        </div>
-      </div>
-
-      {/* stat cards */}
-      <div className="pr-stats">
-        <Stat label="Outstanding" value={String(stats.count)} sub="invoices" />
-        <Stat
-          label="Total due"
-          value={inr0(stats.totalDue)}
-          sub="across all clients"
-          accent
-        />
-        <Stat
-          label="Not reminded"
-          value={String(stats.notReminded)}
-          sub="need a first nudge"
-        />
-        <Stat
-          label="Reminded"
-          value={String(stats.reminded)}
-          sub="already contacted"
-        />
-      </div>
-
-      {/* toolbar */}
+      {/* controls first: search, filter, sort, then the page actions */}
       <div className="pr-toolbar">
         <div className="pr-search">
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
@@ -529,6 +504,44 @@ export default function PaymentReminders() {
           <option value="due">Highest due</option>
           <option value="recent">Recently reminded</option>
         </select>
+
+        <div className="pr-toolbar-actions">
+          <button
+            className="pr-btn ghost"
+            onClick={() => load(false)}
+            disabled={refreshing}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+          <button
+            className="pr-btn ghost"
+            onClick={exportCsv}
+            disabled={rows.length === 0}
+          >
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      {/* stat cards */}
+      <div className="pr-stats">
+        <Stat label="Outstanding" value={String(stats.count)} sub="invoices" />
+        <Stat
+          label="Total due"
+          value={inr0(stats.totalDue)}
+          sub="across all clients"
+          accent
+        />
+        <Stat
+          label="Not reminded"
+          value={String(stats.notReminded)}
+          sub="need a first nudge"
+        />
+        <Stat
+          label="Reminded"
+          value={String(stats.reminded)}
+          sub="already contacted"
+        />
       </div>
 
       {/* table / states */}
@@ -582,7 +595,7 @@ export default function PaymentReminders() {
                     <td>
                       <div className="pr-name">{i.clientName}</div>
                       <div className="pr-muted">
-                        {i.clientPhone || "no phone"}
+                        {phoneOf(i) || "no phone"}
                         {" · "}
                         <span
                           className={
@@ -670,6 +683,13 @@ export default function PaymentReminders() {
                     : "Not reminded yet."}
                 </div>
 
+                {curEmail && (
+                  <div className="pr-sendto">
+                    Sending to <strong>{curEmail}</strong>
+                    {curPhone ? <> · WhatsApp {curPhone}</> : null}
+                  </div>
+                )}
+
                 <label className="pr-lbl">Email subject</label>
                 <input
                   className="pr-input"
@@ -700,10 +720,10 @@ export default function PaymentReminders() {
                   <button
                     className="pr-btn solid"
                     onClick={sendEmail}
-                    disabled={!!sending || !current.clientEmail}
+                    disabled={!!sending || !curEmail}
                     title={
-                      current.clientEmail
-                        ? "Send branded email with the invoice PDF attached"
+                      curEmail
+                        ? `Send branded email with the invoice PDF attached to ${curEmail}`
                         : "No email on file"
                     }
                   >
@@ -712,9 +732,9 @@ export default function PaymentReminders() {
                   <button
                     className="pr-btn wa"
                     onClick={sendWhatsApp}
-                    disabled={!!sending || !current.clientPhone}
+                    disabled={!!sending || !curPhone}
                     title={
-                      current.clientPhone
+                      curPhone
                         ? "Open WhatsApp with the message ready"
                         : "No phone on file"
                     }
@@ -722,9 +742,10 @@ export default function PaymentReminders() {
                     {sending === "whatsapp" ? "Opening…" : "Send on WhatsApp"}
                   </button>
                 </div>
-                {!current.clientEmail && (
+                {!curEmail && (
                   <div className="pr-hint dim">
-                    No email on file — WhatsApp only for this client.
+                    No email on file — add one on this client's Customers record
+                    to enable email, or use WhatsApp.
                   </div>
                 )}
               </>
@@ -782,10 +803,6 @@ const CSS = `
 .pr-root{font-family:${FONT};color:${T.ink};font-variant-numeric:tabular-nums;}
 .pr-root *{box-sizing:border-box;}
 
-.pr-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
-.pr-title{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em;}
-.pr-lead{margin:4px 0 0;color:${T.sub};font-size:13.5px;max-width:560px;line-height:1.5;}
-.pr-head-actions{display:flex;gap:8px;}
 
 /* cards */
 .pr-card{
@@ -804,7 +821,8 @@ const CSS = `
 .pr-stat.accent{border-color:#f0cbbb;}
 
 /* toolbar */
-.pr-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+.pr-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+.pr-toolbar-actions{display:flex;gap:8px;margin-left:auto;}
 .pr-search{display:flex;align-items:center;gap:8px;background:${T.paper};border:1px solid ${T.line};padding:0 12px;height:38px;flex:1;min-width:220px;color:${T.faint};}
 .pr-search input{border:0;outline:0;background:transparent;font-family:${FONT};font-size:14px;color:${T.ink};width:100%;}
 .pr-seg{display:inline-flex;border:1px solid ${T.line};background:${T.paper};height:38px;}
@@ -868,7 +886,9 @@ const CSS = `
 .pr-money strong{font-size:16px;font-weight:700;}
 .pr-money .due strong{color:${T.terra};}
 
-.pr-lastline{font-size:12.5px;color:${T.sub};margin-bottom:14px;}
+.pr-lastline{font-size:12.5px;color:${T.sub};margin-bottom:10px;}
+.pr-sendto{font-size:12.5px;color:${T.sub};background:${T.ivory};border:1px solid ${T.lineSoft};padding:8px 11px;margin-bottom:14px;word-break:break-word;}
+.pr-sendto strong{color:${T.ink};font-weight:600;}
 .pr-lbl{display:block;font-size:12px;font-weight:600;color:${T.sub};margin:0 0 5px;}
 .pr-input,.pr-textarea{width:100%;font-family:${FONT};font-size:14px;color:${T.ink};background:#fff;border:1px solid ${T.line};border-radius:0;padding:9px 11px;outline:0;margin-bottom:12px;transition:border-color .15s;}
 .pr-input:focus,.pr-textarea:focus{border-color:${T.terra};}
@@ -898,8 +918,8 @@ const CSS = `
   .pr-stats{grid-template-columns:repeat(2,1fr);}
 }
 @media (max-width:560px){
-  .pr-head-actions{width:100%;}
-  .pr-head-actions .pr-btn{flex:1;}
+  .pr-toolbar-actions{width:100%;margin-left:0;}
+  .pr-toolbar-actions .pr-btn{flex:1;}
   .pr-money{grid-template-columns:1fr;}
 }
 @media (prefers-reduced-motion:reduce){
