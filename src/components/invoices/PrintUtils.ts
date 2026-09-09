@@ -39,7 +39,10 @@ type PrintParams = {
    preserve the ratio. The traced SVG carries only a viewBox and no intrinsic
    width/height, so `width:auto` resolved to something enormous and pushed the
    whole header — and with it the page — past A4. A fixed box can't do that.
-   (Giving the SVG file explicit width/height attributes would also fix it.) */
+
+   NOTE on .biz-addr: white-space:pre-line makes the address honour newlines,
+   so "…SS Sen Road" and "Berhampore, West Bengal - 742101" sit on their own
+   lines instead of wrapping wherever the column happens to run out. */
 
 // ══ FULL A4 ════════════════════════════════════════════════════════════════
 export function buildFullA4HTML(p: PrintParams): string {
@@ -54,7 +57,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:9pt;color:#1a1a2e;background
 .logo{width:38mm;height:26mm;object-fit:contain;object-position:left center;flex-shrink:0}
 .logo-fb{width:16mm;height:16mm;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fdf0e7;border:1px solid #f2ddd0;border-radius:50%;font-size:8pt;font-weight:800;color:#c56a3a}
 .divider{width:.4mm;align-self:stretch;background:#f2ddd0;margin:1mm 1mm;flex-shrink:0}
-.biz{flex:1}.biz-name{font-size:14pt;font-weight:900;color:#2a231d;line-height:1.1}.biz-pan{font-size:7pt;color:#444;font-weight:600;margin-top:.6mm}.biz-addr{font-size:6.5pt;color:#8a8378;margin-top:1mm;line-height:1.45}.biz-sub{font-size:6.5pt;color:#8a8378;margin-top:1mm;display:flex;flex-direction:column;gap:.5mm}
+.biz{flex:1}.biz-name{font-size:14pt;font-weight:900;color:#2a231d;line-height:1.1}.biz-pan{font-size:7pt;color:#444;font-weight:600;margin-top:.6mm}.biz-addr{font-size:6.5pt;color:#8a8378;margin-top:1mm;line-height:1.45;white-space:pre-line}.biz-sub{font-size:6.5pt;color:#8a8378;margin-top:1mm;display:flex;flex-direction:column;gap:.5mm}
 .inv-meta{text-align:right;flex-shrink:0;align-self:flex-start}.inv-row{display:flex;gap:5mm;justify-content:flex-end}.inv-col{text-align:right}.inv-lbl{font-size:6.5pt;font-weight:700;color:#8a8378;text-transform:uppercase;letter-spacing:.4px}.inv-val{font-size:9pt;font-weight:800;color:#2a231d;margin-top:.3mm}
 .inv-eyebrow{font-size:12pt;font-weight:900;letter-spacing:3px;color:#c56a3a;margin-bottom:2mm}
 .billto{padding:2.5mm 5mm;border-bottom:1px solid #f2ddd0;background:#fff}
@@ -112,7 +115,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 .biz{flex:1;min-width:0}
 .biz-name{font-size:11pt;font-weight:900;color:#2a231d;line-height:1.1}
 .biz-pan{font-size:6.5pt;color:#444;font-weight:600}
-.biz-addr{font-size:6pt;color:#8a8378;margin-top:.8mm;line-height:1.4}
+.biz-addr{font-size:6pt;color:#8a8378;margin-top:.8mm;line-height:1.4;white-space:pre-line}
 .biz-sub{font-size:6pt;color:#8a8378;margin-top:.8mm;display:flex;flex-direction:column;gap:.4mm}
 .inv-meta{text-align:right;flex-shrink:0;align-self:flex-start}
 .inv-eyebrow{font-size:9pt;font-weight:900;letter-spacing:2px;color:#c56a3a;margin-bottom:1.2mm}
@@ -243,12 +246,14 @@ function buildParams(inv: Invoice, logoB64: string, qrB64: string): PrintParams 
   const biz  = (inv.business || {}) as any;
   const paid = effectivePaid(inv);
   return {
-    logoSrc: logoB64 || '/images/abhijit_art_logo.svg',
+    logoSrc: logoB64 || '/images/abhijit_art_logo.png',
     qrSrc:   qrB64,
     bizName:    biz.name    || "",
     bizPan:     biz.pan     || "AQFPD8346K",
     bizGstin:   biz.gstin   || "19AQFPD8346K1ZH",
-    bizAddress: biz.address || "Rabindra Sadan, Shakti Mandir Club, SS Sen Road Berhampore, West Bengal - 742101",
+    // the newline puts the town and PIN on their own line, matching the PDF —
+    // .biz-addr honours it via white-space:pre-line
+    bizAddress: biz.address || "Rabindra Sadan, Shakti Mandir Club, SS Sen Road\nBerhampore, West Bengal - 742101",
     bizPhone:   biz.phone   || "7405179066",
     bizEmail:   biz.email   || "abhijitart85@gmail.com",
     invNo: inv.invoiceNo, invDate: fmtD(inv.date), invTime: fmtTime(inv.createdAt),
@@ -275,7 +280,7 @@ async function loadAssets(inv?: Invoice): Promise<{ logoB64:string; qrB64:string
     return qrSvgDataUri(upiPayload(due, inv ? `Invoice ${inv.invoiceNo}` : undefined));
   })();
 
-    // The PNG, not the traced SVG: the trace was made from this same soft 600px
+  // The PNG, not the traced SVG: the trace was made from this same soft 600px
   // bitmap, so it inherited the blur as ragged edges and colour banding — worse
   // than the original. A clean vector needs the artwork's real source file.
   const logoPromise = toB64('/images/abhijit_art_logo.png');
