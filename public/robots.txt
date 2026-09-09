@@ -1,4 +1,4 @@
-# Abhijit Art — https://www.abhijitart.com
+# Abhijit Art — https://abhijitart.com
 User-agent: *
 Allow: /
 
@@ -9,4 +9,4 @@ Disallow: /login
 Disallow: /register
 Disallow: /my-bookings
 
-Sitemap: https://www.abhijitart.com/sitemap.xml
+Sitemap: https://abhijitart.com/sitemap.xml
