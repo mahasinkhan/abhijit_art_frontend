@@ -1,5 +1,6 @@
 // src/components/invoices/PrintUtils.ts
 import { Invoice, num, round2, effectivePaid } from "./types";
+import { upiPayload, qrSvgDataUri, UPI_ID } from "./upiQr";
 
 const e = (s: any) => String(s ?? "").replace(/[&<>"']/g, (c: string) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 const fmtN = (n: number) => Math.round(n).toLocaleString("en-IN");
@@ -34,6 +35,12 @@ type PrintParams = {
   paidAmount:number; notes?:string; warranty?:string; fullyPaid?:boolean;
 };
 
+/* NOTE on the logo box: BOTH width and height are fixed, with object-fit to
+   preserve the ratio. The traced SVG carries only a viewBox and no intrinsic
+   width/height, so `width:auto` resolved to something enormous and pushed the
+   whole header — and with it the page — past A4. A fixed box can't do that.
+   (Giving the SVG file explicit width/height attributes would also fix it.) */
+
 // ══ FULL A4 ════════════════════════════════════════════════════════════════
 export function buildFullA4HTML(p: PrintParams): string {
   const taxable = p.subtotal - p.discountAmt; const cgst = p.taxAmt/2; const due = Math.max(p.total - p.paidAmount, 0);
@@ -44,7 +51,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:9pt;color:#1a1a2e;background
 .page{width:210mm;min-height:297mm;background:#fff;box-shadow:0 4px 24px rgba(0,0,0,.18);display:flex;flex-direction:column}
 .inv{flex:1;display:flex;flex-direction:column}
 .hdr{display:flex;align-items:center;gap:4mm;padding:4mm 5mm 3.5mm;border-bottom:2.5px solid #c56a3a;background:#fff}
-.logo{width:28mm;height:28mm;object-fit:contain;flex-shrink:0}
+.logo{width:38mm;height:26mm;object-fit:contain;object-position:left center;flex-shrink:0}
 .logo-fb{width:16mm;height:16mm;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fdf0e7;border:1px solid #f2ddd0;border-radius:50%;font-size:8pt;font-weight:800;color:#c56a3a}
 .divider{width:.4mm;align-self:stretch;background:#f2ddd0;margin:1mm 1mm;flex-shrink:0}
 .biz{flex:1}.biz-name{font-size:14pt;font-weight:900;color:#2a231d;line-height:1.1}.biz-pan{font-size:7pt;color:#444;font-weight:600;margin-top:.6mm}.biz-addr{font-size:6.5pt;color:#8a8378;margin-top:1mm;line-height:1.45}.biz-sub{font-size:6.5pt;color:#8a8378;margin-top:1mm;display:flex;flex-direction:column;gap:.5mm}
@@ -67,6 +74,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:9pt;color:#1a1a2e;background
 .t-lbl{font-size:7pt;font-weight:800;color:#c56a3a;margin-bottom:.4mm}.t-txt{font-size:6.5pt;color:#8a8378;line-height:1.4}
 .qr-row{display:flex;gap:5mm;align-items:flex-end;margin-top:auto;padding-top:2mm}
 .qr-wrap{display:flex;flex-direction:column;align-items:center;gap:2mm}.qr-img{width:40mm;height:40mm;object-fit:contain}.qr-lbl{font-size:7pt;font-weight:700;color:#c56a3a;text-align:center}
+.qr-upi{font-size:5.5pt;color:#8a8378;text-align:center;margin-top:.5mm}
 .sig{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;text-align:center}.sig-line{width:28mm;border-bottom:.5px solid #b3ab9f;margin:.8mm auto .4mm}.sig-lbl{font-size:6pt;color:#8a8378}
 .t-row{display:flex;justify-content:space-between;font-size:8pt;padding:1.2mm 0;border-bottom:.3px solid #f6ece4;color:#8a8378}
 .grand{background:#fdf0e7;border:.3mm solid #f2ddd0;padding:3mm 3.5mm;margin-top:2mm}
@@ -84,7 +92,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:9pt;color:#1a1a2e;background
   .inv{min-height:100vh}
   .bot{min-height:0;flex:1}
 }`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${e(p.invNo)}</title><style>${css}</style></head><body><div class="page"><div class="inv"><div class="hdr">${p.logoSrc?`<img src="${e(p.logoSrc)}" class="logo" onerror="this.style.display='none'"/>`:`<div class="logo-fb">${e(p.bizName.slice(0,2))}</div>`}<div class="divider"></div><div class="biz"><div class="biz-name">${e(p.bizName)}</div>${p.bizAddress?`<div class="biz-addr">${e(p.bizAddress)}</div>`:""}<div class="biz-sub">${p.bizPhone?`<span>${e(p.bizPhone)}</span>`:""}${p.bizEmail?`<span>${e(p.bizEmail)}</span>`:""}${p.bizGstin?`<span>GSTIN: ${e(p.bizGstin)}</span>`:""}${p.bizPan?`<span>PAN: ${e(p.bizPan)}</span>`:""}</div></div><div class="inv-meta"><div class="inv-eyebrow">INVOICE</div><div class="inv-row"><div class="inv-col"><div class="inv-lbl">Invoice No</div><div class="inv-val">${e(p.invNo)}</div></div><div class="inv-col"><div class="inv-lbl">Invoice Date</div><div class="inv-val">${e(p.invDate)}</div>${p.invTime?`<div style="font-size:6pt;color:#b3ab9f">${e(p.invTime)}</div>`:""}</div></div></div></div><div class="billto"><div class="bt-lbl">Bill To</div><div class="bt-name">${e(p.clientName)||"—"}</div>${p.clientAddr?`<div class="bt-line">${e(p.clientAddr)}</div>`:""}${p.clientPhone?`<div class="bt-line">${e(p.clientPhone)}</div>`:""}${p.clientGstin?`<div class="bt-line">GSTIN: ${e(p.clientGstin)}</div>`:""}</div>${p.purpose&&p.purpose.trim()?`<div class="purpose"><span class="pp-lbl">Purpose</span><span class="pp-txt">${e(p.purpose)}</span></div>`:""}<table class="tbl"><thead><tr><th class="th c" style="width:7mm">No.</th><th class="th">Description</th><th class="th c" style="width:20mm">Size</th><th class="th c" style="width:12mm">Pcs</th><th class="th r" style="width:18mm">Qty</th><th class="th r" style="width:24mm">Rate</th>${p.discountAmt>0?`<th class="th r" style="width:15mm">Disc.</th>`:""}${p.taxPct>0?`<th class="th r" style="width:14mm">Tax</th>`:""}<th class="th r" style="width:22mm">Amount</th></tr></thead><tbody>${rows||`<tr><td colspan="9" class="td c" style="color:#c4bdb2">No items</td></tr>`}</tbody><tfoot><tr class="sub-row"><td colspan="4"><b>Subtotal</b></td><td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td><td class="r">${fmtN(p.subtotal)}</td>${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}${p.taxPct>0?`<td class="r">${fmtN(p.taxAmt)}</td>`:""}<td class="r">₹${fmtN(taxable)}</td></tr></tfoot></table><div class="bot"><div class="bot-l"><div><div class="t-lbl">Terms &amp; Conditions</div><div class="t-txt">${e(p.notes||"Keep the invoices for Future References")}</div></div>${p.warranty?`<div><div class="t-lbl">Warranty</div><div class="t-txt">${e(p.warranty)}</div></div>`:""}<div class="qr-row">${p.qrSrc?`<div class="qr-wrap"><div class="qr-lbl">Payment QR Code</div><img src="${e(p.qrSrc)}" class="qr-img"/></div>`:""}<div class="sig"><img src="/images/Signature.png" alt="" style="height:14mm;width:auto;display:block;margin:auto auto 1mm" onerror="this.style.display='none'"/><div class="sig-line"></div><div class="sig-lbl">Authorised Signatory</div></div></div></div><div class="bot-r">${cgst>0?`<div class="t-row"><span>CGST @${p.taxPct/2}%</span><span>${cgst.toFixed(2)}</span></div>`:""}${cgst>0?`<div class="t-row"><span>SGST @${p.taxPct/2}%</span><span>${cgst.toFixed(2)}</span></div>`:""}<div class="grand"><div class="g-row"><span>Total Amount</span><span class="g-val">₹${p.total.toFixed(2)}</span></div>${p.paidAmount>0.005?`<div class="g-recv"><span>Amount Received</span><span>−₹${p.paidAmount.toFixed(2)}</span></div>`:""}${due>0.005?`<div class="g-due"><span>Balance Due</span><span>₹${due.toFixed(2)}</span></div>`:p.fullyPaid||p.paidAmount>=p.total-0.005?`<div class="g-paid"><span>✓ PAID IN FULL</span></div>`:""}</div><div class="words"><div class="w-lbl">Total Amount (in words)</div><div class="w-txt">${amtWords(p.total)}</div></div></div></div><div class="thankyou">Thank you for your business!</div></div></div><script>setTimeout(()=>window.print(),420)</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${e(p.invNo)}</title><style>${css}</style></head><body><div class="page"><div class="inv"><div class="hdr">${p.logoSrc?`<img src="${e(p.logoSrc)}" class="logo" onerror="this.style.display='none'"/>`:`<div class="logo-fb">${e(p.bizName.slice(0,2))}</div>`}<div class="divider"></div><div class="biz"><div class="biz-name">${e(p.bizName)}</div>${p.bizAddress?`<div class="biz-addr">${e(p.bizAddress)}</div>`:""}<div class="biz-sub">${p.bizPhone?`<span>${e(p.bizPhone)}</span>`:""}${p.bizEmail?`<span>${e(p.bizEmail)}</span>`:""}${p.bizGstin?`<span>GSTIN: ${e(p.bizGstin)}</span>`:""}${p.bizPan?`<span>PAN: ${e(p.bizPan)}</span>`:""}</div></div><div class="inv-meta"><div class="inv-eyebrow">INVOICE</div><div class="inv-row"><div class="inv-col"><div class="inv-lbl">Invoice No</div><div class="inv-val">${e(p.invNo)}</div></div><div class="inv-col"><div class="inv-lbl">Invoice Date</div><div class="inv-val">${e(p.invDate)}</div>${p.invTime?`<div style="font-size:6pt;color:#b3ab9f">${e(p.invTime)}</div>`:""}</div></div></div></div><div class="billto"><div class="bt-lbl">Bill To</div><div class="bt-name">${e(p.clientName)||"—"}</div>${p.clientAddr?`<div class="bt-line">${e(p.clientAddr)}</div>`:""}${p.clientPhone?`<div class="bt-line">${e(p.clientPhone)}</div>`:""}${p.clientGstin?`<div class="bt-line">GSTIN: ${e(p.clientGstin)}</div>`:""}</div>${p.purpose&&p.purpose.trim()?`<div class="purpose"><span class="pp-lbl">Purpose</span><span class="pp-txt">${e(p.purpose)}</span></div>`:""}<table class="tbl"><thead><tr><th class="th c" style="width:7mm">No.</th><th class="th">Description</th><th class="th c" style="width:20mm">Size</th><th class="th c" style="width:12mm">Pcs</th><th class="th r" style="width:18mm">Qty</th><th class="th r" style="width:24mm">Rate</th>${p.discountAmt>0?`<th class="th r" style="width:15mm">Disc.</th>`:""}${p.taxPct>0?`<th class="th r" style="width:14mm">Tax</th>`:""}<th class="th r" style="width:22mm">Amount</th></tr></thead><tbody>${rows||`<tr><td colspan="9" class="td c" style="color:#c4bdb2">No items</td></tr>`}</tbody><tfoot><tr class="sub-row"><td colspan="4"><b>Subtotal</b></td><td class="r">${p.items.reduce((s,it)=>s+it.qty,0)}</td><td class="r">${fmtN(p.subtotal)}</td>${p.discountAmt>0?`<td class="r">₹${fmtN(p.discountAmt)}</td>`:""}${p.taxPct>0?`<td class="r">${fmtN(p.taxAmt)}</td>`:""}<td class="r">₹${fmtN(taxable)}</td></tr></tfoot></table><div class="bot"><div class="bot-l"><div><div class="t-lbl">Terms &amp; Conditions</div><div class="t-txt">${e(p.notes||"Keep the invoices for Future References")}</div></div>${p.warranty?`<div><div class="t-lbl">Warranty</div><div class="t-txt">${e(p.warranty)}</div></div>`:""}<div class="qr-row">${p.qrSrc?`<div class="qr-wrap"><div class="qr-lbl">Scan to pay</div><img src="${e(p.qrSrc)}" class="qr-img"/><div class="qr-upi">${e(UPI_ID)}</div></div>`:""}<div class="sig"><img src="/images/Signature.png" alt="" style="height:14mm;width:auto;display:block;margin:auto auto 1mm" onerror="this.style.display='none'"/><div class="sig-line"></div><div class="sig-lbl">Authorised Signatory</div></div></div></div><div class="bot-r">${cgst>0?`<div class="t-row"><span>CGST @${p.taxPct/2}%</span><span>${cgst.toFixed(2)}</span></div>`:""}${cgst>0?`<div class="t-row"><span>SGST @${p.taxPct/2}%</span><span>${cgst.toFixed(2)}</span></div>`:""}<div class="grand"><div class="g-row"><span>Total Amount</span><span class="g-val">₹${p.total.toFixed(2)}</span></div>${p.paidAmount>0.005?`<div class="g-recv"><span>Amount Received</span><span>−₹${p.paidAmount.toFixed(2)}</span></div>`:""}${due>0.005?`<div class="g-due"><span>Balance Due</span><span>₹${due.toFixed(2)}</span></div>`:p.fullyPaid||p.paidAmount>=p.total-0.005?`<div class="g-paid"><span>✓ PAID IN FULL</span></div>`:""}</div><div class="words"><div class="w-lbl">Total Amount (in words)</div><div class="w-txt">${amtWords(p.total)}</div></div></div></div><div class="thankyou">Thank you for your business!</div></div></div><script>setTimeout(()=>window.print(),420)</script></body></html>`;
 }
 
 // ══ Billing 50% — 6 inch × 8 inch ═════════════════════════════════════════
@@ -98,7 +106,7 @@ html,body{width:6in;height:8in;margin:0;padding:0;overflow:hidden}
 body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background:#fff}
 .page{width:6in;height:8in;background:#fff;display:flex;flex-direction:column;overflow:hidden}
 .hdr{display:flex;align-items:center;gap:3mm;padding:3mm 4mm 2.5mm;border-bottom:2px solid #c56a3a;background:#fff;flex-shrink:0}
-.logo{width:20mm;height:20mm;object-fit:contain;flex-shrink:0}
+.logo{width:28mm;height:18mm;object-fit:contain;object-position:left center;flex-shrink:0}
 .logo-fb{width:16mm;height:16mm;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fdf0e7;border:1px solid #f2ddd0;border-radius:50%;font-size:8pt;font-weight:800;color:#c56a3a}
 .divider{width:.4mm;align-self:stretch;background:#f2ddd0;margin:1mm .5mm;flex-shrink:0}
 .biz{flex:1;min-width:0}
@@ -134,6 +142,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
 .qr-wrap{display:flex;flex-direction:column;align-items:center;gap:1mm}
 .qr-img{width:22mm;height:22mm;object-fit:contain}
 .qr-lbl{font-size:5.5pt;font-weight:700;color:#c56a3a;text-align:center}
+.qr-upi{font-size:4.4pt;color:#8a8378;text-align:center}
 .sig{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;text-align:center}
 .sig-line{width:24mm;border-bottom:.5px solid #b3ab9f;margin:1mm auto .4mm}
 .sig-lbl{font-size:5pt;color:#8a8378}
@@ -204,7 +213,7 @@ body{font-family:'Inter',Arial,sans-serif;font-size:8pt;color:#1a1a2e;background
         <div><div class="t-lbl">Terms &amp; Conditions</div><div class="t-txt">${e(p.notes||"Keep the invoices for Future References")}</div></div>
         ${p.warranty?`<div><div class="t-lbl">Warranty</div><div class="t-txt">${e(p.warranty)}</div></div>`:""}
         <div class="qr-row">
-          ${p.qrSrc?`<div class="qr-wrap"><div class="qr-lbl">Payment QR Code</div><img src="${e(p.qrSrc)}" class="qr-img"/></div>`:""}
+          ${p.qrSrc?`<div class="qr-wrap"><div class="qr-lbl">Scan to pay</div><img src="${e(p.qrSrc)}" class="qr-img"/><div class="qr-upi">${e(UPI_ID)}</div></div>`:""}
           <div class="sig"><img src="/images/Signature.png" alt="Signature" style="height:10mm;width:auto;display:block;margin:auto auto 1mm" onerror="this.style.display='none'"/><div class="sig-line"></div><div class="sig-lbl">Authorised Signatory</div></div>
         </div>
       </div>
@@ -234,7 +243,7 @@ function buildParams(inv: Invoice, logoB64: string, qrB64: string): PrintParams 
   const biz  = (inv.business || {}) as any;
   const paid = effectivePaid(inv);
   return {
-    logoSrc: logoB64 || '/images/abhijit_art_logo.png',
+    logoSrc: logoB64 || '/images/abhijit_art_logo.svg',
     qrSrc:   qrB64,
     bizName:    biz.name    || "",
     bizPan:     biz.pan     || "AQFPD8346K",
@@ -254,14 +263,33 @@ function buildParams(inv: Invoice, logoB64: string, qrB64: string): PrintParams 
   };
 }
 
-async function loadAssets(): Promise<{ logoB64:string; qrB64:string; sigB64:string }> {
-  const toB64 = (src: string) => fetch(src).then(r=>r.blob()).then(b=>new Promise<string>(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result as string);fr.readAsDataURL(b)})).catch(()=>'');
-  const [qrB64, logoB64, sigB64] = await Promise.all([toB64('/images/QR.jpeg'), toB64('/images/abhijit_art_logo.png'), toB64('/images/Signature.png')]);
+async function loadAssets(inv?: Invoice): Promise<{ logoB64:string; qrB64:string; sigB64:string }> {
+  const toB64 = (src: string) => fetch(src).then(r=>r.ok?r.blob():Promise.reject()).then(b=>new Promise<string>(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result as string);fr.readAsDataURL(b)})).catch(()=>'');
+
+  // The QR is generated per bill so it can carry that bill's balance, and so it
+  // stays vector at any size. The old bitmap is only a fallback for when no UPI
+  // id has been configured.
+  const qrPromise = (async () => {
+    if (!UPI_ID || UPI_ID.startsWith("REPLACE_")) return toB64('/images/QR.jpeg');
+    const due = inv ? round2(Math.max(num(inv.total) - effectivePaid(inv), 0)) : 0;
+    return qrSvgDataUri(upiPayload(due, inv ? `Invoice ${inv.invoiceNo}` : undefined));
+  })();
+
+    // The PNG, not the traced SVG: the trace was made from this same soft 600px
+  // bitmap, so it inherited the blur as ragged edges and colour banding — worse
+  // than the original. A clean vector needs the artwork's real source file.
+  const logoPromise = toB64('/images/abhijit_art_logo.png');
+
+  const [qrB64, logoB64, sigB64] = await Promise.all([
+    qrPromise,
+    logoPromise,
+    toB64('/images/Signature.png'),
+  ]);
   return { logoB64, qrB64, sigB64 };
 }
 
 export async function printInvoice(inv: Invoice) {
-  const { logoB64, qrB64, sigB64 } = await loadAssets();
+  const { logoB64, qrB64, sigB64 } = await loadAssets(inv);
   const biz = (inv.business || {}) as any;
   const build = biz.format === "half" ? buildSingleHalfA4HTML : buildFullA4HTML;
   let html = build(buildParams(inv, logoB64, qrB64));
@@ -312,7 +340,7 @@ export async function printInvoice(inv: Invoice) {
 }
 
 export async function previewInvoice(inv: Invoice) {
-  const { logoB64, qrB64, sigB64 } = await loadAssets();
+  const { logoB64, qrB64, sigB64 } = await loadAssets(inv);
   const biz = (inv.business || {}) as any;
   const build = biz.format === "half" ? buildSingleHalfA4HTML : buildFullA4HTML;
   const w = window.open("","_blank","width=820,height=1160");

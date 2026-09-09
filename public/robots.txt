@@ -1,0 +1,12 @@
+# Abhijit Art — https://www.abhijitart.com
+User-agent: *
+Allow: /
+
+# Admin and account pages have nothing to offer search, and indexing a login
+# screen only splits ranking signals away from the pages that do.
+Disallow: /admin
+Disallow: /login
+Disallow: /register
+Disallow: /my-bookings
+
+Sitemap: https://www.abhijitart.com/sitemap.xml

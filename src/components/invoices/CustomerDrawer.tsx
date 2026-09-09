@@ -57,11 +57,82 @@ const timeOf = (p: { paidAt?: string; createdAt?: string }) => {
   return Number.isFinite(t) ? t : 0;
 };
 
+// ── Share helpers ─────────────────────────────────────────────────────────
+/** The message that travels with the invoice — same on every channel. */
+const shareText = (inv: Invoice, due: number) => {
+  const total = num(inv.total);
+  const paid  = round2(Math.max(total - due, 0));
+  const biz   = (inv.business || {}).name || "Abhijit Art";
+  return [
+    `${biz} — Invoice ${inv.invoiceNo}`,
+    `Date: ${fmt(inv.date)}`,
+    `Total: ${rupee(total)}`,
+    paid > 0.005 ? `Received: ${rupee(paid)}` : "",
+    due  > 0.005 ? `Balance due: ${rupee(due)}` : "Status: Paid in full ✓",
+  ].filter(Boolean).join("\n");
+};
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+};
+
+/**
+ * Shares the invoice PDF the SERVER builds (pdfUrl). That PDF is real vector
+ * output — its text stays sharp at any zoom and the file is a fraction of the
+ * size of a rendered screenshot, which is what the client asked for. The
+ * client-side html2canvas route was dropped for exactly that reason.
+ * Falls back to downloading the PDF + copying the message when the browser
+ * can't attach files to a share.
+ */
+const shareInvoice = async (inv: Invoice, due: number, toast: (m: string) => void) => {
+  const text  = shareText(inv, due);
+  const title = `Invoice ${inv.invoiceNo}`;
+  const nav   = navigator as any;
+
+  let blob: Blob | null = null;
+  if (inv.pdfUrl) {
+    try {
+      const res = await fetch(inv.pdfUrl);
+      if (res.ok) blob = await res.blob();
+      else console.error("[share] pdfUrl responded", res.status);
+    } catch (err) {
+      console.error("[share] PDF fetch failed", err);
+    }
+  }
+
+  if (blob) {
+    const file = new File([blob], `${inv.invoiceNo}.pdf`, { type: "application/pdf" });
+    if (nav.canShare?.({ files: [file] })) {
+      try { await nav.share({ files: [file], title, text }); return; }
+      catch (e: any) { if (e?.name === "AbortError") return; }
+    }
+    // no file-share support → hand over the PDF and the message
+    downloadBlob(blob, `${inv.invoiceNo}.pdf`);
+    try { await navigator.clipboard.writeText(text); } catch {}
+    toast("PDF downloaded & message copied — attach it in WhatsApp.");
+    return;
+  }
+
+  // no PDF available → send the details, with the link if there is one
+  const withLink = inv.pdfUrl ? `${text}\n\n📄 Invoice PDF: ${inv.pdfUrl}` : text;
+  if (nav.share) {
+    try { await nav.share({ title, text: withLink }); return; }
+    catch (e: any) { if (e?.name === "AbortError") return; }
+  }
+  try { await navigator.clipboard.writeText(withLink); toast("Invoice details copied."); }
+  catch { window.prompt("Copy the invoice details:", withLink); }
+};
+
 export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPreview, onStatement, onChanged }: Props) {
   const [q, setQ]               = useState("");
   const [paidOpen, setPaidOpen] = useState(false);
   const [payOpen, setPayOpen]   = useState(false);
   const [histOpen, setHistOpen] = useState(false);
+  const [toast, setToast]       = useState("");
 
   const [ledger, setLedger]   = useState<Ledger | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +146,13 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
   const [pin, setPin]       = useState("");
   const [saving, setSaving] = useState(false);
   const [formErr, setFormErr] = useState("");
+
+  // auto-dismiss the share toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   /** the customer record these invoices belong to */
   const customerId = useMemo(
@@ -257,7 +335,7 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
               <input style={{ ...st.in, flex:1, minWidth:130 }} placeholder="Note (optional)" value={note}
                 onChange={e => setNote(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && savePayment()}/>
-                            <input
+              <input
                 style={{ ...st.in, width:120, letterSpacing:2, WebkitTextSecurity:"disc" as any }}
                 inputMode="numeric" name="acct-pin" autoComplete="off" autoCorrect="off"
                 autoCapitalize="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true"
@@ -292,7 +370,7 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
             {paidOpen && (
               <div style={st.paidList}>
                 {paidInvs.map(inv => (
-                  <PaidCard key={inv.id} inv={inv} onPrint={onPrint} onPreview={onPreview}/>
+                  <PaidCard key={inv.id} inv={inv} onPrint={onPrint} onPreview={onPreview} onToast={setToast}/>
                 ))}
               </div>
             )}
@@ -306,10 +384,12 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
             : activeInvs.length === 0
               ? <div style={{ padding:"18px", textAlign:"center", color:GREEN, fontSize:13, fontWeight:600 }}>✓ Every invoice is settled.</div>
               : activeInvs.map(inv => (
-                  <ActiveCard key={inv.id} inv={inv} due={dueOf(inv)} onPrint={onPrint} onEdit={onEdit} onPreview={onPreview}/>
+                  <ActiveCard key={inv.id} inv={inv} due={dueOf(inv)} onPrint={onPrint} onEdit={onEdit} onPreview={onPreview} onToast={setToast}/>
                 ))
           }
         </div>
+
+        {toast && <div style={st.toast}>{toast}</div>}
 
         {histOpen && (
           <PaymentHistory
@@ -337,7 +417,7 @@ function PaymentHistory({
   onRemove: (p: MergedPayment) => void;
   onClose: () => void;
 }) {
-    const stamp = (iso: string) => {
+  const stamp = (iso: string) => {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
     return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -369,7 +449,7 @@ function PaymentHistory({
           {[
             { l: "Billed",   v: rupee(billed),  c: INK },
             { l: "Received", v: rupee(paid),    c: GREEN },
-                        balance > 0.005
+            balance > 0.005
               ? { l: "Balance Due", v: rupee(balance), c: TERRA }
               : paid - billed > 0.005
                 ? { l: "Advance", v: rupee(paid - billed), c: "#1a56db" }
@@ -458,6 +538,41 @@ function FormatBadge({ format }: { format: "half" | "full" }) {
   );
 }
 
+// ── Share icon (inline so Icon.tsx needs no new entry) ────────────────────
+function ShareIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="18" cy="5"  r="3"/>
+      <circle cx="6"  cy="12" r="3"/>
+      <circle cx="18" cy="19" r="3"/>
+      <line x1="8.6"  y1="13.5" x2="15.4" y2="17.5"/>
+      <line x1="15.4" y1="6.5"  x2="8.6"  y2="10.5"/>
+    </svg>
+  );
+}
+
+// ── Share button ──────────────────────────────────────────────────────────
+function ShareBtn({ inv, due, onToast }: { inv: Invoice; due: number; onToast: (m: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className="ivh-icon"
+      style={st.actionBtn}
+      disabled={busy}
+      title="Share this invoice as a PDF"
+      onClick={async () => {
+        setBusy(true);
+        try { await shareInvoice(inv, due, onToast); }
+        finally { setBusy(false); }
+      }}
+    >
+      <ShareIcon size={14}/>
+      <span style={{ fontSize:11.5, fontWeight:600 }}>{busy ? "Preparing…" : "Share"}</span>
+    </button>
+  );
+}
+
 // ── Print button (uses saved format automatically) ────────────────────────
 function PrintBtn({ inv, onPrint }: { inv: Invoice; onPrint: (i:Invoice) => void }) {
   const format = savedFormat(inv);
@@ -476,13 +591,14 @@ function PrintBtn({ inv, onPrint }: { inv: Invoice; onPrint: (i:Invoice) => void
 
 // ── Active card ───────────────────────────────────────────────────────────
 function ActiveCard({
-  inv, due, onPrint, onEdit, onPreview,
+  inv, due, onPrint, onEdit, onPreview, onToast,
 }: {
   inv:       Invoice;
   due:       number;
   onPrint:   (i:Invoice) => void;
   onEdit:    (i:Invoice) => void;
   onPreview: (i:Invoice) => void;
+  onToast:   (m: string) => void;
 }) {
   const total = num(inv.total);
   const partial = due > 0.005 && due < total - 0.005;
@@ -512,6 +628,7 @@ function ActiveCard({
           <Icon name="search" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Preview</span>
         </button>
         <PrintBtn inv={inv} onPrint={onPrint}/>
+        <ShareBtn inv={inv} due={due} onToast={onToast}/>
       </div>
     </div>
   );
@@ -519,11 +636,12 @@ function ActiveCard({
 
 // ── Paid card ─────────────────────────────────────────────────────────────
 function PaidCard({
-  inv, onPrint, onPreview,
+  inv, onPrint, onPreview, onToast,
 }: {
   inv:       Invoice;
   onPrint:   (i:Invoice) => void;
   onPreview: (i:Invoice) => void;
+  onToast:   (m: string) => void;
 }) {
   const total = num(inv.total);
 
@@ -550,13 +668,14 @@ function PaidCard({
           <Icon name="search" size={14}/> <span style={{ fontSize:11.5, fontWeight:600 }}>Preview</span>
         </button>
         <PrintBtn inv={inv} onPrint={onPrint}/>
+        <ShareBtn inv={inv} due={0} onToast={onToast}/>
       </div>
     </div>
   );
 }
 
 const st: Record<string, React.CSSProperties> = {
-  drawer:      { width:"min(1200px,100%)", maxHeight:"calc(100vh - 40px)", background:"#fffdfb", boxShadow:"0 30px 80px rgba(24,22,28,.34)", display:"flex", flexDirection:"column", overflowY:"auto", overscrollBehavior:"contain", padding:"14px 24px" },
+  drawer:      { width:"min(1200px,100%)", maxHeight:"calc(100vh - 40px)", background:"#fffdfb", boxShadow:"0 30px 80px rgba(24,22,28,.34)", display:"flex", flexDirection:"column", overflowY:"auto", overscrollBehavior:"contain", padding:"14px 24px", position:"relative" },
   head:        { display:"flex", alignItems:"center", gap:10, marginBottom:12 },
   name:        { fontSize:17, fontWeight:800, margin:0, color:INK, letterSpacing:-0.3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" },
   phone:       { display:"flex", alignItems:"center", gap:5, fontSize:13, color:MUTE, marginTop:5 },
@@ -594,4 +713,5 @@ const st: Record<string, React.CSSProperties> = {
   invNo:       { border:"none", background:"transparent", padding:0, fontFamily:SANS, fontWeight:800, fontSize:13.5, color:TERRA, cursor:"pointer", textAlign:"left" },
   badge:       { fontSize:10, fontWeight:700, padding:"2px 7px", textTransform:"uppercase", letterSpacing:0.3 },
   actionBtn:   { display:"inline-flex", alignItems:"center", gap:5, padding:"5px 11px", border:"1px solid #e6dcd2", background:"#fff", color:"#545a67", cursor:"pointer", borderRadius:0, fontFamily:"inherit" },
+  toast:       { position:"sticky", bottom:10, alignSelf:"center", marginTop:12, padding:"9px 16px", background:INK, color:"#fff", fontSize:12.5, fontWeight:600, boxShadow:"0 8px 24px rgba(24,22,28,.28)" },
 };
