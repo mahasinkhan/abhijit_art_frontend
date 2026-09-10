@@ -1,10 +1,14 @@
 import { Link } from "react-router-dom";
 
-/* Studio location — to pin the EXACT spot, open Google Maps → Share →
-   "Embed a map" and paste that iframe's src into MAP_EMBED below. */
-const MAP_QUERY = "Abhijit Art, Berhampore, Murshidabad, West Bengal";
-const MAP_EMBED = `https://maps.google.com/maps?q=${encodeURIComponent(MAP_QUERY)}&z=15&output=embed`;
-const MAP_DIR = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(MAP_QUERY)}`;
+/* Studio location.
+   The map points at COORDINATES, not a name search: searching "Abhijit Art"
+   hands Google the choice of pin, and its own listing still carries an old
+   address — so the map showed the wrong spot no matter what we wrote here.
+   Coordinates can't be second-guessed. */
+const STUDIO_LAT = 24.090785;
+const STUDIO_LNG = 88.251619;
+const MAP_EMBED = `https://maps.google.com/maps?q=${STUDIO_LAT},${STUDIO_LNG}&z=17&output=embed`;
+const MAP_DIR = `https://www.google.com/maps/dir/?api=1&destination=${STUDIO_LAT},${STUDIO_LNG}`;
 
 const printItems = [
   "Flex printing",
@@ -47,7 +51,9 @@ export default function Footer() {
             <span className="aaf-map-eyebrow">Visit the studio</span>
             <h4 className="aaf-map-title">Abhijit Art</h4>
             <p className="aaf-map-addr">
-              Berhampore, Murshidabad,<br />West Bengal, India
+              Rabindra Sadan, Shakti Mandir Club,<br />
+              SS Sen Road, Berhampore,<br />
+              Murshidabad, West Bengal – 742101
             </p>
             <a className="aaf-map-dir" href={MAP_DIR} target="_blank" rel="noreferrer">
               Get directions
@@ -135,7 +141,19 @@ export default function Footer() {
 
             <div className="aaf-fact">
               <span className="aaf-label">Studio</span>
-              <span className="aaf-value">Berhampore, Murshidabad<br />West Bengal, India</span>
+              <span className="aaf-value">
+                Rabindra Sadan, Shakti Mandir Club<br />
+                SS Sen Road, Berhampore<br />
+                Murshidabad, West Bengal – 742101
+              </span>
+            </div>
+            <div className="aaf-fact">
+              <span className="aaf-label">Phone</span>
+              <span className="aaf-value">
+                <a className="aaf-mailto" href="tel:+917478482106">74784 82106</a>
+                <span className="aaf-sep"> · </span>
+                <a className="aaf-mailto" href="tel:+919932913826">99329 13826</a>
+              </span>
             </div>
             <div className="aaf-fact">
               <span className="aaf-label">Email</span>
@@ -218,7 +236,7 @@ const CSS = `
   margin-bottom:14px; background:linear-gradient(90deg,var(--terra),var(--gold));}
 .aaf-map-eyebrow{font-size:9.5px; font-weight:700; letter-spacing:.2em; text-transform:uppercase; color:var(--gold);}
 .aaf-map-title{margin:6px 0 8px; font-size:20px; font-weight:800; color:var(--ink); letter-spacing:-.01em;}
-.aaf-map-addr{margin:0 0 16px; font-size:13.5px; line-height:1.6; color:rgba(42,35,29,.66);}
+.aaf-map-addr{margin:0 0 16px; font-size:13px; line-height:1.6; color:rgba(42,35,29,.66);}
 .aaf-map-dir{
   display:inline-flex; align-items:center; gap:8px; padding:10px 18px; border-radius:999px;
   font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
@@ -300,7 +318,8 @@ const CSS = `
 .aaf-fact{display:flex; flex-direction:column; gap:4px; padding:9px 0;}
 .aaf-label{font-size:9.5px; font-weight:700; letter-spacing:.2em; text-transform:uppercase; color:rgba(42,35,29,.38);}
 .aaf-value{font-size:14px; line-height:1.6; color:rgba(42,35,29,.75);}
-.aaf-mailto{transition:color .25s ease;}
+.aaf-sep{color:rgba(42,35,29,.28);}
+.aaf-mailto{color:inherit; transition:color .25s ease;}
 .aaf-mailto:hover{color:var(--terra);}
 .aaf-cta{
   margin-top:20px; width:100%;
