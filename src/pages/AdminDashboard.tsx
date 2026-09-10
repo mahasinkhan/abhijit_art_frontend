@@ -22,6 +22,10 @@ type BillingVariant = "full" | "half";
 
 const ACCENT = "#d9542f";
 
+/** Remembered so the choice survives a reload — a sidebar that springs back
+ *  open every refresh is worse than no toggle at all. */
+const COLLAPSE_KEY = "aa-admin-sidebar-collapsed";
+
 const ico = { width: 19, height: 19, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 const IconBookings  = () => (<svg {...ico}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M9 12h6M9 16h6" /></svg>);
 const IconBilling   = () => (<svg {...ico}><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>);
@@ -78,6 +82,18 @@ export default function AdminDashboard() {
   const [taskPrefillEmp, setTaskPrefillEmp] = useState<string | null>(null);
   const [billingVariant, setBillingVariant] = useState<BillingVariant>("half");
 
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; }
+  });
+
+  const toggleCollapse = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0"); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
   const handleLogout = () => { logout(); navigate("/login"); };
   const initial = (user?.name?.[0] || "A").toUpperCase();
 
@@ -89,7 +105,21 @@ export default function AdminDashboard() {
         onClick={() => setDrawerOpen(false)}
       />
 
-      <aside className={`adm-sidebar${drawerOpen ? " open" : ""}`}>
+      <aside className={`adm-sidebar${drawerOpen ? " open" : ""}${collapsed ? " mini" : ""}`}>
+        {/* Sits on the sidebar's edge, halfway down, so it reads as the seam
+            between the two panes and stays reachable whichever state it's in. */}
+        <button
+          className="adm-collapse"
+          onClick={toggleCollapse}
+          title={collapsed ? "Expand menu" : "Collapse menu"}
+          aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points={collapsed ? "9 18 15 12 9 6" : "15 18 9 12 15 6"} />
+          </svg>
+        </button>
+
         <div className="adm-sidebar-inner">
           <div className="adm-brand">
             <img src="/images/abhijit_art_logo.png" alt="Abhijit Art" className="adm-logo" />
@@ -104,6 +134,7 @@ export default function AdminDashboard() {
               >
                 <span className="adm-navicon"><Icon /></span>
                 <span className="adm-navlabel">{label}</span>
+                <span className="adm-tip">{label}</span>
               </button>
             ))}
           </nav>
@@ -116,6 +147,7 @@ export default function AdminDashboard() {
               </svg>
             </span>
             <span className="adm-navlabel">Back to Website</span>
+            <span className="adm-tip">Back to Website</span>
           </a>
         </div>
       </aside>
@@ -229,10 +261,11 @@ export default function AdminDashboard() {
           background: #ffffff; border-right: 1px solid #ebebf0;
           display: flex; flex-direction: column;
           padding: 20px 14px;
+          transition: width .22s cubic-bezier(.22,1,.36,1), padding .22s cubic-bezier(.22,1,.36,1);
         }
         .adm-sidebar-inner {
           display: flex; flex-direction: column; gap: 6px;
-          flex: 1; overflow-y: auto; min-height: 0;
+          flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0;
         }
         .adm-brand {
           display: flex; align-items: center; justify-content: flex-start;
@@ -260,6 +293,43 @@ export default function AdminDashboard() {
           content: ""; position: absolute; left: 0; top: 9px; bottom: 9px;
           width: 3px; border-radius: 0; background: ${ACCENT};
         }
+
+        /* ── collapse toggle ─────────────────────────────────────────── */
+        .adm-collapse {
+          position: absolute; top: 50%; right: -13px; z-index: 12;
+          transform: translateY(-50%);
+          width: 26px; height: 26px; border-radius: 50%;
+          border: 1px solid #ebebf0; background: #fff; color: #8a8f9a;
+          display: inline-flex; align-items: center; justify-content: center;
+          cursor: pointer; padding: 0;
+          box-shadow: 0 1px 4px rgba(31,36,48,.10);
+          transition: color .16s ease, border-color .16s ease;
+        }
+        .adm-collapse:hover { color: ${ACCENT}; border-color: ${ACCENT}66; }
+
+        /* ── collapsed: icons only, labels become hover tooltips ─────── */
+        .adm-tip { display: none; }
+        .adm-sidebar.mini { width: 72px; padding-left: 10px; padding-right: 10px; }
+        .adm-sidebar.mini .adm-navlabel,
+        .adm-sidebar.mini .adm-eyebrow { display: none; }
+        .adm-sidebar.mini .adm-navitem {
+          justify-content: center; padding-left: 0; padding-right: 0; overflow: visible;
+        }
+        .adm-sidebar.mini .adm-brand { justify-content: center; padding: 2px 0 16px; }
+        .adm-sidebar.mini .adm-logo { height: 28px; }
+        .adm-sidebar.mini .adm-sidebar-inner { overflow-x: visible; }
+        .adm-sidebar.mini .adm-tip {
+          display: block; position: absolute; left: calc(100% + 10px); top: 50%;
+          transform: translateY(-50%) translateX(-4px);
+          background: #1f2430; color: #fff; padding: 6px 11px;
+          font-size: 12.5px; font-weight: 600; white-space: nowrap;
+          opacity: 0; pointer-events: none; z-index: 60;
+          transition: opacity .14s ease, transform .14s ease;
+        }
+        .adm-sidebar.mini .adm-navitem:hover .adm-tip {
+          opacity: 1; transform: translateY(-50%) translateX(0);
+        }
+
         .adm-htitle {
           margin: 0; font-size: 20px; font-weight: 800; color: #1f2430;
           letter-spacing: -0.3px; display: flex; align-items: center;
@@ -313,9 +383,16 @@ export default function AdminDashboard() {
           .adm-sidebar.open { transform: translateX(0); }
           .adm-nav { flex-direction: column; gap: 4px; overflow-x: visible; }
           .adm-uname  { display: none; }
+          /* the drawer already hides itself on mobile — collapsing it too
+             would leave a strip of icons floating over the page */
+          .adm-collapse { display: none; }
+          .adm-sidebar.mini { width: 264px; padding: 20px 14px; }
+          .adm-sidebar.mini .adm-navlabel, .adm-sidebar.mini .adm-eyebrow { display: block; }
+          .adm-sidebar.mini .adm-navitem { justify-content: flex-start; padding: 11px 14px; }
+          .adm-sidebar.mini .adm-tip { display: none; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .adm-sidebar, .adm-navitem, .adm-logout { transition: none; }
+          .adm-sidebar, .adm-navitem, .adm-logout, .adm-collapse { transition: none; }
         }
       `}</style>
     </div>

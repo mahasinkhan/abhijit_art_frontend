@@ -1,826 +1,819 @@
 // src/components/income-expense/index.tsx
-import { useState, useMemo } from "react";
-import { useIncomeExpense, PERIOD_LABEL } from "../../hooks/useIncomeExpense";
-import { usePayees } from "../../hooks/usePayees";
-import type { Entry, EntryInput, TxnKind, TxnCategory } from "../../services/incomeExpense.api";
-import { CATEGORY_META } from "../../services/incomeExpense.api";
-import type { Payee, PayeeInput, PayeeKind } from "../../services/payee.api";
-import { EntryModal }  from "./EntryModal";
-import { PersonModal } from "./PersonModal";
+// ─────────────────────────────────────────────────────────────────────────
+// Two screens over one cash book, behind the security PIN.
+//
+// REGISTER is the day sheet, modelled on the paper/Excel book the studio
+// already keeps: pick a date, income left, expense right, each row a name, an
+// amount, cash/online — and on the expense side what the money went on.
+//
+// LEDGER is the same data read the other way: by person, or as a running
+// income/expense statement over a month, a chosen range, or everything.
+//
+// Categories still live in the database; they're chosen for you here, so a
+// payment to a staff member keeps reporting as salary with nothing on screen
+// to think about.
+// ─────────────────────────────────────────────────────────────────────────
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  rupees, rupeesExact, initials, toCsv, downloadCsv,
-  METHOD_META, ACCENT, INK, MUTED, FAINT, LINE, LINE_SOFT, WASH, GOLD, GREEN, RED, BLUE,
+  cashbookApi,
+  type Entry, type EntryInput, type PayMethod, type TxnKind,
+} from "../../services/incomeExpense.api";
+import { payeeApi, type Payee } from "../../services/payee.api";
+import PinGate, { useCashbookLock } from "./PinGate";
+import {
+  ACCENT, GOLD, INK, MUTED, FAINT, LINE, LINE_SOFT, WASH, GREEN, RED, BLUE,
+  rupeesExact, isoDate, fmtDate, fmtDayLabel, round2, initials, toCsv, downloadCsv,
 } from "./types";
-import {
-  type RowEntry, fmtDate, st,
-  ExpenseStyles, Empty, KpiCard, CardHead, PeriodBar,
-  ExpenseList, IncomeRow, StatementTable, IncomeStatementTable, Donut,
-} from "./ui";
 
-type Tab = "insights" | "salary" | "outside" | "income" | "ledger";
-type LedgerView = "person" | "statement" | "income";
+/* ── date helpers ───────────────────────────────────────────────────────── */
+const shiftDay = (d: string, by: number) => {
+  const x = new Date(`${d}T00:00:00`);
+  x.setDate(x.getDate() + by);
+  return isoDate(x);
+};
+const monthStart = (d: string) => `${d.slice(0, 7)}-01`;
+const monthEnd = (d: string) => {
+  const x = new Date(`${d.slice(0, 7)}-01T00:00:00`);
+  x.setMonth(x.getMonth() + 1); x.setDate(0);
+  return isoDate(x);
+};
+const monthName = (d: string) =>
+  new Date(`${d}T00:00:00`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
+type Tab        = "register" | "ledger";
+type LedgerView = "person" | "income" | "expense";
+type Span       = "month" | "range" | "all";
+
+const sum = (list: Entry[], m?: PayMethod) =>
+  round2(list.filter((e) => !m || e.method === m).reduce((s, e) => s + e.amount, 0));
+
+/* ── page ───────────────────────────────────────────────────────────────── */
 export default function IncomeExpense() {
-  const cb = useIncomeExpense();
-  const pp = usePayees();
+  const { unlocked, unlock, lock } = useCashbookLock();
 
-  const [tab, setTab] = useState<Tab>("insights");
-  const [globalSearch, setGlobalSearch] = useState("");
+  const [tab, setTab]   = useState<Tab>("register");
+  const [date, setDate] = useState(isoDate());
 
-  // ledger
-  const [ledgerView,   setLedgerView]   = useState<LedgerView>("person");
-  const [ledgerPerson, setLedgerPerson] = useState("");
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [payees, setPayees]   = useState<Payee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
 
-  // entry modal (expense)
-  const [showEntry,   setShowEntry]   = useState(false);
-  const [editEntry,   setEditEntry]   = useState<Entry | null>(null);
-  const [startKind,   setStartKind]   = useState<TxnKind>("expense");
-  const [seedPayee,   setSeedPayee]   = useState<string | undefined>(undefined);
-  const [seedCat,     setSeedCat]     = useState<TxnCategory | undefined>(undefined);
-  const [savingEntry, setSavingEntry] = useState(false);
-  const [entryError,  setEntryError]  = useState("");
-  const [busyId,      setBusyId]      = useState<string | null>(null);
+  const loadPayees = useCallback(async () => {
+    if (!unlocked) return;
+    try { setPayees(await payeeApi.list({})); } catch { /* dropdown just stays short */ }
+  }, [unlocked]);
+  useEffect(() => { loadPayees(); }, [loadPayees]);
 
-  // undo toast
-  const [undoToast, setUndoToast] = useState<{ entry: Entry; timer: ReturnType<typeof setTimeout> } | null>(null);
-
-  // person modal
-  const [showPer,   setShowPer]   = useState(false);
-  const [editPer,   setEditPer]   = useState<Payee | null>(null);
-  const [savingPer, setSavingPer] = useState(false);
-  const [perError,  setPerError]  = useState("");
-  const [syncing,   setSyncing]   = useState(false);
-
-  // office income (record only)
-  const [incAmt,    setIncAmt]    = useState("");
-  const [incTitle,  setIncTitle]  = useState("");
-  const [incMethod, setIncMethod] = useState<"cash"|"online">("cash");
-  const [incDate,   setIncDate]   = useState(new Date().toISOString().slice(0,10));
-  const [incBusy,   setIncBusy]   = useState(false);
-  const [incErr,    setIncErr]    = useState("");
-  const [incEditId, setIncEditId] = useState<string | null>(null);
-  const [incFilter, setIncFilter] = useState<"all"|"cash"|"online">("all");
-
-  function openAdd(_kind: TxnKind, payeeId?: string, cat?: TxnCategory) {
-    setEditEntry(null); setStartKind("expense"); setSeedPayee(payeeId); setSeedCat(cat);
-    setEntryError(""); setShowEntry(true);
-  }
-  function openEdit(e: Entry) {
-    setEditEntry(e); setSeedPayee(undefined); setSeedCat(undefined);
-    setEntryError(""); setShowEntry(true);
-  }
-  function openDuplicate(e: Entry) {
-    setEditEntry(null); setStartKind("expense"); setSeedPayee(e.payeeId || undefined); setSeedCat(e.category);
-    setEntryError(""); setShowEntry(true);
-  }
-
-  async function saveEntry(data: EntryInput) {
-    setSavingEntry(true); setEntryError("");
+  const load = useCallback(async () => {
+    if (!unlocked) return;
+    setError("");
     try {
-      if (editEntry) await cb.update(editEntry.id, data);
-      else           await cb.create(data);
-      setShowEntry(false); pp.reload();
+      setEntries(await cashbookApi.list({ from: date, to: date }));
     } catch (err: any) {
-      setEntryError(err.response?.data?.error || "Could not save.");
-    } finally { setSavingEntry(false); }
-  }
+      setError(err?.response?.data?.error || "Could not load this day.");
+    } finally {
+      setLoading(false);
+    }
+  }, [date, unlocked]);
 
-  function deleteEntry(e: Entry) {
-    if (undoToast) { clearTimeout(undoToast.timer); commitDelete(undoToast.entry); }
-    const timer = setTimeout(() => { commitDelete(e); setUndoToast(null); }, 5000);
-    setUndoToast({ entry: e, timer });
-  }
-  async function commitDelete(e: Entry) {
-    setBusyId(e.id);
-    try { await cb.remove(e.id); pp.reload(); }
-    catch (err: any) { alert(err.response?.data?.error || "Could not delete."); }
-    finally { setBusyId(null); }
-  }
-  function undoDelete() {
-    if (!undoToast) return;
-    clearTimeout(undoToast.timer);
-    setUndoToast(null);
-  }
+  useEffect(() => { setLoading(true); load(); }, [load]);
 
-  // ── office income actions ──
-  function incReset() { setIncAmt(""); setIncTitle(""); setIncEditId(null); setIncErr(""); }
-  function incEdit(e: Entry) {
-    setIncEditId(e.id); setIncAmt(String(e.amount)); setIncTitle(e.title);
-    setIncMethod(e.method as "cash"|"online"); setIncDate(e.date.slice(0,10)); setIncErr("");
-    setTab("income");
-  }
-  async function incSave() {
-    const amt = Number(incAmt);
-    if (!Number.isFinite(amt) || amt <= 0) { setIncErr("Enter an amount."); return; }
-    setIncBusy(true); setIncErr("");
+  const income  = useMemo(() => entries.filter((e) => e.kind === "income"),  [entries]);
+  const expense = useMemo(() => entries.filter((e) => e.kind === "expense"), [entries]);
+
+  const inTotal  = sum(income);
+  const outTotal = sum(expense);
+  const net      = round2(inTotal - outTotal);
+
+  /** Each entry carries its own date, so yesterday's auto fare can be written
+   *  up today. When that date isn't the one on screen the register follows it,
+   *  otherwise the row would save correctly and then vanish. */
+  const addEntry = async (data: EntryInput & { date: string }) => {
+    await cashbookApi.create(data);
+    if (data.date !== date) setDate(data.date);
+    else await load();
+  };
+
+  const removeEntry = async (id: string) => {
+    if (!window.confirm("Remove this entry?")) return;
     try {
-      const payload = {
-        kind: "income" as const, date: incDate,
-        category: "sale" as TxnCategory,
-        title: incTitle.trim() || "Office income",
-        amount: Math.round(amt * 100) / 100,
-        method: incMethod, payeeId: null, notes: "",
-      };
-      if (incEditId) await cb.update(incEditId, payload);
-      else           await cb.create(payload);
-      incReset();
-    } catch (err: any) { setIncErr(err.response?.data?.error || "Could not save."); }
-    finally { setIncBusy(false); }
-  }
-
-  async function savePerson(data: PayeeInput) {
-    setSavingPer(true); setPerError("");
-    try {
-      if (editPer) await pp.update(editPer.id, data);
-      else         await pp.create(data);
-      setShowPer(false);
+      await cashbookApi.remove(id);
+      await load();
     } catch (err: any) {
-      setPerError(err.response?.data?.error || "Could not save.");
-    } finally { setSavingPer(false); }
-  }
-  async function deletePerson(p: Payee) {
-    if (!confirm(`Remove ${p.name}?`)) return;
-    try { await pp.remove(p.id); }
-    catch (err: any) { alert(err.response?.data?.error || "Could not remove."); }
-  }
-  async function createPayeeInline(data: { name: string; phone: string; kind: PayeeKind; role?: string }) {
-    return pp.create(data);
-  }
-  async function syncEmployees() {
-    setSyncing(true);
+      alert(err?.response?.data?.error || "Could not remove that entry.");
+    }
+  };
+
+  /** A name typed on the expense side becomes a person, so the dropdown grows
+   *  on its own and nobody visits a separate screen to pay a new vendor. */
+  const addPayee = async (name: string): Promise<Payee | null> => {
     try {
-      const r = await pp.syncEmployees();
-      const bits = [r.created ? `${r.created} added` : "", r.linked ? `${r.linked} linked` : ""].filter(Boolean).join(", ");
-      alert(bits || "Everyone already in list");
-    } catch (err: any) { alert(err.response?.data?.error || "Sync failed."); }
-    finally { setSyncing(false); }
-  }
-
-  // ── derived data ──────────────────────────────────────────────────────
-  const allEntries = cb.entries;
-
-  // all expenses, unaffected by the search box (Salary / Outside / Ledger / totals use this)
-  const allExpense = useMemo(() => allEntries.filter((e) => e.kind === "expense"), [allEntries]);
-
-  const applySearch = (rows: Entry[]) => {
-    const q = globalSearch.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((e) =>
-      e.title.toLowerCase().includes(q) ||
-      (e.payee?.name || "").toLowerCase().includes(q) ||
-      (e.notes || "").toLowerCase().includes(q) ||
-      String(e.amount).includes(q)
-    );
+      const row = await payeeApi.create({ name, phone: "", kind: "outsider" });
+      await loadPayees();
+      return row;
+    } catch {
+      return null;   // duplicate or phone required — the entry still saves
+    }
   };
 
-  // search-applied — used ONLY by the Insights list + its KPIs/charts
-  const filteredEntries = useMemo(() => applySearch(allExpense), [allExpense, globalSearch]);
+  if (!unlocked) return <PinGate onUnlock={unlock} />;
 
-  // office income (search still applies here, its own tab)
-  const incomeEntries = useMemo(() => {
-    const base = allEntries.filter((e) => e.kind === "income");
-    if (!globalSearch.trim()) return base;
-    const q = globalSearch.toLowerCase();
-    return base.filter((e) =>
-      e.title.toLowerCase().includes(q) ||
-      (e.notes || "").toLowerCase().includes(q) ||
-      String(e.amount).includes(q)
-    );
-  }, [allEntries, globalSearch]);
-  const incCashIn   = useMemo(() => incomeEntries.filter((e) => e.method === "cash").reduce((s, e) => s + e.amount, 0), [incomeEntries]);
-  const incOnlineIn = useMemo(() => incomeEntries.filter((e) => e.method === "online").reduce((s, e) => s + e.amount, 0), [incomeEntries]);
-  const incTotalIn  = useMemo(() => incomeEntries.reduce((s, e) => s + e.amount, 0), [incomeEntries]);
-
-  const salaryEntries  = useMemo(() => allExpense.filter((e) => e.category === "salary"), [allExpense]);
-  const outsideEntries = useMemo(() => allExpense.filter((e) => e.category !== "salary"), [allExpense]);
-
-  // Insights KPIs/charts follow the search
-  const periodExpense = useMemo(() => filteredEntries.reduce((s, e) => s + e.amount, 0), [filteredEntries]);
-  const cashOut       = useMemo(() => filteredEntries.filter((e) => e.method === "cash").reduce((s, e) => s + e.amount, 0), [filteredEntries]);
-  const onlineOut     = useMemo(() => filteredEntries.filter((e) => e.method === "online").reduce((s, e) => s + e.amount, 0), [filteredEntries]);
-
-  const salaryTotal  = useMemo(() => salaryEntries.reduce((s, e) => s + e.amount, 0), [salaryEntries]);
-  const outsideTotal = useMemo(() => outsideEntries.reduce((s, e) => s + e.amount, 0), [outsideEntries]);
-
-  const todayStr = new Date().toISOString().slice(0,10);
-  const todayExp = allEntries.filter((e) => e.kind === "expense" && e.date.slice(0,10) === todayStr);
-  const todaySpent     = todayExp.reduce((s, e) => s + e.amount, 0);
-  const todayCashOut   = todayExp.filter((e) => e.method === "cash").reduce((s, e) => s + e.amount, 0);
-  const todayOnlineOut = todayExp.filter((e) => e.method === "online").reduce((s, e) => s + e.amount, 0);
-
-  const catBreakdown = useMemo(() => {
-    const map = new Map<string, { key: string; label: string; amount: number; count: number; color: string }>();
-    for (const e of filteredEntries) {
-      const meta = CATEGORY_META[e.category];
-      if (!map.has(e.category)) map.set(e.category, { key: e.category, label: meta?.label || e.category, amount: 0, count: 0, color: meta?.color || MUTED });
-      const c = map.get(e.category)!; c.amount += e.amount; c.count += 1;
-    }
-    return [...map.values()].sort((a, b) => b.amount - a.amount);
-  }, [filteredEntries]);
-  const outsideCats = catBreakdown.filter((c) => c.key !== "salary");
-
-  const groupByPayee = (rows: Entry[]) => {
-    const map = new Map<string, { id: string; name: string; kind?: string; amount: number; count: number }>();
-    for (const e of rows) {
-      const key = e.payeeId || "__none__";
-      if (!map.has(key)) map.set(key, { id: key, name: e.payee?.name || "No person", kind: e.payee?.kind, amount: 0, count: 0 });
-      const c = map.get(key)!; c.amount += e.amount; c.count += 1;
-    }
-    return [...map.values()].sort((a, b) => b.amount - a.amount);
-  };
-  const salaryByPayee  = useMemo(() => groupByPayee(salaryEntries),  [salaryEntries]);
-  const outsideByPayee = useMemo(() => groupByPayee(outsideEntries.filter((e) => e.payeeId)), [outsideEntries]);
-  const topPayees      = useMemo(() => groupByPayee(filteredEntries).filter((p) => p.id !== "__none__").slice(0, 8), [filteredEntries]);
-
-  const sortedPayees = useMemo(() => [...pp.payees].sort((a, b) => a.name.localeCompare(b.name)), [pp.payees]);
-  const emp8 = sortedPayees.filter((p) => p.kind === "employee").slice(0, 8);
-
-  // ── ledger derived (search-independent) ──
-  const payeeTotals = useMemo(() => {
-    const m = new Map<string, { amount: number; count: number }>();
-    for (const e of allExpense) {
-      if (!e.payeeId) continue;
-      const cur = m.get(e.payeeId) || { amount: 0, count: 0 };
-      cur.amount += e.amount; cur.count += 1; m.set(e.payeeId, cur);
-    }
-    return m;
-  }, [allExpense]);
-
-  const ledgerPeople = useMemo(() =>
-    sortedPayees
-      .map((p) => ({ p, t: payeeTotals.get(p.id) }))
-      .filter((x): x is { p: Payee; t: { amount: number; count: number } } => !!x.t)
-      .sort((a, b) => b.t.amount - a.t.amount)
-  , [sortedPayees, payeeTotals]);
-
-  const byDate = (a: Entry, b: Entry) => a.date.localeCompare(b.date) || (a.createdAt || "").localeCompare(b.createdAt || "");
-  const withRunning = (rows: Entry[]): RowEntry[] => {
-    let run = 0;
-    return [...rows].sort(byDate).map((e) => { run = Math.round((run + e.amount) * 100) / 100; return { ...e, running: run }; });
-  };
-
-  const fullStatement   = useMemo(() => withRunning(allExpense), [allExpense]);
-  const incomeStatement = useMemo(() => withRunning(incomeEntries), [incomeEntries]);
-  const personStatement = useMemo(() => withRunning(ledgerPerson ? allExpense.filter((e) => e.payeeId === ledgerPerson) : []), [allExpense, ledgerPerson]);
-  const personTotal     = useMemo(() => personStatement.reduce((s, e) => s + e.amount, 0), [personStatement]);
-  const selectedLedgerPayee = sortedPayees.find((p) => p.id === ledgerPerson);
-
-  // ── exports / prints ──
-  function exportCsv(rows: Entry[], name: string) {
-    const header = ["Date", "Details", "Category", "Person", "Method", "Amount", "Notes"];
-    const body = rows.map((e) => [
-      fmtDate(e.date.slice(0,10)), e.title,
-      CATEGORY_META[e.category]?.label || e.category,
-      e.payee?.name || "", e.method, e.amount, e.notes || "",
-    ]);
-    downloadCsv(`${name}-${cb.range.from}-to-${cb.range.to}.csv`, toCsv([header, ...body]));
-  }
-  function exportStatement(rows: RowEntry[], name: string) {
-    const header = ["Date", "Details", "Category", "Person", "Method", "Amount", "Running total"];
-    const body = rows.map((e) => [
-      fmtDate(e.date.slice(0,10)), e.title,
-      CATEGORY_META[e.category]?.label || e.category,
-      e.payee?.name || "", e.method, e.amount, e.running,
-    ]);
-    downloadCsv(`${name}-${cb.range.from}-to-${cb.range.to}.csv`, toCsv([header, ...body]));
-  }
-  function exportIncomeStatement(rows: RowEntry[], name: string) {
-    const header = ["Date", "Note", "Method", "Amount", "Running total"];
-    const body = rows.map((e) => [fmtDate(e.date.slice(0,10)), e.title, e.method, e.amount, e.running]);
-    downloadCsv(`${name}-${cb.range.from}-to-${cb.range.to}.csv`, toCsv([header, ...body]));
-  }
-  function printPerson(p: Payee, rows: RowEntry[], total: number) {
-    const lines = rows.map((e) =>
-      `${fmtDate(e.date.slice(0,10))}  |  ${e.title}  |  ${CATEGORY_META[e.category]?.label || e.category}  |  ${e.method}  |  -${rupeesExact(e.amount)}  |  ${rupees(e.running)}`
-    ).join("\n");
-    const w = window.open("", "_blank", "width=780,height=640");
-    if (!w) return;
-    w.document.write(`<pre style="font-family:monospace;padding:22px;font-size:13px;line-height:1.6"><b>${p.name} — Expense Statement</b>\n${p.phone || ""}\nPeriod: ${cb.range.from} to ${cb.range.to}\n${"-".repeat(78)}\n${lines}\n${"-".repeat(78)}\nTotal paid: -${rupees(total)}</pre>`);
-    w.document.close(); w.print();
-  }
-  function printIncome(rows: RowEntry[], total: number) {
-    const body = rows.map((e) => `
-      <tr>
-        <td>${fmtDate(e.date.slice(0,10))}</td>
-        <td>${e.title}</td>
-        <td><span class="m">${METHOD_META[e.method].label}</span></td>
-        <td class="amt">+${rupeesExact(e.amount)}</td>
-        <td class="run">${rupees(e.running)}</td>
-      </tr>`).join("");
-    const w = window.open("", "_blank", "width=840,height=700");
-    if (!w) return;
-    w.document.write(`
-<!doctype html><html><head><meta charset="utf-8"><title>Income Statement</title>
-<style>
-  *{box-sizing:border-box}
-  body{margin:0;font-family:'DM Sans',system-ui,Arial,sans-serif;color:#2a231d;background:#fff;padding:32px}
-  .wrap{max-width:720px;margin:0 auto}
-  .head{background:#fdf2ee;border:1px solid #f0d2c8;border-radius:8px;padding:20px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
-  .brand{font-size:20px;font-weight:800;color:#2a231d}
-  .brand small{display:block;font-size:12px;font-weight:600;color:#8a8378;margin-top:2px}
-  .title{text-align:right}
-  .title h1{margin:0;font-size:22px;font-weight:900;letter-spacing:1px;color:#d9542f;text-transform:uppercase}
-  .title .per{font-size:12px;color:#8a8378;margin-top:4px}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  thead th{background:#d9542f;color:#fff;text-align:left;padding:10px 12px;font-size:11px;letter-spacing:.5px;text-transform:uppercase}
-  thead th:last-child{text-align:right}
-  tbody td{padding:9px 12px;border-bottom:1px solid #f1ece3}
-  tbody tr:nth-child(even){background:#faf8f3}
-  td.amt{color:#15803d;font-weight:800;white-space:nowrap;text-align:right}
-  td.run{font-weight:700;white-space:nowrap;text-align:right}
-  .m{background:#f1ece3;color:#7a6f66;padding:1px 8px;border-radius:3px;font-size:11px;font-weight:700}
-  tfoot td{padding:14px 12px;border-top:2px solid #d9542f;font-weight:900;font-size:15px}
-  tfoot .lbl{color:#8a8378;text-transform:uppercase;font-size:12px;letter-spacing:.5px;font-weight:700}
-  tfoot .tot{text-align:right;color:#15803d}
-  .foot{margin-top:22px;font-size:11px;color:#b3ab9f;text-align:center}
-  @media print{body{padding:0}.wrap{max-width:none}}
-</style></head>
-<body><div class="wrap">
-  <div class="head">
-    <div class="brand">Abhijit Art<small>Printing &amp; Design</small></div>
-    <div class="title"><h1>Income Statement</h1><div class="per">${cb.range.from} to ${cb.range.to}</div></div>
-  </div>
-  <table>
-    <thead><tr><th>Date</th><th>Note</th><th>Method</th><th>Amount</th><th>Running</th></tr></thead>
-    <tbody>${body}</tbody>
-    <tfoot><tr><td class="lbl" colspan="3">Total income · ${rows.length} ${rows.length===1?"entry":"entries"}</td><td class="tot" colspan="2">+${rupees(total)}</td></tr></tfoot>
-  </table>
-  <div class="foot">Generated ${fmtDate(new Date().toISOString().slice(0,10))} · Abhijit Art Expense Tracker</div>
-</div>
-<script>window.onload=function(){window.print()}</script>
-</body></html>`);
-    w.document.close();
-  }
-
-  // undo hides one row in every list
-  const visibleExpense = filteredEntries.filter((e) => e.id !== undoToast?.entry.id);
-  const visibleSalary  = salaryEntries.filter((e) => e.id !== undoToast?.entry.id);
-  const visibleOutside = outsideEntries.filter((e) => e.id !== undoToast?.entry.id);
-  const visibleIncome  = incomeEntries.filter((e) => e.id !== undoToast?.entry.id);
+  const isToday = date === isoDate();
 
   return (
-    <div style={{ fontFamily:"'DM Sans',system-ui,sans-serif", color:INK, fontVariantNumeric:"tabular-nums" }}>
-      <ExpenseStyles/>
+    <div style={st.page}>
+      <style>{CSS}</style>
 
-      {/* ── Undo toast ── */}
-      {undoToast && (
-        <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", background:INK, color:"#fff", padding:"12px 20px", display:"flex", alignItems:"center", gap:16, zIndex:2000, fontSize:14, fontFamily:"inherit", boxShadow:"0 4px 20px rgba(0,0,0,.3)" }}>
-          <span>"{undoToast.entry.title}" deleted</span>
-          <button onClick={undoDelete}
-            style={{ background:ACCENT, color:"#fff", border:"none", padding:"6px 14px", fontFamily:"inherit", fontWeight:700, fontSize:13, cursor:"pointer" }}>
-            Undo
+      {/* ── header ── */}
+      <div style={st.head}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={st.title}>Income &amp; Expense</h1>
+          <div style={st.sub}>{tab === "register" ? fmtDayLabel(date) : "Ledger"}</div>
+        </div>
+
+        <div style={st.headRight}>
+          <div style={st.tabs}>
+            {([["register", "Register"], ["ledger", "Ledger"]] as [Tab, string][]).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                style={{ ...st.tabBtn, background: tab === id ? ACCENT : "#fff", color: tab === id ? "#fff" : MUTED }}
+              >{label}</button>
+            ))}
+          </div>
+
+          {tab === "register" && (
+            <div style={st.dateBar}>
+              <button className="ie-nav" style={st.navBtn} onClick={() => setDate(shiftDay(date, -1))} title="Previous day">‹</button>
+              <input
+                type="date" value={date} max={isoDate()}
+                onChange={(e) => e.target.value && setDate(e.target.value)}
+                style={st.dateInput}
+              />
+              <button
+                className="ie-nav"
+                style={{ ...st.navBtn, opacity: isToday ? 0.3 : 1, cursor: isToday ? "default" : "pointer" }}
+                onClick={() => !isToday && setDate(shiftDay(date, 1))}
+                disabled={isToday} title="Next day"
+              >›</button>
+              <button
+                className="ie-today"
+                style={{ ...st.todayBtn, opacity: isToday ? 0.45 : 1 }}
+                onClick={() => setDate(isoDate())} disabled={isToday}
+              >Today</button>
+            </div>
+          )}
+
+          {/* Puts the book away without waiting for the tab to close. */}
+          <button className="ie-nav" style={st.lockBtn} onClick={lock} title="Lock this section">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            Lock
           </button>
         </div>
-      )}
+      </div>
 
-      {/* ── Top bar ── */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginBottom:16, flexWrap:"wrap" }}>
-        <div style={{ display:"flex", border:`1px solid ${LINE}`, overflow:"hidden", flexWrap:"wrap" }}>
-          {([["insights","Insights"],["salary","Salary"],["outside","Outside"],["income","Office Income"],["ledger","Ledger"]] as [Tab,string][]).map(([id,label]) => (
-            <button key={id} onClick={() => setTab(id)}
-              style={{ padding:"10px 18px", border:"none", borderRight:`1px solid ${LINE}`, fontFamily:"inherit", fontSize:14, fontWeight:700, cursor:"pointer", background:tab===id?ACCENT:"#fff", color:tab===id?"#fff":MUTED }}>
-              {label}
-            </button>
+      {error && <div style={st.error}>{error}</div>}
+
+      {tab === "register" ? (
+        <>
+          {/* ── the day's totals, read before the detail ── */}
+          <div style={st.cards}>
+            <Tally label="Total income"  value={inTotal}  color={GREEN} accent="#f2faf5"
+                   cash={sum(income, "cash")}  online={sum(income, "online")} />
+            <Tally label="Total expense" value={outTotal} color={RED} accent="#fdf3f5"
+                   cash={sum(expense, "cash")} online={sum(expense, "online")} />
+            <div style={{ ...st.tally, background: net >= 0 ? "#f2faf5" : "#fdf3f5", borderColor: net >= 0 ? "#cfe8d8" : "#f3cfd7" }}>
+              <div style={st.tallyLbl}>{net >= 0 ? "In hand today" : "Short by"}</div>
+              <div style={{ ...st.tallyVal, color: net >= 0 ? GREEN : RED }}>{rupeesExact(Math.abs(net))}</div>
+              <div style={st.tallySplit}>{entries.length} entr{entries.length === 1 ? "y" : "ies"} today</div>
+            </div>
+          </div>
+
+          <div className="ie-cols" style={st.columns}>
+            <Column kind="income"  rows={income}  payees={payees} loading={loading} viewDate={date}
+                    onAdd={addEntry} onRemove={removeEntry} onAddPayee={addPayee} />
+            <Column kind="expense" rows={expense} payees={payees} loading={loading} viewDate={date}
+                    onAdd={addEntry} onRemove={removeEntry} onAddPayee={addPayee} />
+          </div>
+        </>
+      ) : (
+        <Ledger anchorDate={date} payees={payees} />
+      )}
+    </div>
+  );
+}
+
+/* ── one side of the register ───────────────────────────────────────────── */
+function Column({
+  kind, rows, payees, loading, viewDate, onAdd, onRemove, onAddPayee,
+}: {
+  kind: TxnKind;
+  rows: Entry[];
+  payees: Payee[];
+  loading: boolean;
+  viewDate: string;
+  onAdd: (d: EntryInput & { date: string }) => Promise<void>;
+  onRemove: (id: string) => void;
+  onAddPayee: (name: string) => Promise<Payee | null>;
+}) {
+  const isIn  = kind === "income";
+  const tint  = isIn ? GREEN : RED;
+  const total = round2(rows.reduce((s, e) => s + e.amount, 0));
+
+  return (
+    <section style={{ ...st.col, borderTopColor: tint }}>
+      <div style={{ ...st.colHead, background: isIn ? "#f4fbf6" : "#fdf5f7" }}>
+        <span style={{ ...st.colDot, background: tint }} />
+        <span style={{ ...st.colTitle, color: tint }}>{isIn ? "Income" : "Expense"}</span>
+        <span style={st.colCount}>{rows.length}</span>
+        <span style={{ ...st.colTotal, color: tint }}>{rupeesExact(total)}</span>
+      </div>
+
+      <div className="ie-colbody" style={st.colBody}>
+        {loading ? (
+          <div style={st.empty}>Loading…</div>
+        ) : rows.length === 0 ? (
+          <div style={st.empty}>
+            <div style={{ fontSize: 30, opacity: 0.25, marginBottom: 8 }}>{isIn ? "＋" : "−"}</div>
+            Nothing yet — add the first {isIn ? "receipt" : "payment"} below.
+          </div>
+        ) : (
+          rows.map((e, i) => (
+            <div key={e.id} className="ie-row" style={st.row}>
+              <span style={st.rowNo}>{i + 1}</span>
+              <span style={{ ...st.avatar, background: e.payee ? (e.payee.kind === "employee" ? ACCENT : GOLD) : LINE_SOFT, color: e.payee ? "#fff" : FAINT }}>
+                {e.payee ? initials(e.payee.name) : "·"}
+              </span>
+              <span style={st.rowMain}>
+                <span style={st.rowName}>{e.title || e.payee?.name || "—"}</span>
+                {e.notes && <span style={st.rowNote}>{e.notes}</span>}
+              </span>
+              <span style={{ ...st.chip, ...(e.method === "cash" ? st.chipCash : st.chipOnline) }}>
+                {e.method === "cash" ? "Cash" : "Online"}
+              </span>
+              <span style={{ ...st.rowAmt, color: tint }}>{rupeesExact(e.amount)}</span>
+              <button className="ie-del" style={st.del} onClick={() => onRemove(e.id)} title="Remove">×</button>
+            </div>
+          ))
+        )}
+      </div>
+
+      <AddRow kind={kind} payees={payees} viewDate={viewDate} onAdd={onAdd} onAddPayee={onAddPayee} />
+    </section>
+  );
+}
+
+/* ── inline add form ────────────────────────────────────────────────────── */
+function AddRow({
+  kind, payees, viewDate, onAdd, onAddPayee,
+}: {
+  kind: TxnKind;
+  payees: Payee[];
+  viewDate: string;
+  onAdd: (d: EntryInput & { date: string }) => Promise<void>;
+  onAddPayee: (name: string) => Promise<Payee | null>;
+}) {
+  const isIn = kind === "income";
+
+  // Expense names come from the people already in the database; income names
+  // are typed, because a counter sale isn't a person on the payroll.
+  const [payeeId, setPayeeId] = useState("");
+  const [typed,   setTyped]   = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [amount,  setAmount]  = useState("");
+  const [method,  setMethod]  = useState<PayMethod>("cash");
+  const [when,    setWhen]    = useState(viewDate);
+  const [busy,    setBusy]    = useState(false);
+  const [err,     setErr]     = useState("");
+
+  // Follow the day being viewed — today when the page opens, and whatever the
+  // arrows land on after that. Still free to override for a single entry.
+  useEffect(() => { setWhen(viewDate); }, [viewDate]);
+
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  const amtRef  = useRef<HTMLInputElement | null>(null);
+  const custom  = isIn || payeeId === "__other__";
+
+  const employees = payees.filter((p) => p.kind === "employee");
+  const outsiders = payees.filter((p) => p.kind !== "employee");
+
+  const submit = async () => {
+    let picked = payees.find((p) => p.id === payeeId) || null;
+    const name = custom ? typed.trim() : (picked?.name || "");
+    const n    = Number(amount);
+
+    if (!name)                         { setErr("Enter a name."); return; }
+    if (!Number.isFinite(n) || n <= 0) { setErr("Enter an amount."); return; }
+
+    setBusy(true); setErr("");
+    try {
+      // A brand-new expense name is remembered as a person, so it's one tap
+      // next time instead of retyping.
+      if (!isIn && payeeId === "__other__") picked = await onAddPayee(name);
+
+      await onAdd({
+        kind,
+        date: when,
+        // The picked person drives the category, so staff payments still land
+        // under salary without a category selector on screen.
+        category: isIn ? "other_income" : (picked?.kind === "employee" ? "salary" : "other"),
+        title: name,
+        amount: round2(n),
+        method,
+        payeeId: picked?.id ?? null,
+        notes: purpose.trim(),
+      });
+      setAmount(""); setTyped(""); setPurpose(""); setPayeeId("");
+      nameRef.current?.focus();
+    } catch (e: any) {
+      setErr(e?.response?.data?.error || "Could not save that.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onKey = (e: React.KeyboardEvent) => { if (e.key === "Enter") submit(); };
+  const backdated = when !== viewDate;
+
+  return (
+    <div style={st.addWrap}>
+      <div style={st.addRow}>
+        {isIn ? (
+          <input
+            ref={nameRef} className="ie-in"
+            style={{ ...st.in, flex: 1, minWidth: 110 }}
+            placeholder="Name"
+            value={typed}
+            onChange={(e) => { setTyped(e.target.value); setErr(""); }}
+            onKeyDown={(e) => { if (e.key === "Enter") amtRef.current?.focus(); }}
+          />
+        ) : (
+          <select
+            className="ie-in"
+            style={{ ...st.in, flex: 1, minWidth: 110, cursor: "pointer" }}
+            value={payeeId}
+            onChange={(e) => { setPayeeId(e.target.value); setErr(""); }}
+          >
+            <option value="">Choose person…</option>
+            {employees.length > 0 && (
+              <optgroup label="Employees">
+                {employees.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </optgroup>
+            )}
+            {outsiders.length > 0 && (
+              <optgroup label="Others">
+                {outsiders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </optgroup>
+            )}
+            <option value="__other__">+ New name…</option>
+          </select>
+        )}
+
+        <input
+          ref={amtRef} className="ie-in"
+          style={{ ...st.in, width: 100, fontWeight: 800, fontSize: 14.5 }}
+          type="number" min="0" inputMode="decimal"
+          placeholder="₹ Amount"
+          value={amount}
+          onChange={(e) => { setAmount(e.target.value); setErr(""); }}
+          onKeyDown={onKey}
+        />
+
+        <input
+          className="ie-in"
+          style={{ ...st.in, width: 132, ...(backdated ? { borderColor: ACCENT, color: ACCENT, fontWeight: 700 } : {}) }}
+          type="date"
+          value={when}
+          max={isoDate()}
+          onChange={(e) => e.target.value && setWhen(e.target.value)}
+          title="Date this money moved"
+        />
+
+        <div style={st.seg}>
+          {(["cash", "online"] as const).map((m, i) => (
+            <button
+              key={m}
+              onClick={() => setMethod(m)}
+              style={{
+                ...st.segBtn,
+                borderLeft: i ? `1px solid ${LINE}` : "none",
+                background: method === m ? (m === "cash" ? "#6b625a" : BLUE) : "#fff",
+                color: method === m ? "#fff" : MUTED,
+              }}
+            >{m === "cash" ? "Cash" : "Online"}</button>
           ))}
         </div>
-        <div style={{ display:"flex", gap:8, alignItems:"center", flex:1, justifyContent:"flex-end", flexWrap:"wrap" }}>
-          {tab === "insights" && (
-            <input placeholder="🔍 Search expenses…" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)}
-              style={{ padding:"9px 14px", border:`1px solid ${LINE}`, fontSize:13, fontFamily:"inherit", color:INK, width:200 }} />
-          )}
-          {tab !== "income" && (
-            <button onClick={() => openAdd("expense")}
-              style={{ padding:"10px 20px", background:RED, border:"none", color:"#fff", fontFamily:"inherit", fontWeight:700, fontSize:14, cursor:"pointer" }}>
-              + Add Expense
-            </button>
+
+        <button
+          className="ie-add"
+          style={{ ...st.addBtn, background: isIn ? GREEN : RED }}
+          onClick={submit} disabled={busy}
+        >{busy ? "…" : "Add"}</button>
+      </div>
+
+      {!isIn && payeeId === "__other__" && (
+        <input
+          ref={nameRef} className="ie-in"
+          style={{ ...st.in, width: "100%", marginTop: 7 }}
+          placeholder="Type the new name — it'll be saved for next time"
+          value={typed}
+          onChange={(e) => { setTyped(e.target.value); setErr(""); }}
+          onKeyDown={(e) => { if (e.key === "Enter") amtRef.current?.focus(); }}
+          autoFocus
+        />
+      )}
+
+      {/* What the money went on — expense only; income needs no explanation. */}
+      {!isIn && (
+        <input
+          className="ie-in"
+          style={{ ...st.in, width: "100%", marginTop: 7 }}
+          placeholder="Purpose (optional) — e.g. flex material, auto fare, tea"
+          value={purpose}
+          onChange={(e) => setPurpose(e.target.value)}
+          onKeyDown={onKey}
+        />
+      )}
+
+      {backdated && (
+        <div style={st.backdated}>Saving to {fmtDate(when)} — the register will jump there.</div>
+      )}
+      {err && <div style={st.addErr}>{err}</div>}
+    </div>
+  );
+}
+
+/* ── ledger ─────────────────────────────────────────────────────────────── */
+function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] }) {
+  const [view, setView] = useState<LedgerView>("expense");
+  const [span, setSpan] = useState<Span>("month");
+  const [from, setFrom] = useState(monthStart(anchorDate));
+  const [to,   setTo]   = useState(isoDate());
+
+  const [rows, setRows]     = useState<Entry[]>([]);
+  const [loading, setLoad]  = useState(true);
+  const [err, setErr]       = useState("");
+  const [person, setPerson] = useState("");   // drill-down inside By person
+
+  /** The three spans resolve to one range, so the fetch below stays simple. */
+  const range = useMemo(() => {
+    if (span === "month") return { from: monthStart(anchorDate), to: monthEnd(anchorDate) };
+    if (span === "all")   return { from: "2000-01-01", to: isoDate() };
+    return { from, to };
+  }, [span, anchorDate, from, to]);
+
+  useEffect(() => {
+    let alive = true;
+    setLoad(true); setErr("");
+    cashbookApi.list({ from: range.from, to: range.to })
+      .then((r) => { if (alive) setRows(r); })
+      .catch((e: any) => { if (alive) setErr(e?.response?.data?.error || "Could not load the ledger."); })
+      .finally(() => { if (alive) setLoad(false); });
+    return () => { alive = false; };
+  }, [range.from, range.to]);
+
+  const incomeRows  = useMemo(() => rows.filter((e) => e.kind === "income"),  [rows]);
+  const expenseRows = useMemo(() => rows.filter((e) => e.kind === "expense"), [rows]);
+
+  /** Oldest first with a running total — the way a passbook reads. */
+  const withRunning = (list: Entry[]) => {
+    const sorted = [...list].sort((a, b) =>
+      a.date.localeCompare(b.date) || (a.createdAt || "").localeCompare(b.createdAt || ""));
+    let run = 0;
+    return sorted.map((e) => { run = round2(run + e.amount); return { ...e, running: run }; });
+  };
+
+  const people = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; kind: string; paid: number; count: number }>();
+    for (const e of expenseRows) {
+      if (!e.payeeId || !e.payee) continue;
+      if (!map.has(e.payeeId)) map.set(e.payeeId, { id: e.payeeId, name: e.payee.name, kind: e.payee.kind, paid: 0, count: 0 });
+      const p = map.get(e.payeeId)!;
+      p.paid = round2(p.paid + e.amount); p.count += 1;
+    }
+    return [...map.values()].sort((a, b) => b.paid - a.paid);
+  }, [expenseRows]);
+
+  const personRows = useMemo(
+    () => withRunning(expenseRows.filter((e) => e.payeeId === person)),
+    [expenseRows, person],
+  );
+  const selected = payees.find((p) => p.id === person) || null;
+
+  const spanLabel = span === "month" ? monthName(anchorDate)
+    : span === "all" ? "All time"
+    : `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
+
+  const exportRows = (list: (Entry & { running?: number })[], name: string) => {
+    const header = ["Date", "Name", "Purpose", "Person", "Method", "Amount", "Running total"];
+    const body = list.map((e) => [
+      fmtDate(e.date.slice(0, 10)), e.title, e.notes || "",
+      e.payee?.name || "", e.method, e.amount, e.running ?? "",
+    ]);
+    downloadCsv(`${name}-${range.from}-to-${range.to}.csv`, toCsv([header, ...body]));
+  };
+
+  const printRows = (list: (Entry & { running?: number })[], heading: string, total: number, tint: string) => {
+    const body = list.map((e) => `
+      <tr>
+        <td>${fmtDate(e.date.slice(0, 10))}</td>
+        <td><b>${e.title}</b>${e.notes ? `<div class="n">${e.notes}</div>` : ""}</td>
+        <td><span class="m">${e.method === "cash" ? "Cash" : "Online"}</span></td>
+        <td class="amt">${rupeesExact(e.amount)}</td>
+        <td class="run">${rupeesExact(e.running || 0)}</td>
+      </tr>`).join("");
+    const w = window.open("", "_blank", "width=860,height=720");
+    if (!w) return;
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${heading}</title><style>
+      *{box-sizing:border-box} body{margin:0;font-family:'DM Sans',system-ui,Arial,sans-serif;color:#2a231d;background:#fff;padding:30px}
+      .wrap{max-width:760px;margin:0 auto}
+      .head{background:#fdf2ee;border:1px solid #f0d2c8;padding:18px 22px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+      .brand{font-size:19px;font-weight:800}.brand small{display:block;font-size:11.5px;font-weight:600;color:#8a8378;margin-top:2px}
+      .title{text-align:right}.title h1{margin:0;font-size:19px;font-weight:900;letter-spacing:1px;color:${tint};text-transform:uppercase}
+      .title .per{font-size:11.5px;color:#8a8378;margin-top:4px}
+      table{width:100%;border-collapse:collapse;font-size:12.5px}
+      thead th{background:${tint};color:#fff;text-align:left;padding:9px 11px;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase}
+      thead th:last-child,thead th:nth-last-child(2){text-align:right}
+      tbody td{padding:8px 11px;border-bottom:1px solid #f1ece3;vertical-align:top}
+      tbody tr:nth-child(even){background:#faf8f3}
+      .n{font-size:11px;color:#8a8378;margin-top:2px}
+      td.amt{color:${tint};font-weight:800;text-align:right;white-space:nowrap}
+      td.run{font-weight:700;text-align:right;white-space:nowrap}
+      .m{background:#f1ece3;color:#7a6f66;padding:1px 7px;font-size:10.5px;font-weight:700}
+      tfoot td{padding:13px 11px;border-top:2px solid ${tint};font-weight:900;font-size:14px}
+      tfoot .lbl{color:#8a8378;text-transform:uppercase;font-size:11px;letter-spacing:.5px;font-weight:700}
+      tfoot .tot{text-align:right;color:${tint}}
+      .foot{margin-top:20px;font-size:10.5px;color:#b3ab9f;text-align:center}
+      @media print{body{padding:0}}
+    </style></head><body><div class="wrap">
+      <div class="head">
+        <div class="brand">Abhijit Art<small>Printing &amp; Design</small></div>
+        <div class="title"><h1>${heading}</h1><div class="per">${spanLabel}</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Date</th><th>Name &amp; purpose</th><th>Method</th><th>Amount</th><th>Running</th></tr></thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr><td class="lbl" colspan="3">Total · ${list.length} ${list.length === 1 ? "entry" : "entries"}</td><td class="tot" colspan="2">${rupeesExact(total)}</td></tr></tfoot>
+      </table>
+      <div class="foot">Generated ${fmtDate(isoDate())} · Abhijit Art</div>
+    </div><script>window.onload=function(){window.print()}</script></body></html>`);
+    w.document.close();
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      {/* ── controls ── */}
+      <div style={st.ledgerBar}>
+        <div style={st.tabs}>
+          {([["expense", "Expense"], ["income", "Income"], ["person", "By person"]] as [LedgerView, string][]).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => { setView(id); setPerson(""); }}
+              style={{ ...st.tabBtn, background: view === id ? INK : "#fff", color: view === id ? "#fff" : MUTED }}
+            >{label}</button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginLeft: "auto" }}>
+          <div style={st.tabs}>
+            {([["month", monthName(anchorDate).split(" ")[0]], ["range", "Range"], ["all", "All time"]] as [Span, string][]).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setSpan(id)}
+                style={{ ...st.tabBtn, fontSize: 12.5, padding: "8px 14px", background: span === id ? "#6b625a" : "#fff", color: span === id ? "#fff" : MUTED }}
+              >{label}</button>
+            ))}
+          </div>
+          {span === "range" && (
+            <>
+              <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} style={st.dateInput} />
+              <span style={{ color: FAINT, fontSize: 12 }}>to</span>
+              <input type="date" value={to} min={from} max={isoDate()} onChange={(e) => setTo(e.target.value)} style={st.dateInput} />
+            </>
           )}
         </div>
       </div>
 
-      {/* Period control (right under tabs) */}
-      <PeriodBar period={cb.period} range={cb.range} onPeriod={cb.changePeriod} onRange={cb.setCustomRange} />
+      {err && <div style={st.error}>{err}</div>}
 
-      {/* Today snapshot (hidden on Office Income) */}
-      {tab !== "income" && (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:16 }}>
-          <div style={{ background:"#fdeaee", border:`1px solid ${RED}44`, padding:"10px 14px" }}>
-            <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase" as const, letterSpacing:.6, color:RED }}>Today Spent</div>
-            <div style={{ fontSize:18, fontWeight:900, color:RED }}>{rupees(todaySpent)}</div>
-          </div>
-          <div style={{ background:WASH, border:`1px solid ${LINE}`, padding:"10px 14px" }}>
-            <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase" as const, letterSpacing:.6, color:MUTED }}>Today Cash Out</div>
-            <div style={{ fontSize:18, fontWeight:900, color:INK }}>{rupees(todayCashOut)}</div>
-          </div>
-          <div style={{ background:"#e6eff9", border:`1px solid ${BLUE}44`, padding:"10px 14px" }}>
-            <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase" as const, letterSpacing:.6, color:BLUE }}>Today Online Out</div>
-            <div style={{ fontSize:18, fontWeight:900, color:BLUE }}>{rupees(todayOnlineOut)}</div>
-          </div>
-        </div>
-      )}
-
-      {/* ── TAB: Insights ── */}
-      {tab === "insights" && (
-        <div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:16 }}>
-            <KpiCard label="Total Income"  val={incTotalIn}    color={GREEN} sub={`${incomeEntries.length} entries`}/>
-            <KpiCard label="Total Expense" val={periodExpense} color={RED}   sub={`${filteredEntries.length} entries`}/>
-            <KpiCard label="Online"        val={onlineOut}     color={BLUE}  sub="spent"/>
-            <KpiCard label="Cash"          val={cashOut}       color={INK}   sub="spent"/>
-          </div>
-
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 }}>
-            <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
-              <CardHead title="By category"/>
-              {catBreakdown.length === 0 ? <Empty msg="No expenses to chart."/> : (
-                <div style={{ padding:"16px", display:"flex", gap:16, alignItems:"center", flexWrap:"wrap" }}>
-                  <Donut data={catBreakdown}/>
-                  <div style={{ flex:1, minWidth:150, display:"grid", gap:7 }}>
-                    {catBreakdown.map((c) => (
-                      <div key={c.key} style={{ display:"flex", alignItems:"center", gap:8, fontSize:12 }}>
-                        <span style={{ width:9, height:9, borderRadius:"50%", background:c.color, flexShrink:0 }}/>
-                        <span style={{ flex:1, fontWeight:600 }}>{c.label}</span>
-                        <span style={{ fontWeight:700, color:INK }}>{rupees(c.amount)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+      {loading ? (
+        <div style={{ ...st.panel, padding: 60, textAlign: "center", color: FAINT }}>Loading…</div>
+      ) : view === "person" ? (
+        person && selected ? (
+          <LedgerTable
+            heading={selected.name}
+            sub={`${selected.phone || "No phone"} · ${selected.kind} · ${spanLabel}`}
+            rows={personRows}
+            tint={RED}
+            onBack={() => setPerson("")}
+            onExport={() => exportRows(personRows, `ledger-${selected.name}`)}
+            onPrint={() => printRows(personRows, `${selected.name} — Statement`, sum(personRows), RED)}
+          />
+        ) : (
+          <div style={st.panel}>
+            <div style={st.panelHead}>
+              <span style={st.panelTitle}>People paid · {spanLabel}</span>
+              <span style={{ ...st.panelTotal, color: RED, marginLeft: "auto" }}>{rupeesExact(sum(expenseRows))}</span>
             </div>
-
-            <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
-              <CardHead title="Cash vs Online (spent)"/>
-              <div style={{ padding:"16px" }}>
-                {periodExpense === 0 ? <Empty msg="Nothing spent yet."/> : (
-                  <>
-                    <div style={{ display:"flex", height:26, borderRadius:4, overflow:"hidden", border:`1px solid ${LINE}` }}>
-                      <div style={{ width:`${(cashOut/(periodExpense||1))*100}%`, background:"#94a3b8" }}/>
-                      <div style={{ width:`${(onlineOut/(periodExpense||1))*100}%`, background:"#60a5fa" }}/>
-                    </div>
-                    <div style={{ display:"flex", justifyContent:"space-between", marginTop:12, gap:12 }}>
-                      <div>
-                        <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:MUTED }}><span style={{ width:9, height:9, background:"#94a3b8", borderRadius:2 }}/> Cash</div>
-                        <div style={{ fontSize:18, fontWeight:900, color:"#64748b" }}>{rupees(cashOut)}</div>
-                      </div>
-                      <div style={{ textAlign:"right" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:MUTED, justifyContent:"flex-end" }}><span style={{ width:9, height:9, background:"#60a5fa", borderRadius:2 }}/> Online</div>
-                        <div style={{ fontSize:18, fontWeight:900, color:BLUE }}>{rupees(onlineOut)}</div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ background:"#fff", border:`1px solid ${LINE}`, marginBottom:16 }}>
-            <CardHead title="Top spend by person"/>
-            {topPayees.length === 0 ? <Empty msg="No person-linked spend in this period."/> : (
-              <div style={{ padding:"12px 16px" }}>
-                {topPayees.map((p) => {
-                  const max = topPayees[0].amount || 1;
-                  return (
-                    <div key={p.id} style={{ marginBottom:10 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4, fontSize:13 }}>
-                        <span style={{ width:24, height:24, borderRadius:"50%", background:p.kind==="employee"?ACCENT:GOLD, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, flexShrink:0 }}>{initials(p.name)}</span>
-                        <span style={{ fontWeight:600, flex:1 }}>{p.name}</span>
-                        <span style={{ fontWeight:800, color:RED }}>−{rupees(p.amount)}</span>
-                      </div>
-                      <div style={{ height:7, background:LINE_SOFT, borderRadius:20, overflow:"hidden" }}>
-                        <div style={{ height:"100%", width:`${Math.max((p.amount/max)*100,2)}%`, background:ACCENT, borderRadius:20 }}/>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <ExpenseList rows={visibleExpense} emptyMsg="No expenses yet — add one above."
-            busyId={busyId} onExport={() => exportCsv(filteredEntries, "expenses")}
-            onEdit={openEdit} onDuplicate={openDuplicate} onDelete={deleteEntry} />
-        </div>
-      )}
-
-      {/* ── TAB: Salary ── */}
-      {tab === "salary" && (
-        <div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:16 }}>
-            <KpiCard label="Salary Paid" val={salaryTotal} color={BLUE} sub={PERIOD_LABEL[cb.period]}/>
-            <KpiCard label="People"      val={salaryByPayee.filter(p=>p.id!=="__none__").length} color={ACCENT} money={false} sub="staff paid"/>
-            <KpiCard label="Payments"    val={salaryEntries.length} color={INK} money={false} sub="entries"/>
-          </div>
-
-          <div style={{ background:"#fff", border:`1px solid ${LINE}`, padding:"12px 16px", marginBottom:16 }}>
-            <div style={{ fontSize:12, fontWeight:700, textTransform:"uppercase" as const, letterSpacing:.6, color:MUTED, marginBottom:10 }}>Quick Pay Salary</div>
-            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-              {emp8.map((p) => (
-                <button key={p.id} onClick={() => openAdd("expense", p.id, "salary")}
-                  style={{ padding:"8px 14px", border:`1px solid ${LINE}`, background:"#fff", fontFamily:"inherit", fontSize:13, fontWeight:600, cursor:"pointer", color:INK, display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ width:22, height:22, borderRadius:"50%", background:ACCENT, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700 }}>{initials(p.name)}</span>
-                  {p.name.split(" ")[0]}
-                </button>
-              ))}
-              <button onClick={() => openAdd("expense", undefined, "salary")}
-                style={{ padding:"8px 14px", border:`1px solid ${ACCENT}44`, background:"#fdf2ee", fontFamily:"inherit", fontSize:13, fontWeight:600, cursor:"pointer", color:ACCENT }}>
-                + Other salary
-              </button>
-            </div>
-            <div style={{ fontSize:11, color:FAINT, marginTop:8 }}>Tap a name to record salary — the <b>Salary</b> category is set for you.</div>
-          </div>
-
-          {salaryByPayee.length > 0 && (
-            <div style={{ background:"#fff", border:`1px solid ${LINE}`, marginBottom:16 }}>
-              <CardHead title="Salary by person"/>
-              {salaryByPayee.map((p) => (
-                <div key={p.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 16px", borderBottom:`1px solid ${LINE_SOFT}` }}>
-                  <span style={{ width:32, height:32, borderRadius:"50%", background:p.kind==="employee"?ACCENT:GOLD, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, flexShrink:0 }}>{initials(p.name)}</span>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontWeight:700, fontSize:14 }}>{p.name}</div>
-                    <div style={{ fontSize:12, color:MUTED }}>{p.count} payment{p.count>1?"s":""}</div>
-                  </div>
-                  <span style={{ fontWeight:800, color:RED, fontSize:14 }}>−{rupees(p.amount)}</span>
+            <div className="ie-colbody" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+              {people.length === 0 ? (
+                <div style={st.empty}>No person-linked expenses in this period.</div>
+              ) : people.map((p) => (
+                <div key={p.id} className="ie-row" style={{ ...st.row, cursor: "pointer" }} onClick={() => setPerson(p.id)}>
+                  <span style={{ ...st.avatar, width: 32, height: 32, fontSize: 11, background: p.kind === "employee" ? ACCENT : GOLD }}>
+                    {initials(p.name)}
+                  </span>
+                  <span style={st.rowMain}>
+                    <span style={{ ...st.rowName, fontSize: 14 }}>{p.name}</span>
+                    <span style={st.rowNote}>{p.count} {p.count === 1 ? "entry" : "entries"}</span>
+                  </span>
+                  <span style={{ ...st.rowAmt, color: RED }}>{rupeesExact(p.paid)}</span>
+                  <span style={{ color: FAINT, fontSize: 13, width: 16, textAlign: "right" }}>›</span>
                 </div>
               ))}
             </div>
-          )}
-
-          <ExpenseList rows={visibleSalary} emptyMsg="No salary payments in this period."
-            busyId={busyId} onExport={() => exportCsv(salaryEntries, "salary")}
-            onEdit={openEdit} onDuplicate={openDuplicate} onDelete={deleteEntry} />
-        </div>
-      )}
-
-      {/* ── TAB: Outside ── */}
-      {tab === "outside" && (
-        <div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:16 }}>
-            <KpiCard label="Outside Spent" val={outsideTotal} color={"#0891b2"} sub={`everything except salary · ${PERIOD_LABEL[cb.period]}`}/>
-            <KpiCard label="People"        val={outsideByPayee.filter(p=>p.id!=="__none__").length} color={ACCENT} money={false} sub="vendors/staff"/>
-            <KpiCard label="Entries"       val={outsideEntries.length} color={INK} money={false} sub="expenses"/>
           </div>
-
-          <div style={{ background:"#fff", border:`1px solid ${LINE}`, padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
-            <div style={{ fontSize:13, color:MUTED }}>Everything that isn't salary — materials, transport, food, bills, flex/outside work and more.</div>
-            <button onClick={() => openAdd("expense")}
-              style={{ padding:"8px 16px", border:"none", background:"#0891b2", color:"#fff", fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-              + Add Expense
-            </button>
-          </div>
-
-          {outsideCats.length > 0 && (
-            <div style={{ background:"#fff", border:`1px solid ${LINE}`, marginBottom:16 }}>
-              <CardHead title="By category"/>
-              <div style={{ padding:"12px 16px" }}>
-                {outsideCats.map((c) => {
-                  const share = outsideTotal ? (c.amount / outsideTotal) * 100 : 0;
-                  return (
-                    <div key={c.key} style={{ marginBottom:12 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5, fontSize:13 }}>
-                        <span style={{ width:9, height:9, borderRadius:"50%", background:c.color, flexShrink:0 }}/>
-                        <span style={{ fontWeight:600, flex:1 }}>{c.label}</span>
-                        <span style={{ color:FAINT, fontSize:12 }}>{share.toFixed(0)}%</span>
-                        <span style={{ fontWeight:800, color:RED, minWidth:80, textAlign:"right" }}>−{rupees(c.amount)}</span>
-                      </div>
-                      <div style={{ height:7, background:LINE_SOFT, borderRadius:20, overflow:"hidden" }}>
-                        <div style={{ height:"100%", width:`${Math.max(share,2)}%`, background:c.color, borderRadius:20 }}/>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {outsideByPayee.length > 0 && (
-            <div style={{ background:"#fff", border:`1px solid ${LINE}`, marginBottom:16 }}>
-              <CardHead title="Outside spend by person"/>
-              {outsideByPayee.map((p) => (
-                <div key={p.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 16px", borderBottom:`1px solid ${LINE_SOFT}` }}>
-                  <span style={{ width:32, height:32, borderRadius:"50%", background:p.kind==="employee"?ACCENT:GOLD, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, flexShrink:0 }}>{initials(p.name)}</span>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontWeight:700, fontSize:14 }}>{p.name}</div>
-                    <div style={{ fontSize:12, color:MUTED }}>{p.count} {p.count===1?"entry":"entries"}</div>
-                  </div>
-                  <span style={{ fontWeight:800, color:RED, fontSize:14 }}>−{rupees(p.amount)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <ExpenseList rows={visibleOutside} emptyMsg="No outside expenses in this period."
-            busyId={busyId} onExport={() => exportCsv(outsideEntries, "outside")}
-            onEdit={openEdit} onDuplicate={openDuplicate} onDelete={deleteEntry} />
-        </div>
-      )}
-
-      {/* ── TAB: Office Income ── */}
-      {tab === "income" && (
-        <div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:16 }}>
-            <KpiCard label="Cash In"   val={incCashIn}   color={GREEN} sub={PERIOD_LABEL[cb.period]}/>
-            <KpiCard label="Online In" val={incOnlineIn} color={BLUE}  sub={PERIOD_LABEL[cb.period]}/>
-            <KpiCard label="Total Office Income" val={incTotalIn} color={GREEN} sub={`${incomeEntries.length} entries`}/>
-          </div>
-
-          <div style={{ background:"#fff", border:`1px solid ${LINE}`, marginBottom:16 }}>
-            <CardHead title={incEditId ? "Edit office income" : "Record office income"}/>
-            <div style={{ padding:"14px 16px", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-              <input type="number" placeholder="Amount" value={incAmt} onChange={(e) => setIncAmt(e.target.value)}
-                onKeyDown={(e) => e.key==="Enter" && incSave()}
-                style={{ padding:"9px 12px", border:`1px solid ${LINE}`, fontSize:15, fontWeight:800, fontFamily:"inherit", color:GREEN, width:130 }} />
-              <input placeholder="Note (optional)" value={incTitle} onChange={(e) => setIncTitle(e.target.value)}
-                onKeyDown={(e) => e.key==="Enter" && incSave()}
-                style={{ padding:"9px 12px", border:`1px solid ${LINE}`, fontSize:13, fontFamily:"inherit", color:INK, flex:1, minWidth:160 }} />
-              <div style={{ display:"flex", border:`1px solid ${LINE}`, overflow:"hidden" }}>
-                <button onClick={() => setIncMethod("cash")}
-                  style={{ padding:"9px 16px", border:"none", borderRight:`1px solid ${LINE}`, fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer", background:incMethod==="cash"?GREEN:"#fff", color:incMethod==="cash"?"#fff":MUTED, display:"inline-flex", alignItems:"center", gap:7 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>
-                  </svg>
-                  Cash
-                </button>
-                <button onClick={() => setIncMethod("online")}
-                  style={{ padding:"9px 16px", border:"none", fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer", background:incMethod==="online"?BLUE:"#fff", color:incMethod==="online"?"#fff":MUTED, display:"inline-flex", alignItems:"center", gap:7 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>
-                  </svg>
-                  Online
-                </button>
-              </div>
-              <input type="date" value={incDate} onChange={(e) => setIncDate(e.target.value)}
-                style={{ padding:"9px 10px", border:`1px solid ${LINE}`, fontSize:13, fontFamily:"inherit", color:INK }} />
-              <button onClick={incSave} disabled={incBusy}
-                style={{ padding:"9px 22px", background:GREEN, border:"none", color:"#fff", fontFamily:"inherit", fontWeight:700, fontSize:14, cursor:"pointer", opacity:incBusy?.6:1 }}>
-                {incBusy ? "Saving…" : incEditId ? "Update" : "Save"}
-              </button>
-              {incEditId && (
-                <button onClick={incReset}
-                  style={{ padding:"9px 16px", background:"#fff", border:`1px solid ${LINE}`, color:MUTED, fontFamily:"inherit", fontWeight:600, fontSize:13, cursor:"pointer" }}>
-                  Cancel
-                </button>
-              )}
-              {incErr && <span style={{ fontSize:12, color:RED }}>{incErr}</span>}
-            </div>
-            <div style={{ padding:"0 16px 14px", fontSize:11, color:FAINT }}>Records money received at the office (cash or online). Nothing else.</div>
-          </div>
-
-          {(() => {
-            const base = incFilter === "all" ? visibleIncome : visibleIncome.filter((e) => e.method === incFilter);
-            const shownStmt = withRunning(incFilter === "all" ? incomeEntries : incomeEntries.filter((e) => e.method === incFilter));
-            const shownTotal = shownStmt.reduce((s, e) => s + e.amount, 0);
-            return (
-              <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
-                <div style={{ padding:"12px 16px", borderBottom:`1px solid ${LINE_SOFT}`, display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
-                    <span style={{ fontWeight:700, fontSize:14 }}>{base.length} {base.length===1?"entry":"entries"} · {rupees(shownTotal)}</span>
-                    <div style={{ display:"flex", border:`1px solid ${LINE}`, overflow:"hidden" }}>
-                      {([["all","All"],["cash","Cash"],["online","Online"]] as ["all"|"cash"|"online", string][]).map(([id,label]) => (
-                        <button key={id} onClick={() => setIncFilter(id)}
-                          style={{ padding:"6px 13px", border:"none", borderRight:`1px solid ${LINE}`, fontFamily:"inherit", fontSize:12, fontWeight:700, cursor:"pointer", background:incFilter===id?INK:"#fff", color:incFilter===id?"#fff":MUTED }}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                    <button onClick={() => printIncome(shownStmt, shownTotal)} disabled={!shownStmt.length}
-                      style={{ padding:"6px 14px", background:INK, border:"none", color:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:700, cursor:shownStmt.length?"pointer":"not-allowed", opacity:shownStmt.length?1:.5 }}>
-                      🖨 Statement
-                    </button>
-                    <button onClick={() => exportIncomeStatement(shownStmt, `office-income-${incFilter}`)} disabled={!shownStmt.length}
-                      style={{ padding:"6px 14px", border:`1px solid ${LINE}`, background:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:600, cursor:shownStmt.length?"pointer":"not-allowed", color:MUTED, opacity:shownStmt.length?1:.5 }}>
-                      ⭳ Export CSV
-                    </button>
-                  </div>
-                </div>
-                {base.length === 0 ? <Empty msg="No office income for this filter."/> : base.map((e) => (
-                  <IncomeRow key={e.id} e={e} busy={busyId===e.id} onEdit={() => incEdit(e)} onDelete={() => deleteEntry(e)} />
-                ))}
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* ── TAB: Ledger ── */}
-      {tab === "ledger" && (
-        <div>
-          <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
-            <div style={{ display:"flex", border:`1px solid ${LINE}`, overflow:"hidden", flexWrap:"wrap" }}>
-              {([["person","By Person"],["statement","Full Statement"],["income","Income Ledger"]] as [LedgerView,string][]).map(([id,label]) => (
-                <button key={id} onClick={() => setLedgerView(id)}
-                  style={{ padding:"8px 16px", border:"none", borderRight:`1px solid ${LINE}`, fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer", background:ledgerView===id?INK:"#fff", color:ledgerView===id?"#fff":MUTED }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {ledgerView === "person" && (
-              <>
-                <select value={ledgerPerson} onChange={(e) => setLedgerPerson(e.target.value)}
-                  style={{ padding:"8px 12px", border:`1px solid ${LINE}`, fontSize:13, fontFamily:"inherit", color:INK, background:"#fff" }}>
-                  <option value="">— All people —</option>
-                  {sortedPayees.map((p) => <option key={p.id} value={p.id}>{p.name}{p.phone?` · ${p.phone}`:""}</option>)}
-                </select>
-                <button onClick={() => { setEditPer(null); setPerError(""); setShowPer(true); }}
-                  style={{ padding:"8px 14px", border:`1px solid ${LINE}`, background:"#fff", fontFamily:"inherit", fontSize:13, fontWeight:600, cursor:"pointer", color:ACCENT }}>
-                  + Add Person
-                </button>
-              </>
-            )}
-          </div>
-
-          {ledgerView === "statement" ? (
-            <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
-              <CardHead title={`Expense statement · ${fullStatement.length} entries · ${rupees(fullStatement.reduce((s,e)=>s+e.amount,0))}`}
-                right={<button onClick={() => exportStatement(fullStatement, "expense-statement")} disabled={!fullStatement.length}
-                  style={{ padding:"6px 14px", border:`1px solid ${LINE}`, background:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:600, cursor:fullStatement.length?"pointer":"not-allowed", color:MUTED, opacity:fullStatement.length?1:.5 }}>⭳ Export CSV</button>} />
-              {fullStatement.length === 0 ? <Empty msg="No expenses in this period."/> : <StatementTable rows={fullStatement}/>}
-            </div>
-          ) : ledgerView === "income" ? (
-            <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
-              <CardHead title={`Income ledger · ${incomeStatement.length} entries · ${rupees(incTotalIn)}`}
-                right={
-                  <div style={{ display:"flex", gap:8 }}>
-                    <button onClick={() => printIncome(incomeStatement, incTotalIn)} disabled={!incomeStatement.length}
-                      style={{ padding:"6px 14px", background:INK, border:"none", color:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:700, cursor:incomeStatement.length?"pointer":"not-allowed", opacity:incomeStatement.length?1:.5 }}>🖨 Statement</button>
-                    <button onClick={() => exportIncomeStatement(incomeStatement, "income-statement")} disabled={!incomeStatement.length}
-                      style={{ padding:"6px 14px", border:`1px solid ${LINE}`, background:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:600, cursor:incomeStatement.length?"pointer":"not-allowed", color:MUTED, opacity:incomeStatement.length?1:.5 }}>⭳ Export CSV</button>
-                  </div>
-                } />
-              {incomeStatement.length === 0 ? <Empty msg="No office income in this period."/> : <IncomeStatementTable rows={incomeStatement}/>}
-            </div>
-          ) : ledgerPerson && selectedLedgerPayee ? (
-            <div>
-              <div style={{ padding:"14px 16px", marginBottom:12, background:WASH, border:`1px solid ${LINE}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                  <button onClick={() => setLedgerPerson("")} title="Back to all people"
-                    style={{ background:"#fff", border:`1px solid ${LINE}`, borderRadius:4, padding:"6px 10px", fontFamily:"inherit", fontSize:13, fontWeight:700, cursor:"pointer", color:MUTED }}>←</button>
-                  <span style={{ width:40, height:40, borderRadius:"50%", background:selectedLedgerPayee.kind==="employee"?ACCENT:GOLD, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:700 }}>{initials(selectedLedgerPayee.name)}</span>
-                  <div>
-                    <div style={{ fontWeight:800, fontSize:16 }}>{selectedLedgerPayee.name}</div>
-                    <div style={{ fontSize:12, color:MUTED }}>{selectedLedgerPayee.phone || "No phone"} · {selectedLedgerPayee.kind}</div>
-                  </div>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
-                  <div style={{ textAlign:"right" }}>
-                    <div style={{ fontSize:11, color:MUTED, textTransform:"uppercase" as const, letterSpacing:.6, fontWeight:700 }}>Total paid</div>
-                    <div style={{ fontSize:20, fontWeight:900, color:RED }}>−{rupees(personTotal)}</div>
-                  </div>
-                  <button onClick={() => printPerson(selectedLedgerPayee, personStatement, personTotal)} disabled={!personStatement.length}
-                    style={{ padding:"8px 14px", background:INK, border:"none", color:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:700, cursor:personStatement.length?"pointer":"not-allowed", opacity:personStatement.length?1:.5 }}>🖨 Print</button>
-                  <button onClick={() => exportStatement(personStatement, `statement-${selectedLedgerPayee.name}`)} disabled={!personStatement.length}
-                    style={{ padding:"8px 14px", border:`1px solid ${LINE}`, background:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:600, cursor:personStatement.length?"pointer":"not-allowed", color:MUTED, opacity:personStatement.length?1:.5 }}>⭳ CSV</button>
-                </div>
-              </div>
-              <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
-                <CardHead title={`${personStatement.length} ${personStatement.length===1?"entry":"entries"}`}/>
-                {personStatement.length === 0 ? <Empty msg="No expenses to this person in this period."/> : <StatementTable rows={personStatement}/>}
-              </div>
-            </div>
-          ) : (
-            <div style={{ background:"#fff", border:`1px solid ${LINE}` }}>
-              <CardHead title={`People · ${ledgerPeople.length}`} right={
-                <button onClick={syncEmployees} disabled={syncing}
-                  style={{ padding:"6px 12px", border:`1px solid ${LINE}`, background:"#fff", fontFamily:"inherit", fontSize:12, fontWeight:600, cursor:"pointer", color:MUTED }}>
-                  {syncing ? "Syncing…" : "Sync employees"}
-                </button>
-              }/>
-              {ledgerPeople.length === 0 ? <Empty msg="No person-linked expenses in this period. Pick anyone from the dropdown above."/> : ledgerPeople.map(({ p, t }) => (
-                <div key={p.id} onClick={() => setLedgerPerson(p.id)}
-                  style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px", borderBottom:`1px solid ${LINE_SOFT}`, cursor:"pointer" }}>
-                  <span style={{ width:36, height:36, borderRadius:"50%", background:p.kind==="employee"?ACCENT:GOLD, color:"#fff", display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, flexShrink:0 }}>{initials(p.name)}</span>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontWeight:700, fontSize:14 }}>{p.name}</div>
-                    <div style={{ fontSize:12, color:MUTED }}>{p.phone||"No phone"} · {t.count} {t.count===1?"entry":"entries"}</div>
-                  </div>
-                  <span style={{ fontWeight:800, color:RED, fontSize:14 }}>−{rupees(t.amount)}</span>
-                  <span style={{ color:MUTED, fontSize:12 }}>→</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Modals ── */}
-      {showEntry && (
-        <EntryModal
-          editing={editEntry} startKind={startKind} payees={sortedPayees}
-          saving={savingEntry} error={entryError}
-          defaultPayeeId={seedPayee || cb.payeeId || undefined}
-          defaultCategory={seedCat}
-          onCreatePayee={createPayeeInline}
-          onSyncEmployees={syncEmployees} syncing={syncing}
-          onSave={saveEntry} onClose={() => setShowEntry(false)}
-        />
-      )}
-      {showPer && (
-        <PersonModal
-          editing={editPer} payees={sortedPayees}
-          saving={savingPer} error={perError}
-          onSave={savePerson} onClose={() => setShowPer(false)}
+        )
+      ) : (
+        <LedgerTable
+          heading={view === "income" ? "Income ledger" : "Expense ledger"}
+          sub={spanLabel}
+          rows={withRunning(view === "income" ? incomeRows : expenseRows)}
+          tint={view === "income" ? GREEN : RED}
+          onExport={() => exportRows(withRunning(view === "income" ? incomeRows : expenseRows), `${view}-ledger`)}
+          onPrint={() => {
+            const list = withRunning(view === "income" ? incomeRows : expenseRows);
+            printRows(list, view === "income" ? "Income Statement" : "Expense Statement", sum(list), view === "income" ? GREEN : RED);
+          }}
         />
       )}
     </div>
   );
 }
+
+function LedgerTable({
+  heading, sub, rows, tint, onBack, onExport, onPrint,
+}: {
+  heading: string; sub: string;
+  rows: (Entry & { running: number })[];
+  tint: string;
+  onBack?: () => void;
+  onExport: () => void;
+  onPrint: () => void;
+}) {
+  const total = round2(rows.reduce((s, e) => s + e.amount, 0));
+
+  return (
+    <div style={st.panel}>
+      <div style={st.panelHead}>
+        {onBack && <button className="ie-nav" style={{ ...st.navBtn, width: 30, height: 30, fontSize: 15 }} onClick={onBack}>‹</button>}
+        <div style={{ minWidth: 0 }}>
+          <div style={st.panelTitle}>{heading}</div>
+          <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{sub} · {rows.length} {rows.length === 1 ? "entry" : "entries"}</div>
+        </div>
+        <span style={{ ...st.panelTotal, color: tint, marginLeft: "auto" }}>{rupeesExact(total)}</span>
+        <button className="ie-ghost" style={st.ghostBtn} onClick={onExport} disabled={!rows.length}>CSV</button>
+        <button className="ie-ghost" style={{ ...st.ghostBtn, background: INK, color: "#fff", borderColor: INK }} onClick={onPrint} disabled={!rows.length}>Print</button>
+      </div>
+
+      <div className="ie-colbody" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        {rows.length === 0 ? (
+          <div style={st.empty}>Nothing in this period.</div>
+        ) : (
+          <table style={st.table}>
+            <thead>
+              <tr>
+                <th style={st.th}>Date</th>
+                <th style={st.th}>Name &amp; purpose</th>
+                <th style={st.th}>Method</th>
+                <th style={{ ...st.th, textAlign: "right" }}>Amount</th>
+                <th style={{ ...st.th, textAlign: "right" }}>Running</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((e) => (
+                <tr key={e.id} className="ie-trow">
+                  <td style={{ ...st.td, whiteSpace: "nowrap", color: MUTED }}>{fmtDate(e.date.slice(0, 10))}</td>
+                  <td style={st.td}>
+                    <div style={{ fontWeight: 700 }}>{e.title}</div>
+                    {e.notes && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{e.notes}</div>}
+                  </td>
+                  <td style={st.td}>
+                    <span style={{ ...st.chip, ...(e.method === "cash" ? st.chipCash : st.chipOnline) }}>
+                      {e.method === "cash" ? "Cash" : "Online"}
+                    </span>
+                  </td>
+                  <td style={{ ...st.td, textAlign: "right", fontWeight: 800, color: tint, whiteSpace: "nowrap" }}>{rupeesExact(e.amount)}</td>
+                  <td style={{ ...st.td, textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{rupeesExact(e.running)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── totals card ────────────────────────────────────────────────────────── */
+function Tally({ label, value, color, accent, cash, online }: {
+  label: string; value: number; color: string; accent: string; cash: number; online: number;
+}) {
+  return (
+    <div style={{ ...st.tally, background: accent, borderColor: `${color}22` }}>
+      <div style={st.tallyLbl}>{label}</div>
+      <div style={{ ...st.tallyVal, color }}>{rupeesExact(value)}</div>
+      <div style={st.tallySplit}>Cash {rupeesExact(cash)} · Online {rupeesExact(online)}</div>
+    </div>
+  );
+}
+
+/* ── styles ─────────────────────────────────────────────────────────────── */
+const CSS = `
+  .ie-row:hover{background:${WASH};}
+  .ie-row .ie-del{opacity:0;transition:opacity .15s;}
+  .ie-row:hover .ie-del{opacity:1;}
+  .ie-del:hover{color:${RED} !important;background:#fdeaee;}
+  .ie-nav:hover:not(:disabled){border-color:${ACCENT}66;color:${ACCENT};}
+  .ie-today:hover:not(:disabled){background:${ACCENT};color:#fff;border-color:${ACCENT};}
+  .ie-add:hover:not(:disabled){filter:brightness(1.1);}
+  .ie-add:disabled{opacity:.6;cursor:default;}
+  .ie-ghost:hover:not(:disabled){filter:brightness(.96);}
+  .ie-ghost:disabled{opacity:.45;cursor:not-allowed;}
+  .ie-in:focus{outline:none;border-color:${ACCENT};box-shadow:0 0 0 3px ${ACCENT}1f;}
+  .ie-trow:hover td{background:${WASH};}
+  .ie-colbody::-webkit-scrollbar{width:8px;}
+  .ie-colbody::-webkit-scrollbar-thumb{background:${LINE};border-radius:8px;}
+  @media (max-width: 900px){ .ie-cols{grid-template-columns:1fr !important;} }
+`;
+
+const st: Record<string, React.CSSProperties> = {
+  page:      { padding: "18px 26px 26px", color: INK, display: "flex", flexDirection: "column", minHeight: "calc(100vh - 74px)" },
+  head:      { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 18, flexWrap: "wrap", marginBottom: 16 },
+  title:     { fontSize: 23, fontWeight: 800, margin: 0, letterSpacing: -0.4 },
+  sub:       { fontSize: 13.5, color: MUTED, marginTop: 4, fontWeight: 600 },
+  headRight: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
+
+  tabs:      { display: "flex", border: `1px solid ${LINE}`, overflow: "hidden", flexShrink: 0 },
+  tabBtn:    { padding: "9px 18px", border: "none", borderRight: `1px solid ${LINE}`, fontFamily: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+
+  dateBar:   { display: "flex", alignItems: "center", gap: 6 },
+  navBtn:    { width: 34, height: 36, border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 19, lineHeight: 1, cursor: "pointer", transition: "all .15s", flexShrink: 0 },
+  dateInput: { padding: "8px 11px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK, colorScheme: "light" },
+  todayBtn:  { padding: "9px 15px", border: `1px solid ${LINE}`, background: "#fff", color: ACCENT, fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", transition: "all .15s" },
+  lockBtn:   { display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", transition: "all .15s" },
+  error:     { padding: "10px 14px", marginBottom: 14, background: "#fdecea", border: "1px solid #f3cfc2", fontSize: 13, color: "#8a2f16" },
+
+  cards:     { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 16 },
+  tally:     { background: "#fff", border: `1px solid ${LINE}`, padding: "13px 16px" },
+  tallyLbl:  { fontSize: 10.5, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: MUTED, marginBottom: 5 },
+  tallyVal:  { fontSize: 22, fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 },
+  tallySplit:{ fontSize: 11.5, color: MUTED, marginTop: 5 },
+
+  columns:   { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, flex: 1, minHeight: 0 },
+  col:       { background: "#fff", border: `1px solid ${LINE}`, borderTop: "3px solid", display: "flex", flexDirection: "column", minHeight: 0, boxShadow: "0 1px 3px rgba(42,35,29,.05)" },
+  colHead:   { display: "flex", alignItems: "center", gap: 9, padding: "12px 16px", borderBottom: `1px solid ${LINE_SOFT}` },
+  colDot:    { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
+  colTitle:  { fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase" },
+  colCount:  { fontSize: 11, fontWeight: 700, color: MUTED, background: "#fff", border: `1px solid ${LINE}`, padding: "1px 7px", borderRadius: 20 },
+  colTotal:  { marginLeft: "auto", fontSize: 17, fontWeight: 800, fontVariantNumeric: "tabular-nums" },
+  colBody:   { flex: 1, minHeight: 190, overflowY: "auto" },
+  empty:     { padding: "48px 16px", textAlign: "center", color: FAINT, fontSize: 13 },
+
+  row:       { display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: `1px solid ${LINE_SOFT}`, transition: "background .12s" },
+  rowNo:     { fontSize: 11.5, color: FAINT, width: 16, flexShrink: 0, fontVariantNumeric: "tabular-nums", textAlign: "right" },
+  avatar:    { width: 26, height: 26, borderRadius: "50%", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 },
+  rowMain:   { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 },
+  rowName:   { fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  rowNote:   { fontSize: 11.5, color: MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  chip:      { fontSize: 10, fontWeight: 700, padding: "2px 8px", textTransform: "uppercase", letterSpacing: 0.3, flexShrink: 0, borderRadius: 3 },
+  chipCash:  { background: "#f1ece3", color: "#7a6f66" },
+  chipOnline:{ background: "#e6eff9", color: BLUE },
+  rowAmt:    { fontSize: 14.5, fontWeight: 800, fontVariantNumeric: "tabular-nums", flexShrink: 0, minWidth: 78, textAlign: "right" },
+  del:       { width: 24, height: 24, border: "none", background: "transparent", color: FAINT, fontSize: 18, lineHeight: 1, cursor: "pointer", flexShrink: 0, padding: 0, borderRadius: 4, transition: "all .12s" },
+
+  addWrap:   { padding: "12px 16px", borderTop: `1px solid ${LINE}`, background: WASH },
+  addRow:    { display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" },
+  in:        { boxSizing: "border-box", padding: "9px 11px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK, colorScheme: "light", transition: "border-color .15s, box-shadow .15s" },
+  seg:       { display: "flex", border: `1px solid ${LINE}`, flexShrink: 0 },
+  segBtn:    { padding: "9px 13px", border: "none", fontSize: 11.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" },
+  addBtn:    { padding: "9px 20px", border: "none", color: "#fff", fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", flexShrink: 0, transition: "filter .15s" },
+  addErr:    { fontSize: 12, color: RED, marginTop: 7, fontWeight: 600 },
+  backdated: { fontSize: 11.5, color: ACCENT, marginTop: 7, fontWeight: 600 },
+
+  ledgerBar: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 },
+  panel:     { background: "#fff", border: `1px solid ${LINE}`, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, boxShadow: "0 1px 3px rgba(42,35,29,.05)" },
+  panelHead: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${LINE_SOFT}`, background: WASH, flexWrap: "wrap" },
+  panelTitle:{ fontSize: 14.5, fontWeight: 800 },
+  panelTotal:{ fontSize: 18, fontWeight: 800, fontVariantNumeric: "tabular-nums" },
+  ghostBtn:  { padding: "7px 15px", border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", transition: "filter .15s" },
+
+  table:     { width: "100%", borderCollapse: "collapse", fontSize: 13 },
+  th:        { position: "sticky", top: 0, background: "#fdf0e7", color: "#7a5240", padding: "9px 14px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, textAlign: "left", borderBottom: `1px solid ${LINE}` },
+  td:        { padding: "10px 14px", borderBottom: `1px solid ${LINE_SOFT}`, transition: "background .12s" },
+};
