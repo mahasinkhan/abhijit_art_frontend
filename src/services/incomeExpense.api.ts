@@ -71,7 +71,13 @@ export const cashbookApi = {
   summary: (filters: Pick<EntryFilters, "from"|"to"> = {}) => api.get<Summary>(`${BASE}/summary`, { params: params(filters) }).then(r => r.data),
   create:  (data: EntryInput) => api.post<Entry>(BASE, data).then(r => r.data),
   update:  (id: string, data: Partial<EntryInput>) => api.patch<Entry>(`${BASE}/${id}`, data).then(r => r.data),
-  remove:  (id: string) => api.delete(`${BASE}/${id}`).then(r => r.data),
+
+  // Deleting a money record needs the security PIN, checked server-side.
+  // axios ignores a plain second argument on DELETE — the body only travels
+  // inside `data`, and without it the server sees an empty PIN and rejects
+  // every attempt as "Incorrect security PIN".
+  remove:  (id: string, pin: string) =>
+    api.delete(`${BASE}/${id}`, { data: { pin } }).then(r => r.data),
 };
 
 export const CATEGORY_META: Record<TxnCategory, { label: string; color: string; hint?: string }> = {

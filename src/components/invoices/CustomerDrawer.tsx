@@ -234,7 +234,9 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
     }
   };
 
-  // ledger drives the numbers when it's available; row is the fallback
+  // ledger drives the numbers when it's available; row is the fallback.
+  // NOTE `paid` here is money APPLIED TO BILLS — settle() caps it at billed, so
+  // anything paid beyond every invoice shows up as `advance`, not in `paid`.
   const billed  = ledger ? ledger.billed  : row.billed;
   const paid    = ledger ? ledger.paid    : row.paid;
   const balance = ledger ? ledger.balance : row.due;
@@ -253,6 +255,8 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
   const isPaid     = (inv: Invoice) => dueOf(inv) <= 0.005;
   const paidInvs   = filtered.filter(isPaid);
   const activeInvs = filtered.filter(inv => !isPaid(inv));
+
+  const nothingDue = balance <= 0.005;
 
   return (
     <div style={sharedSt.backdrop} onClick={onClose}>
@@ -315,6 +319,13 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
         {/* Payment form */}
         {payOpen && customerId && (
           <div style={st.payBox}>
+            {/* With nothing outstanding the money can't reduce a bill, so say so
+                up front — otherwise recording one looks like it vanished. */}
+            {nothingDue && (
+              <div style={st.advanceHint}>
+                Every bill is settled — this will be held as <b>advance</b> and applied to the next invoice automatically.
+              </div>
+            )}
             <div style={st.payRow}>
               <input style={{ ...st.in, width:130, fontWeight:800, fontSize:15, color:GREEN }} type="number" min="0"
                 placeholder="Amount" value={amt} autoFocus
@@ -398,6 +409,7 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
             paid={paid}
             billed={billed}
             balance={balance}
+            advance={advance}
             onRemove={removePayment}
             onClose={() => setHistOpen(false)}
           />
@@ -408,12 +420,17 @@ export default function CustomerDrawer({ row, onClose, onPrint, onEdit, onPrevie
 }
 
 // ── Payment history modal ─────────────────────────────────────────────────
+// This is a PASSBOOK: "Received" is every rupee that actually came in, which is
+// exactly what the rows below add up to and what Cash + Online add up to. That
+// is NOT the same as `paid` from the ledger, which settle() caps at the amount
+// billed — the difference is money held as advance, so it gets its own cell
+// instead of silently disappearing from the total.
 function PaymentHistory({
-  name, payments, paid, billed, balance, onRemove, onClose,
+  name, payments, paid, billed, balance, advance, onRemove, onClose,
 }: {
   name: string;
   payments: MergedPayment[];
-  paid: number; billed: number; balance: number;
+  paid: number; billed: number; balance: number; advance: number;
   onRemove: (p: MergedPayment) => void;
   onClose: () => void;
 }) {
@@ -431,8 +448,26 @@ function PaymentHistory({
     return { ...p, running: run };
   }).reverse();
 
-  const cash   = payments.filter(p => p.method === "cash").reduce((s, p) => s + p.amount, 0);
-  const online = payments.filter(p => p.method === "online").reduce((s, p) => s + p.amount, 0);
+  const cash     = round2(payments.filter(p => p.method === "cash").reduce((s, p) => s + p.amount, 0));
+  const online   = round2(payments.filter(p => p.method === "online").reduce((s, p) => s + p.amount, 0));
+  const received = round2(cash + online);
+
+  // the ledger's advance is authoritative; this fallback only matters if the
+  // ledger hasn't loaded and the row totals are standing in for it
+  const heldBack = advance > 0.005 ? advance : round2(Math.max(received - billed, 0));
+
+  const cells = [
+    { l: "Billed",          v: rupee(billed),   c: INK },
+    { l: "Received",        v: rupee(received), c: GREEN },
+    { l: "Applied to bills", v: rupee(paid),    c: "#545a67" },
+    balance > 0.005
+      ? { l: "Balance Due", v: rupee(balance),  c: TERRA }
+      : heldBack > 0.005
+        ? { l: "Advance",   v: rupee(heldBack), c: "#1a56db" }
+        : { l: "Balance",   v: "✓ Cleared",     c: GREEN },
+    { l: "Cash",            v: rupee(cash),     c: "#545a67" },
+    { l: "Online",          v: rupee(online),   c: "#1a56db" },
+  ];
 
   return (
     <div style={sharedSt.backdrop} onClick={onClose}>
@@ -446,17 +481,7 @@ function PaymentHistory({
         </div>
 
         <div style={hst.summary}>
-          {[
-            { l: "Billed",   v: rupee(billed),  c: INK },
-            { l: "Received", v: rupee(paid),    c: GREEN },
-            balance > 0.005
-              ? { l: "Balance Due", v: rupee(balance), c: TERRA }
-              : paid - billed > 0.005
-                ? { l: "Advance", v: rupee(paid - billed), c: "#1a56db" }
-                : { l: "Balance", v: "✓ Cleared", c: GREEN },
-            { l: "Cash",     v: rupee(cash),    c: "#545a67" },
-            { l: "Online",   v: rupee(online),  c: "#1a56db" },
-          ].map(s => (
+          {cells.map(s => (
             <div key={s.l}>
               <div style={hst.sumLbl}>{s.l}</div>
               <div style={{ fontSize:14, fontWeight:800, color:s.c, fontVariantNumeric:"tabular-nums" }}>{s.v}</div>
@@ -496,6 +521,9 @@ function PaymentHistory({
         </div>
 
         <div style={hst.foot}>
+          {heldBack > 0.005 && balance <= 0.005
+            ? <><b>{rupee(heldBack)}</b> of the received total is beyond every bill and is held as advance — it settles the next invoice automatically. </>
+            : null}
           Removing a payment asks for the security PIN, then re-settles every invoice automatically.
           Rows tagged with an invoice number were taken as an advance on that bill.
         </div>
@@ -510,7 +538,7 @@ const hst: Record<string, React.CSSProperties> = {
   title:   { fontSize:16, fontWeight:800, color:INK },
   sub:     { fontSize:12.5, color:MUTE, marginTop:3 },
   close:   { width:32, height:32, border:`1px solid #e6dcd2`, background:"#fff", color:"#545a67", fontSize:20, lineHeight:1, cursor:"pointer", flexShrink:0 },
-  summary: { display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:10, padding:"13px 20px", borderBottom:`1px solid ${LINE}`, background:"#fffcf9" },
+  summary: { display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(108px,1fr))", gap:10, padding:"13px 20px", borderBottom:`1px solid ${LINE}`, background:"#fffcf9" },
   sumLbl:  { fontSize:10, fontWeight:700, letterSpacing:.5, textTransform:"uppercase", color:"#9ca3af", marginBottom:4 },
   tblWrap: { flex:1, overflowY:"auto", padding:"0 20px" },
   tbl:     { width:"100%", borderCollapse:"collapse", fontSize:13 },
@@ -688,6 +716,7 @@ const st: Record<string, React.CSSProperties> = {
   stat:        { background:"linear-gradient(135deg,#fff6ee 0%,#fffaf5 100%)", border:"1px solid #f0e0d0", padding:"10px 11px" },
   statLbl:     { fontSize:11, fontWeight:700, letterSpacing:0.4, textTransform:"uppercase", color:"#9ca3af", marginBottom:5 },
   advance:     { padding:"8px 12px", marginBottom:12, background:"#eafaf0", border:"1px solid #bfe3cd", fontSize:12.5, color:"#15733f" },
+  advanceHint: { padding:"8px 11px", marginBottom:11, background:"#eef2ff", border:"1px solid #c7d2fe", fontSize:12, color:"#1a56db", lineHeight:1.5 },
   warn:        { padding:"9px 13px", marginBottom:12, background:"#fdecea", border:"1px solid #f3cfc2", fontSize:12.5, color:"#8a2f16", lineHeight:1.5 },
   ctaRow:      { display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" },
   payCta:      { flex:"1 1 220px", display:"inline-flex", alignItems:"center", justifyContent:"center", gap:7, padding:"10px 14px", border:"none", background:GREEN, color:"#fff", fontFamily:SANS, fontWeight:700, fontSize:13.5, cursor:"pointer", borderRadius:0 },

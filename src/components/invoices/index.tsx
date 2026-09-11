@@ -1,5 +1,5 @@
 // src/components/invoices/index.tsx
-// ── Invoices page — state orchestration only ──────────────────────────────
+// ── Invoices page — state orchestration only ────────────────────────────────
 // All rendering is delegated to child components.
 // Add new features by adding new child components, not by growing this file.
 
@@ -14,7 +14,7 @@ import {
 } from "./types";
 import { printInvoice, previewInvoice } from "./PrintUtils";
 
-// ── Child components ───────────────────────────────────────────────────────
+// ── Child components ────────────────────────────────────────────────────────
 import Icon          from "./Icon";
 import StatsBar      from "./StatsBar";
 import InvoiceTable  from "./InvoiceTable";
@@ -27,7 +27,7 @@ import SendModal     from "./SendModal";
 import DeleteModal   from "./DeleteModal";
 
 export default function Invoices() {
-  // ── Data ─────────────────────────────────────────────────────────────────
+  // ── Data ──────────────────────────────────────────────────────────────────
   const [list,       setList]       = useState<Invoice[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -115,10 +115,18 @@ export default function Invoices() {
       if(inv.status==="cancelled") continue;
       const t=num(inv.total); const p=effectivePaid(inv);
       billed+=t; received+=p; outstanding+=Math.max(t-p,0);
+
+      // inv.payments holds this bill's OWN payments only
       for (const pay of Array.isArray(inv.payments)?inv.payments:[]) {
         const amt=num(pay.amount);
         if(pay.method==="online") online+=amt; else cash+=amt;
       }
+      // …plus the slice of the customer's running tab the server allocated to
+      // this bill, split by how that money actually came in. Without these two
+      // lines Cash + Online never adds up to Received for anyone paying on
+      // account.
+      cash   += num(inv.accountCash);
+      online += num(inv.accountOnline);
     }
     return {
       count:periodList.length,
@@ -265,11 +273,14 @@ export default function Invoices() {
         <CustomerDrawer
           row={drillRow}
           onClose={()=>setDrillKey(null)}
-          onPay={setPayTarget}
           onPrint={printInvoice}
           onEdit={inv=>{ if(inv.status!=="paid"&&inv.status!=="cancelled") setEditTarget(inv); }}
           onPreview={previewInvoice}
           onStatement={openStatement}
+          /* an account payment re-settles EVERY bill on this customer's tab,
+             not just one row — so the whole list has to come back from the
+             server rather than being patched in place */
+          onChanged={()=>load(false)}
         />
       )}
       {stmtRow    && <StatementModal row={stmtRow}   onClose={()=>setStmtKey(null)}/>}

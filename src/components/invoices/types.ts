@@ -1,7 +1,7 @@
 // src/components/invoices/types.ts
-// ── Shared types, constants, and pure helpers ─────────────────────────────
+// ── Shared types, constants, and pure helpers ────────────────────────────────
 
-// ── Design tokens (match rest of app) ────────────────────────────────────
+// ── Design tokens (match rest of app) ───────────────────────────────────────
 export const INK      = "#1f2430";
 export const BODY     = "#545a67";
 export const MUTE     = "#8a8f9a";
@@ -20,7 +20,7 @@ export const GLOW     = "radial-gradient(120% 140% at 0% 0%, rgba(217,84,47,.075
 export const GLOW_SHADOW = "0 1px 2px rgba(17,20,30,.04), 0 10px 26px -18px rgba(217,84,47,.28)";
 export const REQ_TIMEOUT = 15000;
 
-// ── Domain types ──────────────────────────────────────────────────────────
+// ── Domain types ────────────────────────────────────────────────────────────
 export type Period    = "all" | "today" | "week" | "month" | "quarter" | "half" | "year";
 export type InvStatus = "unpaid" | "partial" | "paid" | "cancelled";
 export type InvSource = "online" | "offline";
@@ -38,7 +38,29 @@ export type Invoice = {
   items: StoredItem[];
   discType: "amount" | "percent"; discVal: string; taxPct: string;
   subtotal: string; discountAmt: string; taxAmt: string; total: string;
-  paidAmount: string; payments: Payment[]; notes: string | null;
+
+  // paidAmount is the SETTLED figure the server sends: this invoice's own
+  // Payment rows PLUS the slice of the customer's running tab (CustomerPayment)
+  // that the server allocated to this bill, oldest bill first. Prisma sends
+  // Decimals as strings; the settled value comes back as a number — num()
+  // handles both, so never compare it with === against a string.
+  paidAmount: string | number;
+  payments: Payment[];
+
+  // ── set by the server's account-tab settlement (all optional so an older
+  // response, or a record built locally, still type-checks) ──
+  /** total minus the settled paid figure — already clamped at 0 */
+  balanceDue?: number;
+  /** this invoice's own Payment rows only, before the tab was applied */
+  legacyPaid?: number;
+  /** the slice of the customer's tab allocated to this bill */
+  accountPaid?: number;
+  /** the cash part of accountPaid — inv.payments does NOT include it */
+  accountCash?: number;
+  /** the online part of accountPaid — inv.payments does NOT include it */
+  accountOnline?: number;
+
+  notes: string | null;
   warranty: string | null; status: InvStatus;
   createdAt: string; updatedAt: string; pdfUrl?: string | null;
 };
@@ -56,7 +78,7 @@ export type CustomerRow = {
   invoices: Invoice[]; billed: number; paid: number; due: number; lastDate: string;
 };
 
-// ── Status / source / method meta ─────────────────────────────────────────
+// ── Status / source / method meta ───────────────────────────────────────────
 export const STATUS_META: Record<InvStatus, { label: string; fg: string; bg: string; bd: string; dot: string }> = {
   unpaid:    { label: "Unpaid",    fg: "#9a6a12", bg: "#fbf3e3", bd: "#efdcb2", dot: "#e0a83e" },
   partial:   { label: "Partial",   fg: "#1d5fd8", bg: "#eaf0fc", bd: "#cbdbf6", dot: "#3b74e0" },
@@ -96,7 +118,7 @@ export const MONTH_NAMES = [
   "July","August","September","October","November","December",
 ];
 
-// ── Pure helpers ──────────────────────────────────────────────────────────
+// ── Pure helpers ────────────────────────────────────────────────────────────
 export const num    = (v: any): number => { const n = parseFloat(String(v)); return Number.isFinite(n) ? n : 0; };
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 export const rupee  = (v: any) => "₹" + num(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -138,6 +160,9 @@ export const calcTotals = (items: { qty: any; rate: any }[], discType: "amount" 
   return { subtotal: round2(subtotal), discountAmt: round2(discountAmt), taxAmt: round2(taxAmt), total: round2(taxable + taxAmt) };
 };
 
+// The status and paidAmount arriving from GET /api/invoices are BOTH already
+// settled against the customer's running tab, so reading paidAmount here picks
+// up account payments automatically — no separate account branch is needed.
 export const effectivePaid = (inv: Invoice): number => {
   const total = num(inv.total);
   if (inv.status === "paid")    return round2(total);
@@ -149,10 +174,15 @@ export const srcMeta    = (s: any) => SOURCE_META[(s as InvSource) === "online" 
 export const methMeta   = (m: any) => METHOD_META[(m as InvMethod) === "online" ? "online" : "cash"];
 export const badgeStyle = (s: InvStatus): React.CSSProperties => ({ color: STATUS_META[s].fg, background: STATUS_META[s].bg, borderColor: STATUS_META[s].bd });
 
+// The method pill has to consider BOTH ledgers: inv.payments holds only the
+// per-invoice Payment rows, so a bill settled entirely from the customer's tab
+// would otherwise show no method at all.
 export const methodSummary = (inv: Invoice) => {
   const ps = Array.isArray(inv.payments) ? inv.payments : [];
-  if (!ps.length) return null;
-  const set = new Set(ps.map((p) => (p.method === "online" ? "online" : "cash")));
+  const set = new Set<string>(ps.map((p) => (p.method === "online" ? "online" : "cash")));
+  if (num(inv.accountCash)   > 0.005) set.add("cash");
+  if (num(inv.accountOnline) > 0.005) set.add("online");
+  if (!set.size) return null;
   if (set.size > 1) return MIXED_META;
   return set.has("online") ? METHOD_META.online : METHOD_META.cash;
 };
@@ -172,7 +202,7 @@ export const periodSince = (p: Period): Date | null => {
   }
 };
 
-// ── Shared style atoms ────────────────────────────────────────────────────
+// ── Shared style atoms ──────────────────────────────────────────────────────
 export const sharedSt = {
   badge:    { display:"inline-flex", alignItems:"center", border:"1px solid", borderRadius:0, padding:"5px 11px", fontSize:12, fontWeight:800, whiteSpace:"nowrap", letterSpacing:0.2 } as React.CSSProperties,
   iconBtn:  { width:32, height:32, display:"inline-grid", placeItems:"center", border:"none", background:"transparent", color:MUTE, cursor:"pointer", borderRadius:0, marginLeft:2 } as React.CSSProperties,
@@ -196,7 +226,7 @@ export const sharedSt = {
   successSub:  { fontSize:13, color:MUTE, marginTop:6, fontWeight:600, fontVariantNumeric:"tabular-nums" as const },
 };
 
-// ── Global CSS string (inject once in index.tsx) ──────────────────────────
+// ── Global CSS string (inject once in index.tsx) ────────────────────────────
 export const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
   .ivh-card{background:${GLOW};border:1px solid ${LINE};box-shadow:${GLOW_SHADOW};}

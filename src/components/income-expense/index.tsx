@@ -4,7 +4,7 @@
 //
 // REGISTER is the day sheet, modelled on the paper/Excel book the studio
 // already keeps: pick a date, income left, expense right, each row a name, an
-// amount, cash/online — and on the expense side what the money went on.
+// amount, cash/online — and on both sides what the money was for.
 //
 // LEDGER is the same data read the other way: by person, or as a running
 // income/expense statement over a month, a chosen range, or everything.
@@ -12,6 +12,10 @@
 // Categories still live in the database; they're chosen for you here, so a
 // payment to a staff member keeps reporting as salary with nothing on screen
 // to think about.
+//
+// The PIN gate on this page is a UI lock only. DELETING an entry asks for the
+// PIN separately and the server verifies that one, so a removed money record
+// always leaves an audit entry naming who did it.
 // ─────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -95,10 +99,15 @@ export default function IncomeExpense() {
     else await load();
   };
 
+  /** Removing an entry erases money from the book, so the PIN is asked for
+   *  here and checked again on the server — the page-level unlock isn't
+   *  enough. The backend writes an audit row before the delete lands. */
   const removeEntry = async (id: string) => {
-    if (!window.confirm("Remove this entry?")) return;
+    const pin = window.prompt("Enter the security PIN to remove this entry:");
+    if (pin === null) return;                    // cancelled
+    if (!pin.trim()) { alert("Security PIN is required to remove an entry."); return; }
     try {
-      await cashbookApi.remove(id);
+      await cashbookApi.remove(id, pin.trim());
       await load();
     } catch (err: any) {
       alert(err?.response?.data?.error || "Could not remove that entry.");
@@ -257,7 +266,7 @@ function Column({
                 {e.method === "cash" ? "Cash" : "Online"}
               </span>
               <span style={{ ...st.rowAmt, color: tint }}>{rupeesExact(e.amount)}</span>
-              <button className="ie-del" style={st.del} onClick={() => onRemove(e.id)} title="Remove">×</button>
+              <button className="ie-del" style={st.del} onClick={() => onRemove(e.id)} title="Remove (needs the security PIN)">×</button>
             </div>
           ))
         )}
@@ -428,17 +437,19 @@ function AddRow({
         />
       )}
 
-      {/* What the money went on — expense only; income needs no explanation. */}
-      {!isIn && (
-        <input
-          className="ie-in"
-          style={{ ...st.in, width: "100%", marginTop: 7 }}
-          placeholder="Purpose (optional) — e.g. flex material, auto fare, tea"
-          value={purpose}
-          onChange={(e) => setPurpose(e.target.value)}
-          onKeyDown={onKey}
-        />
-      )}
+      {/* What the money was for — on BOTH sides. A receipt needs explaining as
+          much as a payment does: six months on, "Ramesh ₹4,000" means nothing
+          without "advance returned" or "banner job" next to it. */}
+      <input
+        className="ie-in"
+        style={{ ...st.in, width: "100%", marginTop: 7 }}
+        placeholder={isIn
+          ? "Purpose (optional) — e.g. counter sale, advance returned, banner job"
+          : "Purpose (optional) — e.g. flex material, auto fare, tea"}
+        value={purpose}
+        onChange={(e) => setPurpose(e.target.value)}
+        onKeyDown={onKey}
+      />
 
       {backdated && (
         <div style={st.backdated}>Saving to {fmtDate(when)} — the register will jump there.</div>
