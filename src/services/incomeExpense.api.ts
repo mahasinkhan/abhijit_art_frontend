@@ -26,6 +26,11 @@ export interface Entry {
     id: string; name: string; phone: string;
     kind: PayeeKind; role: string; userId?: string | null;
   } | null;
+  /** The entry's OWN number. Null when the linked person already carries it —
+   *  the server stores it here only when it differs, or when there is no
+   *  person at all (income: a counter sale isn't on the payroll). Read it as
+   *  `entry.phone || entry.payee?.phone` so both cases display the same. */
+  phone: string | null;
   notes: string;
   createdBy?: { id: string; name: string } | null;
   createdAt: string;
@@ -50,13 +55,25 @@ export interface Summary {
 export interface EntryFilters {
   from?: string; to?: string; kind?: string; category?: string;
   method?: string; search?: string; payeeId?: string;
+  /** Pulls every entry tied to a number, from either side — the entry's own
+   *  phone or the linked person's. Combines with `search` as AND. */
+  phone?: string;
 }
 
 export interface EntryInput {
   kind: TxnKind; date?: string; category: TxnCategory;
   title: string; amount: number; method: PayMethod;
-  payeeId?: string | null; notes?: string;
+  payeeId?: string | null; phone?: string; notes?: string;
 }
+
+/** Digits only — matches the server's normaliser, so a number typed with
+ *  spaces, +91 or a leading 0 still filters correctly. */
+export const phoneDigits = (v: string) =>
+  String(v || "").replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "").replace(/^0+(?=\d{10}$)/, "");
+
+/** The number to show for an entry, whichever side is holding it. */
+export const entryPhone = (e: Pick<Entry, "phone" | "payee">) =>
+  (e.phone || e.payee?.phone || "").trim();
 
 function params(f: EntryFilters) {
   const p: Record<string, string> = {};
