@@ -6,6 +6,12 @@
 // already keeps: pick a date, income left, expense right, each row a name, an
 // amount, cash/online — and on both sides what the money was for.
 //
+// Inside each side, CASH and ONLINE are kept apart with their own running
+// subtotal, because the drawer and the bank are counted separately at close.
+//
+// The add form sits directly under the column header, so a new entry never
+// needs a scroll to the bottom of a long day.
+//
 // LEDGER is the same data read the other way: by person, or as a running
 // income/expense statement over a month, a chosen range, or everything.
 //
@@ -28,6 +34,11 @@ import {
   ACCENT, GOLD, INK, MUTED, FAINT, LINE, LINE_SOFT, WASH, GREEN, RED, BLUE,
   rupeesExact, isoDate, fmtDate, fmtDayLabel, round2, initials, toCsv, downloadCsv,
 } from "./types";
+
+/* A phone may ride along on the entry itself (income, where there is no person
+ * record) or come from the linked payee (expense). Both are read the same way. */
+type EntryRow = Entry & { phone?: string | null };
+const phoneOf = (e: EntryRow) => (e.phone || e.payee?.phone || "").trim();
 
 /* ── date helpers ───────────────────────────────────────────────────────── */
 const shiftDay = (d: string, by: number) => {
@@ -58,7 +69,7 @@ export default function IncomeExpense() {
   const [tab, setTab]   = useState<Tab>("register");
   const [date, setDate] = useState(isoDate());
 
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entries, setEntries] = useState<EntryRow[]>([]);
   const [payees, setPayees]   = useState<Payee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
@@ -90,6 +101,11 @@ export default function IncomeExpense() {
   const outTotal = sum(expense);
   const net      = round2(inTotal - outTotal);
 
+  /* Cash and bank are reconciled separately at close, so the day's net is
+   * carried through split as well as combined. */
+  const cashNet   = round2(sum(income, "cash")   - sum(expense, "cash"));
+  const onlineNet = round2(sum(income, "online") - sum(expense, "online"));
+
   /** Each entry carries its own date, so yesterday's auto fare can be written
    *  up today. When that date isn't the one on screen the register follows it,
    *  otherwise the row would save correctly and then vanish. */
@@ -115,14 +131,19 @@ export default function IncomeExpense() {
   };
 
   /** A name typed on the expense side becomes a person, so the dropdown grows
-   *  on its own and nobody visits a separate screen to pay a new vendor. */
-  const addPayee = async (name: string): Promise<Payee | null> => {
+   *  on its own and nobody visits a separate screen to pay a new vendor. The
+   *  phone typed alongside it becomes that person's identity — two new names
+   *  with a blank number would collide on the unique phone. */
+  const addPayee = async (name: string, phone: string): Promise<Payee | null> => {
     try {
-      const row = await payeeApi.create({ name, phone: "", kind: "outsider" });
+      const row = await payeeApi.create({ name, phone: phone.trim(), kind: "outsider" });
       await loadPayees();
       return row;
-    } catch {
-      return null;   // duplicate or phone required — the entry still saves
+    } catch (err: any) {
+      // 409 hands back the person who already owns that number — reuse them.
+      const existing = err?.response?.data?.payee as Payee | undefined;
+      if (existing?.id) { await loadPayees(); return existing; }
+      return null;   // phone required or something else — the entry still saves
     }
   };
 
@@ -199,7 +220,13 @@ export default function IncomeExpense() {
             <div style={{ ...st.tally, background: net >= 0 ? "#f2faf5" : "#fdf3f5", borderColor: net >= 0 ? "#cfe8d8" : "#f3cfd7" }}>
               <div style={st.tallyLbl}>{net >= 0 ? "In hand today" : "Short by"}</div>
               <div style={{ ...st.tallyVal, color: net >= 0 ? GREEN : RED }}>{rupeesExact(Math.abs(net))}</div>
-              <div style={st.tallySplit}>{entries.length} entr{entries.length === 1 ? "y" : "ies"} today</div>
+              {/* Split the same way the money is actually held. */}
+              <div style={st.tallySplit}>
+                In drawer {rupeesExact(cashNet)} · In bank {rupeesExact(onlineNet)}
+              </div>
+              <div style={{ ...st.tallySplit, marginTop: 2, color: FAINT }}>
+                {entries.length} entr{entries.length === 1 ? "y" : "ies"} today
+              </div>
             </div>
           </div>
 
@@ -222,17 +249,22 @@ function Column({
   kind, rows, payees, loading, viewDate, onAdd, onRemove, onAddPayee,
 }: {
   kind: TxnKind;
-  rows: Entry[];
+  rows: EntryRow[];
   payees: Payee[];
   loading: boolean;
   viewDate: string;
   onAdd: (d: EntryInput & { date: string }) => Promise<void>;
   onRemove: (id: string) => void;
-  onAddPayee: (name: string) => Promise<Payee | null>;
+  onAddPayee: (name: string, phone: string) => Promise<Payee | null>;
 }) {
   const isIn  = kind === "income";
   const tint  = isIn ? GREEN : RED;
   const total = round2(rows.reduce((s, e) => s + e.amount, 0));
+
+  const cashRows   = rows.filter((e) => e.method === "cash");
+  const onlineRows = rows.filter((e) => e.method === "online");
+  const cashTotal   = round2(cashRows.reduce((s, e) => s + e.amount, 0));
+  const onlineTotal = round2(onlineRows.reduce((s, e) => s + e.amount, 0));
 
   return (
     <section style={{ ...st.col, borderTopColor: tint }}>
@@ -243,16 +275,78 @@ function Column({
         <span style={{ ...st.colTotal, color: tint }}>{rupeesExact(total)}</span>
       </div>
 
+      {/* The form sits at the TOP: a long day no longer has to be scrolled
+          past before the next entry can be written. */}
+      <AddRow kind={kind} payees={payees} viewDate={viewDate} onAdd={onAdd} onAddPayee={onAddPayee} />
+
       <div className="ie-colbody" style={st.colBody}>
         {loading ? (
           <div style={st.empty}>Loading…</div>
         ) : rows.length === 0 ? (
           <div style={st.empty}>
             <div style={{ fontSize: 30, opacity: 0.25, marginBottom: 8 }}>{isIn ? "＋" : "−"}</div>
-            Nothing yet — add the first {isIn ? "receipt" : "payment"} below.
+            Nothing yet — add the first {isIn ? "receipt" : "payment"} above.
           </div>
         ) : (
-          rows.map((e, i) => (
+          <>
+            <MethodGroup method="cash"   rows={cashRows}   total={cashTotal}   tint={tint} onRemove={onRemove} />
+            <MethodGroup method="online" rows={onlineRows} total={onlineTotal} tint={tint} onRemove={onRemove} />
+          </>
+        )}
+      </div>
+
+      {/* Foot repeats the split, so the two figures are readable without
+          scrolling back up through the rows. */}
+      {!loading && rows.length > 0 && (
+        <div style={st.colFoot}>
+          <span style={st.footCell}>
+            <span style={{ ...st.footLbl, color: "#7a6f66" }}>Cash</span>
+            <span style={{ ...st.footVal, color: tint }}>{rupeesExact(cashTotal)}</span>
+          </span>
+          <span style={{ ...st.footCell, borderLeft: `1px solid ${LINE}` }}>
+            <span style={{ ...st.footLbl, color: BLUE }}>Online</span>
+            <span style={{ ...st.footVal, color: tint }}>{rupeesExact(onlineTotal)}</span>
+          </span>
+          <span style={{ ...st.footCell, borderLeft: `1px solid ${LINE}`, background: "#fff" }}>
+            <span style={st.footLbl}>Total</span>
+            <span style={{ ...st.footVal, color: tint, fontSize: 15 }}>{rupeesExact(total)}</span>
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ── cash / online block inside a column ────────────────────────────────── */
+function MethodGroup({
+  method, rows, total, tint, onRemove,
+}: {
+  method: PayMethod;
+  rows: EntryRow[];
+  total: number;
+  tint: string;
+  onRemove: (id: string) => void;
+}) {
+  const isCash = method === "cash";
+  const label  = isCash ? "Cash" : "Online";
+  const accent = isCash ? "#7a6f66" : BLUE;
+
+  return (
+    <div>
+      {/* Sticky so the heading and its subtotal stay in view while the block
+          is scrolled — on a 20-entry day you still know which pile you're in. */}
+      <div style={{ ...st.grpHead, background: isCash ? "#f7f4ef" : "#eff5fc", borderLeftColor: accent }}>
+        <span style={{ ...st.grpLbl, color: accent }}>{label}</span>
+        <span style={st.grpCount}>{rows.length}</span>
+        <span style={{ ...st.grpTotal, color: rows.length ? tint : FAINT }}>{rupeesExact(total)}</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div style={st.grpEmpty}>No {label.toLowerCase()} entries.</div>
+      ) : (
+        rows.map((e, i) => {
+          const ph = phoneOf(e);
+          return (
             <div key={e.id} className="ie-row" style={st.row}>
               <span style={st.rowNo}>{i + 1}</span>
               <span style={{ ...st.avatar, background: e.payee ? (e.payee.kind === "employee" ? ACCENT : GOLD) : LINE_SOFT, color: e.payee ? "#fff" : FAINT }}>
@@ -260,20 +354,25 @@ function Column({
               </span>
               <span style={st.rowMain}>
                 <span style={st.rowName}>{e.title || e.payee?.name || "—"}</span>
-                {e.notes && <span style={st.rowNote}>{e.notes}</span>}
-              </span>
-              <span style={{ ...st.chip, ...(e.method === "cash" ? st.chipCash : st.chipOnline) }}>
-                {e.method === "cash" ? "Cash" : "Online"}
+                {(e.notes || ph) && (
+                  <span style={st.rowNote}>
+                    {ph && (
+                      <a href={`tel:${ph}`} className="ie-tel" style={st.tel} onClick={(ev) => ev.stopPropagation()}>
+                        {ph}
+                      </a>
+                    )}
+                    {ph && e.notes ? <span style={{ color: FAINT }}> · </span> : null}
+                    {e.notes}
+                  </span>
+                )}
               </span>
               <span style={{ ...st.rowAmt, color: tint }}>{rupeesExact(e.amount)}</span>
               <button className="ie-del" style={st.del} onClick={() => onRemove(e.id)} title="Remove (needs the security PIN)">×</button>
             </div>
-          ))
-        )}
-      </div>
-
-      <AddRow kind={kind} payees={payees} viewDate={viewDate} onAdd={onAdd} onAddPayee={onAddPayee} />
-    </section>
+          );
+        })
+      )}
+    </div>
   );
 }
 
@@ -285,7 +384,7 @@ function AddRow({
   payees: Payee[];
   viewDate: string;
   onAdd: (d: EntryInput & { date: string }) => Promise<void>;
-  onAddPayee: (name: string) => Promise<Payee | null>;
+  onAddPayee: (name: string, phone: string) => Promise<Payee | null>;
 }) {
   const isIn = kind === "income";
 
@@ -293,6 +392,7 @@ function AddRow({
   // are typed, because a counter sale isn't a person on the payroll.
   const [payeeId, setPayeeId] = useState("");
   const [typed,   setTyped]   = useState("");
+  const [phone,   setPhone]   = useState("");
   const [purpose, setPurpose] = useState("");
   const [amount,  setAmount]  = useState("");
   const [method,  setMethod]  = useState<PayMethod>("cash");
@@ -304,12 +404,26 @@ function AddRow({
   // arrows land on after that. Still free to override for a single entry.
   useEffect(() => { setWhen(viewDate); }, [viewDate]);
 
-  const nameRef = useRef<HTMLInputElement | null>(null);
-  const amtRef  = useRef<HTMLInputElement | null>(null);
-  const custom  = isIn || payeeId === "__other__";
+  const nameRef  = useRef<HTMLInputElement | null>(null);
+  const phoneRef = useRef<HTMLInputElement | null>(null);
+  const amtRef   = useRef<HTMLInputElement | null>(null);
+  const custom   = isIn || payeeId === "__other__";
 
   const employees = payees.filter((p) => p.kind === "employee");
   const outsiders = payees.filter((p) => p.kind !== "employee");
+
+  // Picking a saved person fills their number in, so it is visible before the
+  // entry is written rather than only afterwards on the row.
+  useEffect(() => {
+    if (isIn) return;
+    if (payeeId === "__other__") { setPhone(""); return; }
+    const p = payees.find((x) => x.id === payeeId);
+    setPhone(p?.phone || "");
+  }, [payeeId, payees, isIn]);
+
+  const reset = () => {
+    setAmount(""); setTyped(""); setPurpose(""); setPayeeId(""); setPhone("");
+  };
 
   const submit = async () => {
     let picked = payees.find((p) => p.id === payeeId) || null;
@@ -321,9 +435,9 @@ function AddRow({
 
     setBusy(true); setErr("");
     try {
-      // A brand-new expense name is remembered as a person, so it's one tap
-      // next time instead of retyping.
-      if (!isIn && payeeId === "__other__") picked = await onAddPayee(name);
+      // A brand-new expense name is remembered as a person, with the number
+      // typed here as its identity, so it's one tap next time.
+      if (!isIn && payeeId === "__other__") picked = await onAddPayee(name, phone);
 
       await onAdd({
         kind,
@@ -335,9 +449,10 @@ function AddRow({
         amount: round2(n),
         method,
         payeeId: picked?.id ?? null,
+        phone: phone.trim(),
         notes: purpose.trim(),
-      });
-      setAmount(""); setTyped(""); setPurpose(""); setPayeeId("");
+      } as EntryInput & { date: string });
+      reset();
       nameRef.current?.focus();
     } catch (e: any) {
       setErr(e?.response?.data?.error || "Could not save that.");
@@ -351,20 +466,21 @@ function AddRow({
 
   return (
     <div style={st.addWrap}>
+      {/* line 1 — who, their number, how much */}
       <div style={st.addRow}>
         {isIn ? (
           <input
             ref={nameRef} className="ie-in"
-            style={{ ...st.in, flex: 1, minWidth: 110 }}
+            style={{ ...st.in, flex: 1, minWidth: 120 }}
             placeholder="Name"
             value={typed}
             onChange={(e) => { setTyped(e.target.value); setErr(""); }}
-            onKeyDown={(e) => { if (e.key === "Enter") amtRef.current?.focus(); }}
+            onKeyDown={(e) => { if (e.key === "Enter") phoneRef.current?.focus(); }}
           />
         ) : (
           <select
             className="ie-in"
-            style={{ ...st.in, flex: 1, minWidth: 110, cursor: "pointer" }}
+            style={{ ...st.in, flex: 1, minWidth: 120, cursor: "pointer" }}
             value={payeeId}
             onChange={(e) => { setPayeeId(e.target.value); setErr(""); }}
           >
@@ -384,12 +500,52 @@ function AddRow({
         )}
 
         <input
+          ref={phoneRef} className="ie-in"
+          style={{ ...st.in, width: 138 }}
+          type="tel" inputMode="tel" maxLength={15}
+          placeholder="Phone (optional)"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") amtRef.current?.focus(); }}
+          title="Contact number for this entry"
+        />
+
+        <input
           ref={amtRef} className="ie-in"
-          style={{ ...st.in, width: 100, fontWeight: 800, fontSize: 14.5 }}
+          style={{ ...st.in, width: 108, fontWeight: 800, fontSize: 14.5 }}
           type="number" min="0" inputMode="decimal"
           placeholder="₹ Amount"
           value={amount}
           onChange={(e) => { setAmount(e.target.value); setErr(""); }}
+          onKeyDown={onKey}
+        />
+      </div>
+
+      {!isIn && payeeId === "__other__" && (
+        <input
+          ref={nameRef} className="ie-in"
+          style={{ ...st.in, width: "100%", marginTop: 7 }}
+          placeholder="Type the new name — it'll be saved with the number above"
+          value={typed}
+          onChange={(e) => { setTyped(e.target.value); setErr(""); }}
+          onKeyDown={(e) => { if (e.key === "Enter") phoneRef.current?.focus(); }}
+          autoFocus
+        />
+      )}
+
+      {/* line 2 — what for, when, how paid */}
+      <div style={{ ...st.addRow, marginTop: 7 }}>
+        {/* What the money was for — on BOTH sides. A receipt needs explaining
+            as much as a payment does: six months on, "Ramesh ₹4,000" means
+            nothing without "advance returned" or "banner job" next to it. */}
+        <input
+          className="ie-in"
+          style={{ ...st.in, flex: 1, minWidth: 140 }}
+          placeholder={isIn
+            ? "Purpose (optional) — counter sale, advance returned…"
+            : "Purpose (optional) — flex material, auto fare, tea…"}
+          value={purpose}
+          onChange={(e) => setPurpose(e.target.value)}
           onKeyDown={onKey}
         />
 
@@ -425,32 +581,6 @@ function AddRow({
         >{busy ? "…" : "Add"}</button>
       </div>
 
-      {!isIn && payeeId === "__other__" && (
-        <input
-          ref={nameRef} className="ie-in"
-          style={{ ...st.in, width: "100%", marginTop: 7 }}
-          placeholder="Type the new name — it'll be saved for next time"
-          value={typed}
-          onChange={(e) => { setTyped(e.target.value); setErr(""); }}
-          onKeyDown={(e) => { if (e.key === "Enter") amtRef.current?.focus(); }}
-          autoFocus
-        />
-      )}
-
-      {/* What the money was for — on BOTH sides. A receipt needs explaining as
-          much as a payment does: six months on, "Ramesh ₹4,000" means nothing
-          without "advance returned" or "banner job" next to it. */}
-      <input
-        className="ie-in"
-        style={{ ...st.in, width: "100%", marginTop: 7 }}
-        placeholder={isIn
-          ? "Purpose (optional) — e.g. counter sale, advance returned, banner job"
-          : "Purpose (optional) — e.g. flex material, auto fare, tea"}
-        value={purpose}
-        onChange={(e) => setPurpose(e.target.value)}
-        onKeyDown={onKey}
-      />
-
       {backdated && (
         <div style={st.backdated}>Saving to {fmtDate(when)} — the register will jump there.</div>
       )}
@@ -466,7 +596,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
   const [from, setFrom] = useState(monthStart(anchorDate));
   const [to,   setTo]   = useState(isoDate());
 
-  const [rows, setRows]     = useState<Entry[]>([]);
+  const [rows, setRows]     = useState<EntryRow[]>([]);
   const [loading, setLoad]  = useState(true);
   const [err, setErr]       = useState("");
   const [person, setPerson] = useState("");   // drill-down inside By person
@@ -492,7 +622,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
   const expenseRows = useMemo(() => rows.filter((e) => e.kind === "expense"), [rows]);
 
   /** Oldest first with a running total — the way a passbook reads. */
-  const withRunning = (list: Entry[]) => {
+  const withRunning = (list: EntryRow[]) => {
     const sorted = [...list].sort((a, b) =>
       a.date.localeCompare(b.date) || (a.createdAt || "").localeCompare(b.createdAt || ""));
     let run = 0;
@@ -500,10 +630,10 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
   };
 
   const people = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; kind: string; paid: number; count: number }>();
+    const map = new Map<string, { id: string; name: string; kind: string; phone: string; paid: number; count: number }>();
     for (const e of expenseRows) {
       if (!e.payeeId || !e.payee) continue;
-      if (!map.has(e.payeeId)) map.set(e.payeeId, { id: e.payeeId, name: e.payee.name, kind: e.payee.kind, paid: 0, count: 0 });
+      if (!map.has(e.payeeId)) map.set(e.payeeId, { id: e.payeeId, name: e.payee.name, kind: e.payee.kind, phone: e.payee.phone || "", paid: 0, count: 0 });
       const p = map.get(e.payeeId)!;
       p.paid = round2(p.paid + e.amount); p.count += 1;
     }
@@ -520,24 +650,29 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
     : span === "all" ? "All time"
     : `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
 
-  const exportRows = (list: (Entry & { running?: number })[], name: string) => {
-    const header = ["Date", "Name", "Purpose", "Person", "Method", "Amount", "Running total"];
+  const exportRows = (list: (EntryRow & { running?: number })[], name: string) => {
+    const header = ["Date", "Name", "Phone", "Purpose", "Person", "Method", "Amount", "Running total"];
     const body = list.map((e) => [
-      fmtDate(e.date.slice(0, 10)), e.title, e.notes || "",
+      fmtDate(e.date.slice(0, 10)), e.title, phoneOf(e), e.notes || "",
       e.payee?.name || "", e.method, e.amount, e.running ?? "",
     ]);
     downloadCsv(`${name}-${range.from}-to-${range.to}.csv`, toCsv([header, ...body]));
   };
 
-  const printRows = (list: (Entry & { running?: number })[], heading: string, total: number, tint: string) => {
-    const body = list.map((e) => `
+  const printRows = (list: (EntryRow & { running?: number })[], heading: string, total: number, tint: string) => {
+    const cashTotal   = sum(list, "cash");
+    const onlineTotal = sum(list, "online");
+    const body = list.map((e) => {
+      const ph = phoneOf(e);
+      return `
       <tr>
         <td>${fmtDate(e.date.slice(0, 10))}</td>
-        <td><b>${e.title}</b>${e.notes ? `<div class="n">${e.notes}</div>` : ""}</td>
+        <td><b>${e.title}</b>${ph ? `<div class="n">${ph}</div>` : ""}${e.notes ? `<div class="n">${e.notes}</div>` : ""}</td>
         <td><span class="m">${e.method === "cash" ? "Cash" : "Online"}</span></td>
         <td class="amt">${rupeesExact(e.amount)}</td>
         <td class="run">${rupeesExact(e.running || 0)}</td>
-      </tr>`).join("");
+      </tr>`;
+    }).join("");
     const w = window.open("", "_blank", "width=860,height=720");
     if (!w) return;
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${heading}</title><style>
@@ -556,7 +691,8 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
       td.amt{color:${tint};font-weight:800;text-align:right;white-space:nowrap}
       td.run{font-weight:700;text-align:right;white-space:nowrap}
       .m{background:#f1ece3;color:#7a6f66;padding:1px 7px;font-size:10.5px;font-weight:700}
-      tfoot td{padding:13px 11px;border-top:2px solid ${tint};font-weight:900;font-size:14px}
+      tfoot td{padding:11px;border-top:1px solid #e8e0d4;font-weight:700;font-size:12.5px}
+      tfoot tr.grand td{border-top:2px solid ${tint};font-weight:900;font-size:14px}
       tfoot .lbl{color:#8a8378;text-transform:uppercase;font-size:11px;letter-spacing:.5px;font-weight:700}
       tfoot .tot{text-align:right;color:${tint}}
       .foot{margin-top:20px;font-size:10.5px;color:#b3ab9f;text-align:center}
@@ -567,9 +703,13 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
         <div class="title"><h1>${heading}</h1><div class="per">${spanLabel}</div></div>
       </div>
       <table>
-        <thead><tr><th>Date</th><th>Name &amp; purpose</th><th>Method</th><th>Amount</th><th>Running</th></tr></thead>
+        <thead><tr><th>Date</th><th>Name, phone &amp; purpose</th><th>Method</th><th>Amount</th><th>Running</th></tr></thead>
         <tbody>${body}</tbody>
-        <tfoot><tr><td class="lbl" colspan="3">Total · ${list.length} ${list.length === 1 ? "entry" : "entries"}</td><td class="tot" colspan="2">${rupeesExact(total)}</td></tr></tfoot>
+        <tfoot>
+          <tr><td class="lbl" colspan="3">Cash</td><td class="tot" colspan="2">${rupeesExact(cashTotal)}</td></tr>
+          <tr><td class="lbl" colspan="3">Online</td><td class="tot" colspan="2">${rupeesExact(onlineTotal)}</td></tr>
+          <tr class="grand"><td class="lbl" colspan="3">Total · ${list.length} ${list.length === 1 ? "entry" : "entries"}</td><td class="tot" colspan="2">${rupeesExact(total)}</td></tr>
+        </tfoot>
       </table>
       <div class="foot">Generated ${fmtDate(isoDate())} · Abhijit Art</div>
     </div><script>window.onload=function(){window.print()}</script></body></html>`);
@@ -641,7 +781,9 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
                   </span>
                   <span style={st.rowMain}>
                     <span style={{ ...st.rowName, fontSize: 14 }}>{p.name}</span>
-                    <span style={st.rowNote}>{p.count} {p.count === 1 ? "entry" : "entries"}</span>
+                    <span style={st.rowNote}>
+                      {p.phone ? `${p.phone} · ` : ""}{p.count} {p.count === 1 ? "entry" : "entries"}
+                    </span>
                   </span>
                   <span style={{ ...st.rowAmt, color: RED }}>{rupeesExact(p.paid)}</span>
                   <span style={{ color: FAINT, fontSize: 13, width: 16, textAlign: "right" }}>›</span>
@@ -671,13 +813,15 @@ function LedgerTable({
   heading, sub, rows, tint, onBack, onExport, onPrint,
 }: {
   heading: string; sub: string;
-  rows: (Entry & { running: number })[];
+  rows: (EntryRow & { running: number })[];
   tint: string;
   onBack?: () => void;
   onExport: () => void;
   onPrint: () => void;
 }) {
-  const total = round2(rows.reduce((s, e) => s + e.amount, 0));
+  const total       = round2(rows.reduce((s, e) => s + e.amount, 0));
+  const cashTotal   = sum(rows, "cash");
+  const onlineTotal = sum(rows, "online");
 
   return (
     <div style={st.panel}>
@@ -687,7 +831,21 @@ function LedgerTable({
           <div style={st.panelTitle}>{heading}</div>
           <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{sub} · {rows.length} {rows.length === 1 ? "entry" : "entries"}</div>
         </div>
-        <span style={{ ...st.panelTotal, color: tint, marginLeft: "auto" }}>{rupeesExact(total)}</span>
+
+        {/* The split is carried into the ledger too, so a month reads the same
+            way a day does. */}
+        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <span style={st.splitPill}>
+            <span style={{ ...st.splitLbl, color: "#7a6f66" }}>Cash</span>
+            <span style={{ ...st.splitVal, color: tint }}>{rupeesExact(cashTotal)}</span>
+          </span>
+          <span style={st.splitPill}>
+            <span style={{ ...st.splitLbl, color: BLUE }}>Online</span>
+            <span style={{ ...st.splitVal, color: tint }}>{rupeesExact(onlineTotal)}</span>
+          </span>
+          <span style={{ ...st.panelTotal, color: tint }}>{rupeesExact(total)}</span>
+        </span>
+
         <button className="ie-ghost" style={st.ghostBtn} onClick={onExport} disabled={!rows.length}>CSV</button>
         <button className="ie-ghost" style={{ ...st.ghostBtn, background: INK, color: "#fff", borderColor: INK }} onClick={onPrint} disabled={!rows.length}>Print</button>
       </div>
@@ -700,29 +858,37 @@ function LedgerTable({
             <thead>
               <tr>
                 <th style={st.th}>Date</th>
-                <th style={st.th}>Name &amp; purpose</th>
+                <th style={st.th}>Name, phone &amp; purpose</th>
                 <th style={st.th}>Method</th>
                 <th style={{ ...st.th, textAlign: "right" }}>Amount</th>
                 <th style={{ ...st.th, textAlign: "right" }}>Running</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((e) => (
-                <tr key={e.id} className="ie-trow">
-                  <td style={{ ...st.td, whiteSpace: "nowrap", color: MUTED }}>{fmtDate(e.date.slice(0, 10))}</td>
-                  <td style={st.td}>
-                    <div style={{ fontWeight: 700 }}>{e.title}</div>
-                    {e.notes && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{e.notes}</div>}
-                  </td>
-                  <td style={st.td}>
-                    <span style={{ ...st.chip, ...(e.method === "cash" ? st.chipCash : st.chipOnline) }}>
-                      {e.method === "cash" ? "Cash" : "Online"}
-                    </span>
-                  </td>
-                  <td style={{ ...st.td, textAlign: "right", fontWeight: 800, color: tint, whiteSpace: "nowrap" }}>{rupeesExact(e.amount)}</td>
-                  <td style={{ ...st.td, textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{rupeesExact(e.running)}</td>
-                </tr>
-              ))}
+              {rows.map((e) => {
+                const ph = phoneOf(e);
+                return (
+                  <tr key={e.id} className="ie-trow">
+                    <td style={{ ...st.td, whiteSpace: "nowrap", color: MUTED }}>{fmtDate(e.date.slice(0, 10))}</td>
+                    <td style={st.td}>
+                      <div style={{ fontWeight: 700 }}>{e.title}</div>
+                      {ph && (
+                        <div style={{ fontSize: 11.5, marginTop: 2 }}>
+                          <a href={`tel:${ph}`} className="ie-tel" style={st.tel}>{ph}</a>
+                        </div>
+                      )}
+                      {e.notes && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{e.notes}</div>}
+                    </td>
+                    <td style={st.td}>
+                      <span style={{ ...st.chip, ...(e.method === "cash" ? st.chipCash : st.chipOnline) }}>
+                        {e.method === "cash" ? "Cash" : "Online"}
+                      </span>
+                    </td>
+                    <td style={{ ...st.td, textAlign: "right", fontWeight: 800, color: tint, whiteSpace: "nowrap" }}>{rupeesExact(e.amount)}</td>
+                    <td style={{ ...st.td, textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{rupeesExact(e.running)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -739,7 +905,18 @@ function Tally({ label, value, color, accent, cash, online }: {
     <div style={{ ...st.tally, background: accent, borderColor: `${color}22` }}>
       <div style={st.tallyLbl}>{label}</div>
       <div style={{ ...st.tallyVal, color }}>{rupeesExact(value)}</div>
-      <div style={st.tallySplit}>Cash {rupeesExact(cash)} · Online {rupeesExact(online)}</div>
+      {/* Two figures on their own line each — the split is read as often as
+          the total, so it isn't squeezed into small print. */}
+      <div style={st.tallyRow}>
+        <span style={{ ...st.tallyPill, background: "#fff" }}>
+          <span style={{ ...st.tallyPillLbl, color: "#7a6f66" }}>Cash</span>
+          <span style={{ ...st.tallyPillVal, color }}>{rupeesExact(cash)}</span>
+        </span>
+        <span style={{ ...st.tallyPill, background: "#fff" }}>
+          <span style={{ ...st.tallyPillLbl, color: BLUE }}>Online</span>
+          <span style={{ ...st.tallyPillVal, color }}>{rupeesExact(online)}</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -758,6 +935,8 @@ const CSS = `
   .ie-ghost:disabled{opacity:.45;cursor:not-allowed;}
   .ie-in:focus{outline:none;border-color:${ACCENT};box-shadow:0 0 0 3px ${ACCENT}1f;}
   .ie-trow:hover td{background:${WASH};}
+  .ie-tel{color:${BLUE};text-decoration:none;}
+  .ie-tel:hover{text-decoration:underline;}
   .ie-colbody::-webkit-scrollbar{width:8px;}
   .ie-colbody::-webkit-scrollbar-thumb{background:${LINE};border-radius:8px;}
   @media (max-width: 900px){ .ie-cols{grid-template-columns:1fr !important;} }
@@ -785,6 +964,10 @@ const st: Record<string, React.CSSProperties> = {
   tallyLbl:  { fontSize: 10.5, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: MUTED, marginBottom: 5 },
   tallyVal:  { fontSize: 22, fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 },
   tallySplit:{ fontSize: 11.5, color: MUTED, marginTop: 5 },
+  tallyRow:  { display: "flex", gap: 8, marginTop: 9, flexWrap: "wrap" },
+  tallyPill: { display: "inline-flex", alignItems: "baseline", gap: 6, padding: "4px 9px", border: `1px solid ${LINE}` },
+  tallyPillLbl: { fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" },
+  tallyPillVal: { fontSize: 12.5, fontWeight: 800, fontVariantNumeric: "tabular-nums" },
 
   columns:   { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, flex: 1, minHeight: 0 },
   col:       { background: "#fff", border: `1px solid ${LINE}`, borderTop: "3px solid", display: "flex", flexDirection: "column", minHeight: 0, boxShadow: "0 1px 3px rgba(42,35,29,.05)" },
@@ -794,7 +977,17 @@ const st: Record<string, React.CSSProperties> = {
   colCount:  { fontSize: 11, fontWeight: 700, color: MUTED, background: "#fff", border: `1px solid ${LINE}`, padding: "1px 7px", borderRadius: 20 },
   colTotal:  { marginLeft: "auto", fontSize: 17, fontWeight: 800, fontVariantNumeric: "tabular-nums" },
   colBody:   { flex: 1, minHeight: 190, overflowY: "auto" },
+  colFoot:   { display: "flex", borderTop: `1px solid ${LINE}`, background: WASH },
+  footCell:  { flex: 1, display: "flex", flexDirection: "column", gap: 2, padding: "9px 14px", minWidth: 0 },
+  footLbl:   { fontSize: 9.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: MUTED },
+  footVal:   { fontSize: 13.5, fontWeight: 800, fontVariantNumeric: "tabular-nums" },
   empty:     { padding: "48px 16px", textAlign: "center", color: FAINT, fontSize: 13 },
+
+  grpHead:   { position: "sticky", top: 0, zIndex: 1, display: "flex", alignItems: "center", gap: 8, padding: "7px 16px 7px 13px", borderTop: `1px solid ${LINE_SOFT}`, borderBottom: `1px solid ${LINE_SOFT}`, borderLeft: "3px solid" },
+  grpLbl:    { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.9, textTransform: "uppercase" },
+  grpCount:  { fontSize: 10.5, fontWeight: 700, color: MUTED, background: "#fff", border: `1px solid ${LINE}`, padding: "0 6px", borderRadius: 20 },
+  grpTotal:  { marginLeft: "auto", fontSize: 13.5, fontWeight: 800, fontVariantNumeric: "tabular-nums" },
+  grpEmpty:  { padding: "10px 16px", fontSize: 12, color: FAINT },
 
   row:       { display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: `1px solid ${LINE_SOFT}`, transition: "background .12s" },
   rowNo:     { fontSize: 11.5, color: FAINT, width: 16, flexShrink: 0, fontVariantNumeric: "tabular-nums", textAlign: "right" },
@@ -802,13 +995,14 @@ const st: Record<string, React.CSSProperties> = {
   rowMain:   { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 },
   rowName:   { fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   rowNote:   { fontSize: 11.5, color: MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  tel:       { fontWeight: 600, fontVariantNumeric: "tabular-nums" },
   chip:      { fontSize: 10, fontWeight: 700, padding: "2px 8px", textTransform: "uppercase", letterSpacing: 0.3, flexShrink: 0, borderRadius: 3 },
   chipCash:  { background: "#f1ece3", color: "#7a6f66" },
   chipOnline:{ background: "#e6eff9", color: BLUE },
   rowAmt:    { fontSize: 14.5, fontWeight: 800, fontVariantNumeric: "tabular-nums", flexShrink: 0, minWidth: 78, textAlign: "right" },
   del:       { width: 24, height: 24, border: "none", background: "transparent", color: FAINT, fontSize: 18, lineHeight: 1, cursor: "pointer", flexShrink: 0, padding: 0, borderRadius: 4, transition: "all .12s" },
 
-  addWrap:   { padding: "12px 16px", borderTop: `1px solid ${LINE}`, background: WASH },
+  addWrap:   { padding: "12px 16px", borderBottom: `1px solid ${LINE}`, background: WASH },
   addRow:    { display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" },
   in:        { boxSizing: "border-box", padding: "9px 11px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK, colorScheme: "light", transition: "border-color .15s, box-shadow .15s" },
   seg:       { display: "flex", border: `1px solid ${LINE}`, flexShrink: 0 },
@@ -822,6 +1016,9 @@ const st: Record<string, React.CSSProperties> = {
   panelHead: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${LINE_SOFT}`, background: WASH, flexWrap: "wrap" },
   panelTitle:{ fontSize: 14.5, fontWeight: 800 },
   panelTotal:{ fontSize: 18, fontWeight: 800, fontVariantNumeric: "tabular-nums" },
+  splitPill: { display: "inline-flex", alignItems: "baseline", gap: 6 },
+  splitLbl:  { fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" },
+  splitVal:  { fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums" },
   ghostBtn:  { padding: "7px 15px", border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", transition: "filter .15s" },
 
   table:     { width: "100%", borderCollapse: "collapse", fontSize: 13 },
