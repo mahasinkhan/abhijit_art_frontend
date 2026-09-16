@@ -12,6 +12,11 @@
 // The add form sits directly under the column header, so a new entry never
 // needs a scroll to the bottom of a long day.
 //
+// A new name is saved as a person by NAME — the number is optional, because
+// at the counter a name is always written down and a number often never is.
+// Saving a person is the one step here that can fail for a reason worth
+// reading, so when it does the message is shown rather than swallowed.
+//
 // LEDGER is the same data read the other way: by person, or as a running
 // income/expense statement over a month, a chosen range, or everything.
 //
@@ -28,17 +33,20 @@ import {
   cashbookApi,
   type Entry, type EntryInput, type PayMethod, type TxnKind,
 } from "../../services/incomeExpense.api";
-import { payeeApi, type Payee } from "../../services/payee.api";
+import { payeeApi, type Payee, type PayeeKind } from "../../services/payee.api";
 import PinGate, { useCashbookLock } from "./PinGate";
 import {
   ACCENT, GOLD, INK, MUTED, FAINT, LINE, LINE_SOFT, WASH, GREEN, RED, BLUE,
   rupeesExact, isoDate, fmtDate, fmtDayLabel, round2, initials, toCsv, downloadCsv,
 } from "./types";
 
-/* A phone may ride along on the entry itself (income, where there is no person
- * record) or come from the linked payee (expense). Both are read the same way. */
+/* A phone may ride along on the entry itself (income, where there is often no
+ * person record) or come from the linked payee. Both are read the same way. */
 type EntryRow = Entry & { phone?: string | null };
 const phoneOf = (e: EntryRow) => (e.phone || e.payee?.phone || "").trim();
+
+/** What came back from trying to save a person: the row, or why it failed. */
+type PayeeResult = { payee: Payee } | { error: string };
 
 /* ── date helpers ───────────────────────────────────────────────────────── */
 const shiftDay = (d: string, by: number) => {
@@ -130,20 +138,25 @@ export default function IncomeExpense() {
     }
   };
 
-  /** A name typed on the expense side becomes a person, so the dropdown grows
-   *  on its own and nobody visits a separate screen to pay a new vendor. The
-   *  phone typed alongside it becomes that person's identity — two new names
-   *  with a blank number would collide on the unique phone. */
-  const addPayee = async (name: string, phone: string): Promise<Payee | null> => {
+  /**
+   * A name typed here becomes a person, so the dropdown grows on its own and
+   * nobody visits a separate screen to pay a new vendor.
+   *
+   * The NAME is the identity, so the number can be left blank — and a name
+   * already on file comes back from the server as a 409 carrying that record,
+   * which is reused rather than treated as a failure. Anything else is a real
+   * error and is returned for the form to show: silently dropping it is what
+   * used to leave new names out of the list with nothing to explain it.
+   */
+  const addPayee = async (name: string, phone: string, kind: PayeeKind): Promise<PayeeResult> => {
     try {
-      const row = await payeeApi.create({ name, phone: phone.trim(), kind: "outsider" });
+      const row = await payeeApi.create({ name, phone: phone.trim(), kind });
       await loadPayees();
-      return row;
+      return { payee: row };
     } catch (err: any) {
-      // 409 hands back the person who already owns that number — reuse them.
       const existing = err?.response?.data?.payee as Payee | undefined;
-      if (existing?.id) { await loadPayees(); return existing; }
-      return null;   // phone required or something else — the entry still saves
+      if (existing?.id) { await loadPayees(); return { payee: existing }; }
+      return { error: err?.response?.data?.error || "Could not save that name." };
     }
   };
 
@@ -255,7 +268,7 @@ function Column({
   viewDate: string;
   onAdd: (d: EntryInput & { date: string }) => Promise<void>;
   onRemove: (id: string) => void;
-  onAddPayee: (name: string, phone: string) => Promise<Payee | null>;
+  onAddPayee: (name: string, phone: string, kind: PayeeKind) => Promise<PayeeResult>;
 }) {
   const isIn  = kind === "income";
   const tint  = isIn ? GREEN : RED;
@@ -384,21 +397,20 @@ function AddRow({
   payees: Payee[];
   viewDate: string;
   onAdd: (d: EntryInput & { date: string }) => Promise<void>;
-  onAddPayee: (name: string, phone: string) => Promise<Payee | null>;
+  onAddPayee: (name: string, phone: string, kind: PayeeKind) => Promise<PayeeResult>;
 }) {
   const isIn = kind === "income";
 
-  // Expense names come from the people already in the database; income names
-  // are typed, because a counter sale isn't a person on the payroll.
-  const [payeeId, setPayeeId] = useState("");
-  const [typed,   setTyped]   = useState("");
-  const [phone,   setPhone]   = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [amount,  setAmount]  = useState("");
-  const [method,  setMethod]  = useState<PayMethod>("cash");
-  const [when,    setWhen]    = useState(viewDate);
-  const [busy,    setBusy]    = useState(false);
-  const [err,     setErr]     = useState("");
+  const [payeeId,   setPayeeId]   = useState("");
+  const [typed,     setTyped]     = useState("");
+  const [newKind,   setNewKind]   = useState<PayeeKind>("outsider");
+  const [phone,     setPhone]     = useState("");
+  const [purpose,   setPurpose]   = useState("");
+  const [amount,    setAmount]    = useState("");
+  const [method,    setMethod]    = useState<PayMethod>("cash");
+  const [when,      setWhen]      = useState(viewDate);
+  const [busy,      setBusy]      = useState(false);
+  const [err,       setErr]       = useState("");
 
   // Follow the day being viewed — today when the page opens, and whatever the
   // arrows land on after that. Still free to override for a single entry.
@@ -407,7 +419,8 @@ function AddRow({
   const nameRef  = useRef<HTMLInputElement | null>(null);
   const phoneRef = useRef<HTMLInputElement | null>(null);
   const amtRef   = useRef<HTMLInputElement | null>(null);
-  const custom   = isIn || payeeId === "__other__";
+
+  const isNew = payeeId === "__other__";
 
   const employees = payees.filter((p) => p.kind === "employee");
   const outsiders = payees.filter((p) => p.kind !== "employee");
@@ -415,36 +428,42 @@ function AddRow({
   // Picking a saved person fills their number in, so it is visible before the
   // entry is written rather than only afterwards on the row.
   useEffect(() => {
-    if (isIn) return;
-    if (payeeId === "__other__") { setPhone(""); return; }
+    if (isNew) { setPhone(""); return; }
     const p = payees.find((x) => x.id === payeeId);
     setPhone(p?.phone || "");
-  }, [payeeId, payees, isIn]);
+  }, [payeeId, payees, isNew]);
 
   const reset = () => {
     setAmount(""); setTyped(""); setPurpose(""); setPayeeId(""); setPhone("");
+    setNewKind("outsider");
   };
 
   const submit = async () => {
     let picked = payees.find((p) => p.id === payeeId) || null;
-    const name = custom ? typed.trim() : (picked?.name || "");
+    const name = isNew ? typed.trim() : (picked?.name || "");
     const n    = Number(amount);
 
-    if (!name)                         { setErr("Enter a name."); return; }
+    if (!name)                         { setErr("Choose a person, or pick “+ New name…”."); return; }
     if (!Number.isFinite(n) || n <= 0) { setErr("Enter an amount."); return; }
 
     setBusy(true); setErr("");
     try {
-      // A brand-new expense name is remembered as a person, with the number
-      // typed here as its identity, so it's one tap next time.
-      if (!isIn && payeeId === "__other__") picked = await onAddPayee(name, phone);
+      // A brand-new name is remembered as a person — staff or outside, as
+      // chosen. The number is optional; leaving it blank is normal.
+      if (isNew) {
+        const r = await onAddPayee(name, phone, newKind);
+        if ("error" in r) { setErr(r.error); setBusy(false); return; }
+        picked = r.payee;
+      }
 
       await onAdd({
         kind,
         date: when,
-        // The picked person drives the category, so staff payments still land
-        // under salary without a category selector on screen.
-        category: isIn ? "other_income" : (picked?.kind === "employee" ? "salary" : "other"),
+        // The person drives the category, so staff payments still report as
+        // salary with no category selector on screen.
+        category: isIn
+          ? (picked?.kind === "employee" ? "loan_back" : "other_income")
+          : (picked?.kind === "employee" ? "salary"    : "other"),
         title: name,
         amount: round2(n),
         method,
@@ -468,36 +487,27 @@ function AddRow({
     <div style={st.addWrap}>
       {/* line 1 — who, their number, how much */}
       <div style={st.addRow}>
-        {isIn ? (
-          <input
-            ref={nameRef} className="ie-in"
-            style={{ ...st.in, flex: 1, minWidth: 120 }}
-            placeholder="Name"
-            value={typed}
-            onChange={(e) => { setTyped(e.target.value); setErr(""); }}
-            onKeyDown={(e) => { if (e.key === "Enter") phoneRef.current?.focus(); }}
-          />
-        ) : (
-          <select
-            className="ie-in"
-            style={{ ...st.in, flex: 1, minWidth: 120, cursor: "pointer" }}
-            value={payeeId}
-            onChange={(e) => { setPayeeId(e.target.value); setErr(""); }}
-          >
-            <option value="">Choose person…</option>
-            {employees.length > 0 && (
-              <optgroup label="Employees">
-                {employees.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </optgroup>
-            )}
-            {outsiders.length > 0 && (
-              <optgroup label="Others">
-                {outsiders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </optgroup>
-            )}
-            <option value="__other__">+ New name…</option>
-          </select>
-        )}
+        {/* Both sides pick from the SAME list of people now, so a customer who
+            pays at the counter and is later paid for a job shows one history. */}
+        <select
+          className="ie-in"
+          style={{ ...st.in, flex: 1, minWidth: 120, cursor: "pointer" }}
+          value={payeeId}
+          onChange={(e) => { setPayeeId(e.target.value); setErr(""); }}
+        >
+          <option value="">Choose person…</option>
+          {employees.length > 0 && (
+            <optgroup label="Employees">
+              {employees.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </optgroup>
+          )}
+          {outsiders.length > 0 && (
+            <optgroup label="Others">
+              {outsiders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </optgroup>
+          )}
+          <option value="__other__">+ New name…</option>
+        </select>
 
         <input
           ref={phoneRef} className="ie-in"
@@ -505,9 +515,9 @@ function AddRow({
           type="tel" inputMode="tel" maxLength={15}
           placeholder="Phone (optional)"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => { setPhone(e.target.value); setErr(""); }}
           onKeyDown={(e) => { if (e.key === "Enter") amtRef.current?.focus(); }}
-          title="Contact number for this entry"
+          title="Contact number — leave it blank if you don't have one"
         />
 
         <input
@@ -521,16 +531,34 @@ function AddRow({
         />
       </div>
 
-      {!isIn && payeeId === "__other__" && (
-        <input
-          ref={nameRef} className="ie-in"
-          style={{ ...st.in, width: "100%", marginTop: 7 }}
-          placeholder="Type the new name — it'll be saved with the number above"
-          value={typed}
-          onChange={(e) => { setTyped(e.target.value); setErr(""); }}
-          onKeyDown={(e) => { if (e.key === "Enter") phoneRef.current?.focus(); }}
-          autoFocus
-        />
+      {/* A new name needs two things from you: the name, and which list it
+          belongs in. The number stays optional. */}
+      {isNew && (
+        <div style={st.newWrap}>
+          <input
+            ref={nameRef} className="ie-in"
+            style={{ ...st.in, flex: 1, minWidth: 160 }}
+            placeholder="New name — the number above is optional"
+            value={typed}
+            onChange={(e) => { setTyped(e.target.value); setErr(""); }}
+            onKeyDown={(e) => { if (e.key === "Enter") amtRef.current?.focus(); }}
+            autoFocus
+          />
+          <div style={st.seg}>
+            {([["employee", "Employee"], ["outsider", "Other person"]] as [PayeeKind, string][]).map(([k, label], i) => (
+              <button
+                key={k}
+                onClick={() => setNewKind(k)}
+                style={{
+                  ...st.segBtn,
+                  borderLeft: i ? `1px solid ${LINE}` : "none",
+                  background: newKind === k ? (k === "employee" ? ACCENT : GOLD) : "#fff",
+                  color: newKind === k ? "#fff" : MUTED,
+                }}
+              >{label}</button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* line 2 — what for, when, how paid */}
@@ -629,50 +657,73 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
     return sorted.map((e) => { run = round2(run + e.amount); return { ...e, running: run }; });
   };
 
+  /** Both directions per person, so one page answers "where do we stand". */
   const people = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; kind: string; phone: string; paid: number; count: number }>();
-    for (const e of expenseRows) {
+    const map = new Map<string, {
+      id: string; name: string; kind: string; phone: string;
+      paid: number; received: number; count: number;
+    }>();
+    for (const e of rows) {
       if (!e.payeeId || !e.payee) continue;
-      if (!map.has(e.payeeId)) map.set(e.payeeId, { id: e.payeeId, name: e.payee.name, kind: e.payee.kind, phone: e.payee.phone || "", paid: 0, count: 0 });
+      if (!map.has(e.payeeId)) {
+        map.set(e.payeeId, {
+          id: e.payeeId, name: e.payee.name, kind: e.payee.kind,
+          phone: e.payee.phone || "", paid: 0, received: 0, count: 0,
+        });
+      }
       const p = map.get(e.payeeId)!;
-      p.paid = round2(p.paid + e.amount); p.count += 1;
+      if (e.kind === "expense") p.paid     = round2(p.paid + e.amount);
+      else                      p.received = round2(p.received + e.amount);
+      p.count += 1;
     }
-    return [...map.values()].sort((a, b) => b.paid - a.paid);
-  }, [expenseRows]);
+    return [...map.values()].sort((a, b) => (b.paid + b.received) - (a.paid + a.received));
+  }, [rows]);
 
+  /** A person's page is the whole relationship — money out and money in, in
+   *  one column, so the balance between us reads off the bottom. */
   const personRows = useMemo(
-    () => withRunning(expenseRows.filter((e) => e.payeeId === person)),
-    [expenseRows, person],
+    () => withRunning(rows.filter((e) => e.payeeId === person)),
+    [rows, person],
   );
-  const selected = payees.find((p) => p.id === person) || null;
+  const selected     = payees.find((p) => p.id === person) || null;
+  const personPaid   = sum(personRows.filter((e) => e.kind === "expense"));
+  const personGot    = sum(personRows.filter((e) => e.kind === "income"));
 
   const spanLabel = span === "month" ? monthName(anchorDate)
     : span === "all" ? "All time"
     : `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
 
   const exportRows = (list: (EntryRow & { running?: number })[], name: string) => {
-    const header = ["Date", "Name", "Phone", "Purpose", "Person", "Method", "Amount", "Running total"];
+    const header = ["Date", "In/Out", "Name", "Phone", "Purpose", "Person", "Method", "Amount", "Running total"];
     const body = list.map((e) => [
-      fmtDate(e.date.slice(0, 10)), e.title, phoneOf(e), e.notes || "",
+      fmtDate(e.date.slice(0, 10)), e.kind === "income" ? "In" : "Out",
+      e.title, phoneOf(e), e.notes || "",
       e.payee?.name || "", e.method, e.amount, e.running ?? "",
     ]);
     downloadCsv(`${name}-${range.from}-to-${range.to}.csv`, toCsv([header, ...body]));
   };
 
-  const printRows = (list: (EntryRow & { running?: number })[], heading: string, total: number, tint: string) => {
+  const printRows = (
+    list: (EntryRow & { running?: number })[],
+    heading: string, total: number, tint: string, twoWay = false,
+  ) => {
     const cashTotal   = sum(list, "cash");
     const onlineTotal = sum(list, "online");
+    const outTotal    = sum(list.filter((e) => e.kind === "expense"));
+    const inTotal     = sum(list.filter((e) => e.kind === "income"));
     const body = list.map((e) => {
       const ph = phoneOf(e);
       return `
       <tr>
         <td>${fmtDate(e.date.slice(0, 10))}</td>
         <td><b>${e.title}</b>${ph ? `<div class="n">${ph}</div>` : ""}${e.notes ? `<div class="n">${e.notes}</div>` : ""}</td>
+        ${twoWay ? `<td><span class="m">${e.kind === "income" ? "In" : "Out"}</span></td>` : ""}
         <td><span class="m">${e.method === "cash" ? "Cash" : "Online"}</span></td>
         <td class="amt">${rupeesExact(e.amount)}</td>
         <td class="run">${rupeesExact(e.running || 0)}</td>
       </tr>`;
     }).join("");
+    const cols = twoWay ? 4 : 3;
     const w = window.open("", "_blank", "width=860,height=720");
     if (!w) return;
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${heading}</title><style>
@@ -703,12 +754,15 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
         <div class="title"><h1>${heading}</h1><div class="per">${spanLabel}</div></div>
       </div>
       <table>
-        <thead><tr><th>Date</th><th>Name, phone &amp; purpose</th><th>Method</th><th>Amount</th><th>Running</th></tr></thead>
+        <thead><tr><th>Date</th><th>Name, phone &amp; purpose</th>${twoWay ? "<th>In/Out</th>" : ""}<th>Method</th><th>Amount</th><th>Running</th></tr></thead>
         <tbody>${body}</tbody>
         <tfoot>
-          <tr><td class="lbl" colspan="3">Cash</td><td class="tot" colspan="2">${rupeesExact(cashTotal)}</td></tr>
-          <tr><td class="lbl" colspan="3">Online</td><td class="tot" colspan="2">${rupeesExact(onlineTotal)}</td></tr>
-          <tr class="grand"><td class="lbl" colspan="3">Total · ${list.length} ${list.length === 1 ? "entry" : "entries"}</td><td class="tot" colspan="2">${rupeesExact(total)}</td></tr>
+          ${twoWay ? `
+          <tr><td class="lbl" colspan="${cols}">Paid to them</td><td class="tot" colspan="2">${rupeesExact(outTotal)}</td></tr>
+          <tr><td class="lbl" colspan="${cols}">Received from them</td><td class="tot" colspan="2">${rupeesExact(inTotal)}</td></tr>` : ""}
+          <tr><td class="lbl" colspan="${cols}">Cash</td><td class="tot" colspan="2">${rupeesExact(cashTotal)}</td></tr>
+          <tr><td class="lbl" colspan="${cols}">Online</td><td class="tot" colspan="2">${rupeesExact(onlineTotal)}</td></tr>
+          <tr class="grand"><td class="lbl" colspan="${cols}">${twoWay ? "Balance" : "Total"} · ${list.length} ${list.length === 1 ? "entry" : "entries"}</td><td class="tot" colspan="2">${rupeesExact(total)}</td></tr>
         </tfoot>
       </table>
       <div class="foot">Generated ${fmtDate(isoDate())} · Abhijit Art</div>
@@ -758,37 +812,58 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
         person && selected ? (
           <LedgerTable
             heading={selected.name}
-            sub={`${selected.phone || "No phone"} · ${selected.kind} · ${spanLabel}`}
+            sub={`${selected.phone || "No phone"} · ${selected.kind === "employee" ? "Employee" : "Other person"} · ${spanLabel}`}
             rows={personRows}
-            tint={RED}
+            tint={INK}
+            twoWay
+            standing={{ paid: personPaid, received: personGot }}
             onBack={() => setPerson("")}
             onExport={() => exportRows(personRows, `ledger-${selected.name}`)}
-            onPrint={() => printRows(personRows, `${selected.name} — Statement`, sum(personRows), RED)}
+            onPrint={() => printRows(personRows, `${selected.name} — Statement`,
+              round2(personPaid - personGot), INK, true)}
           />
         ) : (
           <div style={st.panel}>
             <div style={st.panelHead}>
-              <span style={st.panelTitle}>People paid · {spanLabel}</span>
-              <span style={{ ...st.panelTotal, color: RED, marginLeft: "auto" }}>{rupeesExact(sum(expenseRows))}</span>
+              <span style={st.panelTitle}>People · {spanLabel}</span>
+              <span style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span style={st.splitPill}>
+                  <span style={{ ...st.splitLbl, color: MUTED }}>Paid out</span>
+                  <span style={{ ...st.splitVal, color: RED }}>{rupeesExact(sum(expenseRows))}</span>
+                </span>
+                <span style={st.splitPill}>
+                  <span style={{ ...st.splitLbl, color: MUTED }}>Received</span>
+                  <span style={{ ...st.splitVal, color: GREEN }}>{rupeesExact(sum(incomeRows))}</span>
+                </span>
+              </span>
             </div>
             <div className="ie-colbody" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
               {people.length === 0 ? (
-                <div style={st.empty}>No person-linked expenses in this period.</div>
-              ) : people.map((p) => (
-                <div key={p.id} className="ie-row" style={{ ...st.row, cursor: "pointer" }} onClick={() => setPerson(p.id)}>
-                  <span style={{ ...st.avatar, width: 32, height: 32, fontSize: 11, background: p.kind === "employee" ? ACCENT : GOLD }}>
-                    {initials(p.name)}
-                  </span>
-                  <span style={st.rowMain}>
-                    <span style={{ ...st.rowName, fontSize: 14 }}>{p.name}</span>
-                    <span style={st.rowNote}>
-                      {p.phone ? `${p.phone} · ` : ""}{p.count} {p.count === 1 ? "entry" : "entries"}
+                <div style={st.empty}>Nobody linked to an entry in this period.</div>
+              ) : people.map((p) => {
+                const bal = round2(p.paid - p.received);
+                return (
+                  <div key={p.id} className="ie-row" style={{ ...st.row, cursor: "pointer" }} onClick={() => setPerson(p.id)}>
+                    <span style={{ ...st.avatar, width: 32, height: 32, fontSize: 11, background: p.kind === "employee" ? ACCENT : GOLD }}>
+                      {initials(p.name)}
                     </span>
-                  </span>
-                  <span style={{ ...st.rowAmt, color: RED }}>{rupeesExact(p.paid)}</span>
-                  <span style={{ color: FAINT, fontSize: 13, width: 16, textAlign: "right" }}>›</span>
-                </div>
-              ))}
+                    <span style={st.rowMain}>
+                      <span style={{ ...st.rowName, fontSize: 14 }}>{p.name}</span>
+                      <span style={st.rowNote}>
+                        {p.phone ? `${p.phone} · ` : ""}{p.count} {p.count === 1 ? "entry" : "entries"}
+                      </span>
+                    </span>
+                    {/* Both directions side by side — the net is what matters,
+                        but neither figure should have to be dug out. */}
+                    <span style={st.twoWayCell}>
+                      <span style={{ ...st.twoWayVal, color: RED }}>−{rupeesExact(p.paid)}</span>
+                      <span style={{ ...st.twoWayVal, color: GREEN }}>+{rupeesExact(p.received)}</span>
+                    </span>
+                    <span style={{ ...st.rowAmt, color: bal >= 0 ? RED : GREEN }}>{rupeesExact(Math.abs(bal))}</span>
+                    <span style={{ color: FAINT, fontSize: 13, width: 16, textAlign: "right" }}>›</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )
@@ -810,7 +885,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
 }
 
 function LedgerTable({
-  heading, sub, rows, tint, onBack, onExport, onPrint,
+  heading, sub, rows, tint, onBack, onExport, onPrint, twoWay, standing,
 }: {
   heading: string; sub: string;
   rows: (EntryRow & { running: number })[];
@@ -818,10 +893,14 @@ function LedgerTable({
   onBack?: () => void;
   onExport: () => void;
   onPrint: () => void;
+  /** a person's page mixes both directions, so each row is labelled */
+  twoWay?: boolean;
+  standing?: { paid: number; received: number };
 }) {
   const total       = round2(rows.reduce((s, e) => s + e.amount, 0));
   const cashTotal   = sum(rows, "cash");
   const onlineTotal = sum(rows, "online");
+  const balance     = standing ? round2(standing.paid - standing.received) : 0;
 
   return (
     <div style={st.panel}>
@@ -832,18 +911,35 @@ function LedgerTable({
           <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{sub} · {rows.length} {rows.length === 1 ? "entry" : "entries"}</div>
         </div>
 
-        {/* The split is carried into the ledger too, so a month reads the same
-            way a day does. */}
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <span style={st.splitPill}>
-            <span style={{ ...st.splitLbl, color: "#7a6f66" }}>Cash</span>
-            <span style={{ ...st.splitVal, color: tint }}>{rupeesExact(cashTotal)}</span>
-          </span>
-          <span style={st.splitPill}>
-            <span style={{ ...st.splitLbl, color: BLUE }}>Online</span>
-            <span style={{ ...st.splitVal, color: tint }}>{rupeesExact(onlineTotal)}</span>
-          </span>
-          <span style={{ ...st.panelTotal, color: tint }}>{rupeesExact(total)}</span>
+          {standing ? (
+            <>
+              <span style={st.splitPill}>
+                <span style={{ ...st.splitLbl, color: MUTED }}>Paid</span>
+                <span style={{ ...st.splitVal, color: RED }}>{rupeesExact(standing.paid)}</span>
+              </span>
+              <span style={st.splitPill}>
+                <span style={{ ...st.splitLbl, color: MUTED }}>Received</span>
+                <span style={{ ...st.splitVal, color: GREEN }}>{rupeesExact(standing.received)}</span>
+              </span>
+              <span style={st.splitPill}>
+                <span style={{ ...st.splitLbl, color: MUTED }}>{balance >= 0 ? "They owe" : "We owe"}</span>
+                <span style={{ ...st.panelTotal, color: balance >= 0 ? RED : GREEN }}>{rupeesExact(Math.abs(balance))}</span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span style={st.splitPill}>
+                <span style={{ ...st.splitLbl, color: "#7a6f66" }}>Cash</span>
+                <span style={{ ...st.splitVal, color: tint }}>{rupeesExact(cashTotal)}</span>
+              </span>
+              <span style={st.splitPill}>
+                <span style={{ ...st.splitLbl, color: BLUE }}>Online</span>
+                <span style={{ ...st.splitVal, color: tint }}>{rupeesExact(onlineTotal)}</span>
+              </span>
+              <span style={{ ...st.panelTotal, color: tint }}>{rupeesExact(total)}</span>
+            </>
+          )}
         </span>
 
         <button className="ie-ghost" style={st.ghostBtn} onClick={onExport} disabled={!rows.length}>CSV</button>
@@ -859,6 +955,7 @@ function LedgerTable({
               <tr>
                 <th style={st.th}>Date</th>
                 <th style={st.th}>Name, phone &amp; purpose</th>
+                {twoWay && <th style={st.th}>In/Out</th>}
                 <th style={st.th}>Method</th>
                 <th style={{ ...st.th, textAlign: "right" }}>Amount</th>
                 <th style={{ ...st.th, textAlign: "right" }}>Running</th>
@@ -866,7 +963,8 @@ function LedgerTable({
             </thead>
             <tbody>
               {rows.map((e) => {
-                const ph = phoneOf(e);
+                const ph  = phoneOf(e);
+                const out = e.kind === "expense";
                 return (
                   <tr key={e.id} className="ie-trow">
                     <td style={{ ...st.td, whiteSpace: "nowrap", color: MUTED }}>{fmtDate(e.date.slice(0, 10))}</td>
@@ -879,12 +977,21 @@ function LedgerTable({
                       )}
                       {e.notes && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{e.notes}</div>}
                     </td>
+                    {twoWay && (
+                      <td style={st.td}>
+                        <span style={{ ...st.chip, background: out ? "#fdeaee" : "#e8f6ee", color: out ? RED : GREEN }}>
+                          {out ? "Paid" : "Got"}
+                        </span>
+                      </td>
+                    )}
                     <td style={st.td}>
                       <span style={{ ...st.chip, ...(e.method === "cash" ? st.chipCash : st.chipOnline) }}>
                         {e.method === "cash" ? "Cash" : "Online"}
                       </span>
                     </td>
-                    <td style={{ ...st.td, textAlign: "right", fontWeight: 800, color: tint, whiteSpace: "nowrap" }}>{rupeesExact(e.amount)}</td>
+                    <td style={{ ...st.td, textAlign: "right", fontWeight: 800, color: twoWay ? (out ? RED : GREEN) : tint, whiteSpace: "nowrap" }}>
+                      {twoWay ? (out ? "−" : "+") : ""}{rupeesExact(e.amount)}
+                    </td>
                     <td style={{ ...st.td, textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{rupeesExact(e.running)}</td>
                   </tr>
                 );
@@ -1000,10 +1107,13 @@ const st: Record<string, React.CSSProperties> = {
   chipCash:  { background: "#f1ece3", color: "#7a6f66" },
   chipOnline:{ background: "#e6eff9", color: BLUE },
   rowAmt:    { fontSize: 14.5, fontWeight: 800, fontVariantNumeric: "tabular-nums", flexShrink: 0, minWidth: 78, textAlign: "right" },
+  twoWayCell:{ display: "flex", flexDirection: "column", gap: 1, alignItems: "flex-end", flexShrink: 0, minWidth: 88 },
+  twoWayVal: { fontSize: 11.5, fontWeight: 700, fontVariantNumeric: "tabular-nums" },
   del:       { width: 24, height: 24, border: "none", background: "transparent", color: FAINT, fontSize: 18, lineHeight: 1, cursor: "pointer", flexShrink: 0, padding: 0, borderRadius: 4, transition: "all .12s" },
 
   addWrap:   { padding: "12px 16px", borderBottom: `1px solid ${LINE}`, background: WASH },
   addRow:    { display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" },
+  newWrap:   { display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", marginTop: 7, padding: "9px 10px", background: "#fff", border: `1px dashed ${ACCENT}66` },
   in:        { boxSizing: "border-box", padding: "9px 11px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK, colorScheme: "light", transition: "border-color .15s, box-shadow .15s" },
   seg:       { display: "flex", border: `1px solid ${LINE}`, flexShrink: 0 },
   segBtn:    { padding: "9px 13px", border: "none", fontSize: 11.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" },
