@@ -4,7 +4,8 @@
 //
 // REGISTER is the day sheet, modelled on the paper/Excel book the studio
 // already keeps: pick a date, income left, expense right, each row a name, an
-// amount, cash/online — and on both sides what the money was for.
+// amount, cash/online — and on both sides what the money was for. Every entry
+// stands on its own line and is never rolled up with another.
 //
 // Inside each side, CASH and ONLINE are kept apart with their own running
 // subtotal, because the drawer and the bank are counted separately at close.
@@ -18,7 +19,10 @@
 // reading, so when it does the message is shown rather than swallowed.
 //
 // LEDGER is the same data read the other way: by person, or as a running
-// income/expense statement over a month, a chosen range, or everything.
+// income/expense statement over a month, a chosen range, or everything. One
+// search box narrows it — a name, a number or a word from the purpose — and
+// the totals, the CSV and the print all follow what is on screen, so a
+// filtered view is a real statement rather than a preview of one.
 //
 // Categories still live in the database; they're chosen for you here, so a
 // payment to a staff member keeps reporting as salary with nothing on screen
@@ -40,8 +44,8 @@ import {
   rupeesExact, isoDate, fmtDate, fmtDayLabel, round2, initials, toCsv, downloadCsv,
 } from "./types";
 
-/* A phone may ride along on the entry itself (income, where there is often no
- * person record) or come from the linked payee. Both are read the same way. */
+/* A phone may ride along on the entry itself (a walk-in with no person
+ * record) or come from the linked payee. Both are read the same way. */
 type EntryRow = Entry & { phone?: string | null };
 const phoneOf = (e: EntryRow) => (e.phone || e.payee?.phone || "").trim();
 
@@ -487,7 +491,7 @@ function AddRow({
     <div style={st.addWrap}>
       {/* line 1 — who, their number, how much */}
       <div style={st.addRow}>
-        {/* Both sides pick from the SAME list of people now, so a customer who
+        {/* Both sides pick from the SAME list of people, so a customer who
             pays at the counter and is later paid for a job shows one history. */}
         <select
           className="ie-in"
@@ -623,6 +627,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
   const [span, setSpan] = useState<Span>("month");
   const [from, setFrom] = useState(monthStart(anchorDate));
   const [to,   setTo]   = useState(isoDate());
+  const [query, setQuery] = useState("");
 
   const [rows, setRows]     = useState<EntryRow[]>([]);
   const [loading, setLoad]  = useState(true);
@@ -646,8 +651,32 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
     return () => { alive = false; };
   }, [range.from, range.to]);
 
-  const incomeRows  = useMemo(() => rows.filter((e) => e.kind === "income"),  [rows]);
-  const expenseRows = useMemo(() => rows.filter((e) => e.kind === "expense"), [rows]);
+  /**
+   * One box, three things worth searching for: who ("azad"), how to reach them
+   * ("8609"), and what it was for ("flex"). A number is matched on digits only,
+   * so 8609339511 is found by "86093" or "8609 33".
+   *
+   * Filtering happens on the rows already fetched, and EVERYTHING downstream —
+   * the person list, the totals, the CSV and the print — reads the filtered
+   * set, so what you export is exactly what you were looking at.
+   */
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    const digits = q.replace(/\D/g, "");
+    return rows.filter((e) => {
+      const hay = [e.title, e.notes, e.payee?.name].filter(Boolean).join(" ").toLowerCase();
+      if (hay.includes(q)) return true;
+      if (digits) {
+        const ph = phoneOf(e).replace(/\D/g, "");
+        if (ph && ph.includes(digits)) return true;
+      }
+      return false;
+    });
+  }, [rows, query]);
+
+  const incomeRows  = useMemo(() => visible.filter((e) => e.kind === "income"),  [visible]);
+  const expenseRows = useMemo(() => visible.filter((e) => e.kind === "expense"), [visible]);
 
   /** Oldest first with a running total — the way a passbook reads. */
   const withRunning = (list: EntryRow[]) => {
@@ -663,7 +692,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
       id: string; name: string; kind: string; phone: string;
       paid: number; received: number; count: number;
     }>();
-    for (const e of rows) {
+    for (const e of visible) {
       if (!e.payeeId || !e.payee) continue;
       if (!map.has(e.payeeId)) {
         map.set(e.payeeId, {
@@ -677,21 +706,25 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
       p.count += 1;
     }
     return [...map.values()].sort((a, b) => (b.paid + b.received) - (a.paid + a.received));
-  }, [rows]);
+  }, [visible]);
 
   /** A person's page is the whole relationship — money out and money in, in
    *  one column, so the balance between us reads off the bottom. */
   const personRows = useMemo(
-    () => withRunning(rows.filter((e) => e.payeeId === person)),
-    [rows, person],
+    () => withRunning(visible.filter((e) => e.payeeId === person)),
+    [visible, person],
   );
-  const selected     = payees.find((p) => p.id === person) || null;
-  const personPaid   = sum(personRows.filter((e) => e.kind === "expense"));
-  const personGot    = sum(personRows.filter((e) => e.kind === "income"));
+  const selected   = payees.find((p) => p.id === person) || null;
+  const personPaid = sum(personRows.filter((e) => e.kind === "expense"));
+  const personGot  = sum(personRows.filter((e) => e.kind === "income"));
 
   const spanLabel = span === "month" ? monthName(anchorDate)
     : span === "all" ? "All time"
     : `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
+
+  // A filtered statement says so on the page and on the printout, so nobody
+  // reads a narrowed total as the month's total.
+  const scopeLabel = query.trim() ? `${spanLabel} · “${query.trim()}”` : spanLabel;
 
   const exportRows = (list: (EntryRow & { running?: number })[], name: string) => {
     const header = ["Date", "In/Out", "Name", "Phone", "Purpose", "Person", "Method", "Amount", "Running total"];
@@ -700,7 +733,8 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
       e.title, phoneOf(e), e.notes || "",
       e.payee?.name || "", e.method, e.amount, e.running ?? "",
     ]);
-    downloadCsv(`${name}-${range.from}-to-${range.to}.csv`, toCsv([header, ...body]));
+    const tag = query.trim() ? `-${query.trim().replace(/[^\w]+/g, "-")}` : "";
+    downloadCsv(`${name}${tag}-${range.from}-to-${range.to}.csv`, toCsv([header, ...body]));
   };
 
   const printRows = (
@@ -751,7 +785,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
     </style></head><body><div class="wrap">
       <div class="head">
         <div class="brand">Abhijit Art<small>Printing &amp; Design</small></div>
-        <div class="title"><h1>${heading}</h1><div class="per">${spanLabel}</div></div>
+        <div class="title"><h1>${heading}</h1><div class="per">${scopeLabel}</div></div>
       </div>
       <table>
         <thead><tr><th>Date</th><th>Name, phone &amp; purpose</th>${twoWay ? "<th>In/Out</th>" : ""}<th>Method</th><th>Amount</th><th>Running</th></tr></thead>
@@ -784,6 +818,25 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
           ))}
         </div>
 
+        {/* One box for a name, a number or a word from the purpose. */}
+        <div style={st.searchWrap}>
+          <svg style={st.searchIcon} width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+          </svg>
+          <input
+            className="ie-in"
+            style={st.searchIn}
+            placeholder="Search name, phone or purpose…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
+          />
+          {query && (
+            <button className="ie-clear" style={st.searchClear} onClick={() => setQuery("")} title="Clear search">×</button>
+          )}
+        </div>
+
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginLeft: "auto" }}>
           <div style={st.tabs}>
             {([["month", monthName(anchorDate).split(" ")[0]], ["range", "Range"], ["all", "All time"]] as [Span, string][]).map(([id, label]) => (
@@ -804,6 +857,15 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
         </div>
       </div>
 
+      {/* What the search actually did, in one line — a total that shrank
+          should never look like money that went missing. */}
+      {query.trim() && !loading && (
+        <div style={st.filterNote}>
+          Showing {visible.length} of {rows.length} entr{rows.length === 1 ? "y" : "ies"} matching “{query.trim()}”.
+          {" "}<button className="ie-link" style={st.linkBtn} onClick={() => setQuery("")}>Clear</button>
+        </div>
+      )}
+
       {err && <div style={st.error}>{err}</div>}
 
       {loading ? (
@@ -812,7 +874,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
         person && selected ? (
           <LedgerTable
             heading={selected.name}
-            sub={`${selected.phone || "No phone"} · ${selected.kind === "employee" ? "Employee" : "Other person"} · ${spanLabel}`}
+            sub={`${selected.phone || "No phone"} · ${selected.kind === "employee" ? "Employee" : "Other person"} · ${scopeLabel}`}
             rows={personRows}
             tint={INK}
             twoWay
@@ -825,7 +887,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
         ) : (
           <div style={st.panel}>
             <div style={st.panelHead}>
-              <span style={st.panelTitle}>People · {spanLabel}</span>
+              <span style={st.panelTitle}>People · {scopeLabel}</span>
               <span style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap" }}>
                 <span style={st.splitPill}>
                   <span style={{ ...st.splitLbl, color: MUTED }}>Paid out</span>
@@ -839,7 +901,9 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
             </div>
             <div className="ie-colbody" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
               {people.length === 0 ? (
-                <div style={st.empty}>Nobody linked to an entry in this period.</div>
+                <div style={st.empty}>
+                  {query.trim() ? "Nobody matches that search." : "Nobody linked to an entry in this period."}
+                </div>
               ) : people.map((p) => {
                 const bal = round2(p.paid - p.received);
                 return (
@@ -870,9 +934,10 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
       ) : (
         <LedgerTable
           heading={view === "income" ? "Income ledger" : "Expense ledger"}
-          sub={spanLabel}
+          sub={scopeLabel}
           rows={withRunning(view === "income" ? incomeRows : expenseRows)}
           tint={view === "income" ? GREEN : RED}
+          emptyNote={query.trim() ? "Nothing matches that search." : "Nothing in this period."}
           onExport={() => exportRows(withRunning(view === "income" ? incomeRows : expenseRows), `${view}-ledger`)}
           onPrint={() => {
             const list = withRunning(view === "income" ? incomeRows : expenseRows);
@@ -885,7 +950,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
 }
 
 function LedgerTable({
-  heading, sub, rows, tint, onBack, onExport, onPrint, twoWay, standing,
+  heading, sub, rows, tint, onBack, onExport, onPrint, twoWay, standing, emptyNote,
 }: {
   heading: string; sub: string;
   rows: (EntryRow & { running: number })[];
@@ -896,6 +961,7 @@ function LedgerTable({
   /** a person's page mixes both directions, so each row is labelled */
   twoWay?: boolean;
   standing?: { paid: number; received: number };
+  emptyNote?: string;
 }) {
   const total       = round2(rows.reduce((s, e) => s + e.amount, 0));
   const cashTotal   = sum(rows, "cash");
@@ -948,7 +1014,7 @@ function LedgerTable({
 
       <div className="ie-colbody" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
         {rows.length === 0 ? (
-          <div style={st.empty}>Nothing in this period.</div>
+          <div style={st.empty}>{emptyNote || "Nothing in this period."}</div>
         ) : (
           <table style={st.table}>
             <thead>
@@ -1041,6 +1107,8 @@ const CSS = `
   .ie-ghost:hover:not(:disabled){filter:brightness(.96);}
   .ie-ghost:disabled{opacity:.45;cursor:not-allowed;}
   .ie-in:focus{outline:none;border-color:${ACCENT};box-shadow:0 0 0 3px ${ACCENT}1f;}
+  .ie-clear:hover{color:${RED} !important;}
+  .ie-link:hover{text-decoration:underline;}
   .ie-trow:hover td{background:${WASH};}
   .ie-tel{color:${BLUE};text-decoration:none;}
   .ie-tel:hover{text-decoration:underline;}
@@ -1122,6 +1190,13 @@ const st: Record<string, React.CSSProperties> = {
   backdated: { fontSize: 11.5, color: ACCENT, marginTop: 7, fontWeight: 600 },
 
   ledgerBar: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 },
+  searchWrap:{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 240px", maxWidth: 340, minWidth: 190 },
+  searchIcon:{ position: "absolute", left: 11, color: FAINT, pointerEvents: "none" },
+  searchIn:  { boxSizing: "border-box", width: "100%", padding: "9px 30px 9px 32px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK, transition: "border-color .15s, box-shadow .15s" },
+  searchClear:{ position: "absolute", right: 6, width: 22, height: 22, border: "none", background: "transparent", color: FAINT, fontSize: 17, lineHeight: 1, cursor: "pointer", padding: 0, transition: "color .12s" },
+  filterNote:{ display: "flex", alignItems: "center", gap: 6, padding: "8px 13px", marginBottom: 12, background: "#fdf6ef", border: `1px solid ${ACCENT}33`, fontSize: 12.5, color: "#7a5240", fontWeight: 600 },
+  linkBtn:   { border: "none", background: "transparent", color: ACCENT, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", padding: 0 },
+
   panel:     { background: "#fff", border: `1px solid ${LINE}`, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, boxShadow: "0 1px 3px rgba(42,35,29,.05)" },
   panelHead: { display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${LINE_SOFT}`, background: WASH, flexWrap: "wrap" },
   panelTitle:{ fontSize: 14.5, fontWeight: 800 },
