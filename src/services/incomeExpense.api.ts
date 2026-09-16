@@ -28,7 +28,7 @@ export interface Entry {
   } | null;
   /** The entry's OWN number. Null when the linked person already carries it —
    *  the server stores it here only when it differs, or when there is no
-   *  person at all (income: a counter sale isn't on the payroll). Read it as
+   *  person at all (a walk-in nobody expects to see again). Read it as
    *  `entry.phone || entry.payee?.phone` so both cases display the same. */
   phone: string | null;
   notes: string;
@@ -86,8 +86,15 @@ const BASE = "/api/income-expense";
 export const cashbookApi = {
   list:    (filters: EntryFilters = {}) => api.get<Entry[]>(BASE, { params: params(filters) }).then(r => r.data),
   summary: (filters: Pick<EntryFilters, "from"|"to"> = {}) => api.get<Summary>(`${BASE}/summary`, { params: params(filters) }).then(r => r.data),
+
+  // Writing a new line is the ordinary work of the day and needs no PIN.
   create:  (data: EntryInput) => api.post<Entry>(BASE, data).then(r => r.data),
-  update:  (id: string, data: Partial<EntryInput>) => api.patch<Entry>(`${BASE}/${id}`, data).then(r => r.data),
+
+  // CHANGING a figure carries the same weight as removing one — the admin
+  // login is shared, so the server asks for the security PIN and records the
+  // change field by field. The PIN rides in the body alongside the patch.
+  update:  (id: string, data: Partial<EntryInput>, pin: string) =>
+    api.patch<Entry>(`${BASE}/${id}`, { ...data, pin }).then(r => r.data),
 
   // Deleting a money record needs the security PIN, checked server-side.
   // axios ignores a plain second argument on DELETE — the body only travels

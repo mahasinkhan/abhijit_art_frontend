@@ -15,22 +15,23 @@
 //
 // A new name is saved as a person by NAME — the number is optional, because
 // at the counter a name is always written down and a number often never is.
-// Saving a person is the one step here that can fail for a reason worth
-// reading, so when it does the message is shown rather than swallowed.
+//
+// EDITING opens a proper dialog rather than turning the row into a strip of
+// tiny inputs: a correction is worth seeing in full — what it was, what it is
+// becoming — before it is saved. It asks for the security PIN, as removing an
+// entry does, because changing a figure carries the same weight. The server
+// checks the PIN and records the change field by field, so Activity shows who
+// changed what, from what, to what.
+//
+// Every date goes through DateField, which shows DD/MM/YYYY on every machine.
+// A native date input follows the browser's own locale, so the same page read
+// 16/09 here and 09/16 on the client's computer — on a screen full of money
+// that ambiguity is a real hazard.
 //
 // LEDGER is the same data read the other way: by person, or as a running
 // income/expense statement over a month, a chosen range, or everything. One
 // search box narrows it — a name, a number or a word from the purpose — and
-// the totals, the CSV and the print all follow what is on screen, so a
-// filtered view is a real statement rather than a preview of one.
-//
-// Categories still live in the database; they're chosen for you here, so a
-// payment to a staff member keeps reporting as salary with nothing on screen
-// to think about.
-//
-// The PIN gate on this page is a UI lock only. DELETING an entry asks for the
-// PIN separately and the server verifies that one, so a removed money record
-// always leaves an audit entry naming who did it.
+// the totals, the CSV and the print all follow what is on screen.
 // ─────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -39,6 +40,7 @@ import {
 } from "../../services/incomeExpense.api";
 import { payeeApi, type Payee, type PayeeKind } from "../../services/payee.api";
 import PinGate, { useCashbookLock } from "./PinGate";
+import DateField from "./DateField";
 import {
   ACCENT, GOLD, INK, MUTED, FAINT, LINE, LINE_SOFT, WASH, GREEN, RED, BLUE,
   rupeesExact, isoDate, fmtDate, fmtDayLabel, round2, initials, toCsv, downloadCsv,
@@ -51,6 +53,25 @@ const phoneOf = (e: EntryRow) => (e.phone || e.payee?.phone || "").trim();
 
 /** What came back from trying to save a person: the row, or why it failed. */
 type PayeeResult = { payee: Payee } | { error: string };
+
+/* ── icons ──────────────────────────────────────────────────────────────── */
+const PencilIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18" />
+    <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6" />
+  </svg>
+);
 
 /* ── date helpers ───────────────────────────────────────────────────────── */
 const shiftDay = (d: string, by: number) => {
@@ -85,6 +106,7 @@ export default function IncomeExpense() {
   const [payees, setPayees]   = useState<Payee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
+  const [editing, setEditing] = useState<EntryRow | null>(null);
 
   const loadPayees = useCallback(async () => {
     if (!unlocked) return;
@@ -125,6 +147,17 @@ export default function IncomeExpense() {
     await cashbookApi.create(data);
     if (data.date !== date) setDate(data.date);
     else await load();
+  };
+
+  /** A correction moves money on the books, so it carries the PIN the same way
+   *  a removal does — the server checks it. It can also land on another day,
+   *  in which case the register follows it there rather than letting the fix
+   *  look like a disappearance. */
+  const saveEdit = async (id: string, patch: Partial<EntryInput>, newDate: string, pin: string) => {
+    await cashbookApi.update(id, patch, pin);
+    setEditing(null);
+    if (newDate !== date) setDate(newDate);
+    else { await load(); await loadPayees(); }
   };
 
   /** Removing an entry erases money from the book, so the PIN is asked for
@@ -193,11 +226,7 @@ export default function IncomeExpense() {
           {tab === "register" && (
             <div style={st.dateBar}>
               <button className="ie-nav" style={st.navBtn} onClick={() => setDate(shiftDay(date, -1))} title="Previous day">‹</button>
-              <input
-                type="date" value={date} max={isoDate()}
-                onChange={(e) => e.target.value && setDate(e.target.value)}
-                style={st.dateInput}
-              />
+              <DateField value={date} max={isoDate()} onChange={setDate} width={150} title="Jump to a day" />
               <button
                 className="ie-nav"
                 style={{ ...st.navBtn, opacity: isToday ? 0.3 : 1, cursor: isToday ? "default" : "pointer" }}
@@ -249,13 +278,23 @@ export default function IncomeExpense() {
 
           <div className="ie-cols" style={st.columns}>
             <Column kind="income"  rows={income}  payees={payees} loading={loading} viewDate={date}
-                    onAdd={addEntry} onRemove={removeEntry} onAddPayee={addPayee} />
+                    onAdd={addEntry} onRemove={removeEntry} onAddPayee={addPayee} onEdit={setEditing} />
             <Column kind="expense" rows={expense} payees={payees} loading={loading} viewDate={date}
-                    onAdd={addEntry} onRemove={removeEntry} onAddPayee={addPayee} />
+                    onAdd={addEntry} onRemove={removeEntry} onAddPayee={addPayee} onEdit={setEditing} />
           </div>
         </>
       ) : (
-        <Ledger anchorDate={date} payees={payees} />
+        <Ledger anchorDate={date} payees={payees} onEdit={setEditing} />
+      )}
+
+      {editing && (
+        <EditModal
+          entry={editing}
+          payees={payees}
+          onClose={() => setEditing(null)}
+          onSave={saveEdit}
+          onAddPayee={addPayee}
+        />
       )}
     </div>
   );
@@ -263,7 +302,7 @@ export default function IncomeExpense() {
 
 /* ── one side of the register ───────────────────────────────────────────── */
 function Column({
-  kind, rows, payees, loading, viewDate, onAdd, onRemove, onAddPayee,
+  kind, rows, payees, loading, viewDate, onAdd, onRemove, onAddPayee, onEdit,
 }: {
   kind: TxnKind;
   rows: EntryRow[];
@@ -273,6 +312,7 @@ function Column({
   onAdd: (d: EntryInput & { date: string }) => Promise<void>;
   onRemove: (id: string) => void;
   onAddPayee: (name: string, phone: string, kind: PayeeKind) => Promise<PayeeResult>;
+  onEdit: (e: EntryRow) => void;
 }) {
   const isIn  = kind === "income";
   const tint  = isIn ? GREEN : RED;
@@ -306,8 +346,8 @@ function Column({
           </div>
         ) : (
           <>
-            <MethodGroup method="cash"   rows={cashRows}   total={cashTotal}   tint={tint} onRemove={onRemove} />
-            <MethodGroup method="online" rows={onlineRows} total={onlineTotal} tint={tint} onRemove={onRemove} />
+            <MethodGroup method="cash"   rows={cashRows}   total={cashTotal}   tint={tint} onRemove={onRemove} onEdit={onEdit} />
+            <MethodGroup method="online" rows={onlineRows} total={onlineTotal} tint={tint} onRemove={onRemove} onEdit={onEdit} />
           </>
         )}
       </div>
@@ -336,13 +376,14 @@ function Column({
 
 /* ── cash / online block inside a column ────────────────────────────────── */
 function MethodGroup({
-  method, rows, total, tint, onRemove,
+  method, rows, total, tint, onRemove, onEdit,
 }: {
   method: PayMethod;
   rows: EntryRow[];
   total: number;
   tint: string;
   onRemove: (id: string) => void;
+  onEdit: (e: EntryRow) => void;
 }) {
   const isCash = method === "cash";
   const label  = isCash ? "Cash" : "Online";
@@ -384,7 +425,28 @@ function MethodGroup({
                 )}
               </span>
               <span style={{ ...st.rowAmt, color: tint }}>{rupeesExact(e.amount)}</span>
-              <button className="ie-del" style={st.del} onClick={() => onRemove(e.id)} title="Remove (needs the security PIN)">×</button>
+
+              {/* Two matched buttons in one slot. A correction and a removal
+                  are different enough that neither should be the one you hit
+                  by accident, so each gets its own bordered target. */}
+              <span style={st.rowActs}>
+                <button
+                  type="button"
+                  className="ie-act ie-edit"
+                  style={st.act}
+                  onClick={() => onEdit(e)}
+                  title="Edit this entry"
+                  aria-label="Edit entry"
+                ><PencilIcon /></button>
+                <button
+                  type="button"
+                  className="ie-act ie-del"
+                  style={st.act}
+                  onClick={() => onRemove(e.id)}
+                  title="Remove — needs the security PIN"
+                  aria-label="Remove entry"
+                ><TrashIcon /></button>
+              </span>
             </div>
           );
         })
@@ -548,10 +610,11 @@ function AddRow({
             onKeyDown={(e) => { if (e.key === "Enter") amtRef.current?.focus(); }}
             autoFocus
           />
-          <div style={st.seg}>
+          <div style={st.segInline}>
             {([["employee", "Employee"], ["outsider", "Other person"]] as [PayeeKind, string][]).map(([k, label], i) => (
               <button
                 key={k}
+                type="button"
                 onClick={() => setNewKind(k)}
                 style={{
                   ...st.segBtn,
@@ -581,20 +644,20 @@ function AddRow({
           onKeyDown={onKey}
         />
 
-        <input
-          className="ie-in"
-          style={{ ...st.in, width: 132, ...(backdated ? { borderColor: ACCENT, color: ACCENT, fontWeight: 700 } : {}) }}
-          type="date"
+        <DateField
           value={when}
           max={isoDate()}
-          onChange={(e) => e.target.value && setWhen(e.target.value)}
+          onChange={setWhen}
+          highlight={backdated}
+          width={146}
           title="Date this money moved"
         />
 
-        <div style={st.seg}>
+        <div style={st.segInline}>
           {(["cash", "online"] as const).map((m, i) => (
             <button
               key={m}
+              type="button"
               onClick={() => setMethod(m)}
               style={{
                 ...st.segBtn,
@@ -607,6 +670,7 @@ function AddRow({
         </div>
 
         <button
+          type="button"
           className="ie-add"
           style={{ ...st.addBtn, background: isIn ? GREEN : RED }}
           onClick={submit} disabled={busy}
@@ -621,8 +685,347 @@ function AddRow({
   );
 }
 
+/* ── edit dialog ────────────────────────────────────────────────────────────
+   A correction gets a proper form rather than a row turned into tiny inputs:
+   every field of the entry is visible at once, the original is shown at the
+   top for comparison, and Save is only offered once something has actually
+   changed. The direction can be switched too — an amount written on the wrong
+   side is one of the commonest mistakes in a two-column book.
+
+   The PIN field appears only once there IS a change, and deliberately does NOT
+   take focus: it materialises on the first keystroke of an edit, so grabbing
+   the cursor would tear it out of the field being typed in.
+
+   Two small defences against the browser's password manager, which otherwise
+   reads a password box next to a text box as a login form and offers to
+   remember the studio's security PIN under whatever was last typed — the
+   purpose of an expense, in one case. The field is marked as a one-time code,
+   and a decoy username sits above it out of sight for the manager to latch
+   onto instead. Neither is decoration: without them the prompt appears on
+   every single edit. */
+function EditModal({
+  entry, payees, onClose, onSave, onAddPayee,
+}: {
+  entry: EntryRow;
+  payees: Payee[];
+  onClose: () => void;
+  onSave: (id: string, patch: Partial<EntryInput>, newDate: string, pin: string) => Promise<void>;
+  onAddPayee: (name: string, phone: string, kind: PayeeKind) => Promise<PayeeResult>;
+}) {
+  const [kind,    setKind]    = useState<TxnKind>(entry.kind);
+  const [payeeId, setPayeeId] = useState(entry.payeeId || "");
+  const [typed,   setTyped]   = useState(entry.payeeId ? "" : entry.title);
+  const [newKind, setNewKind] = useState<PayeeKind>("outsider");
+  const [phone,   setPhone]   = useState(phoneOf(entry));
+  const [purpose, setPurpose] = useState(entry.notes || "");
+  const [amount,  setAmount]  = useState(String(entry.amount));
+  const [method,  setMethod]  = useState<PayMethod>(entry.method);
+  const [when,    setWhen]    = useState(entry.date.slice(0, 10));
+  const [pin,     setPin]     = useState("");
+  const [busy,    setBusy]    = useState(false);
+  const [err,     setErr]     = useState("");
+
+  const isNew = payeeId === "__other__";
+  const employees = payees.filter((p) => p.kind === "employee");
+  const outsiders = payees.filter((p) => p.kind !== "employee");
+
+  // Escape closes, as it does in every dialog the studio already uses.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Switching to a saved person adopts their number, so the field shows what
+  // will actually be stored rather than the previous person's.
+  useEffect(() => {
+    if (isNew) return;
+    if (!payeeId) return;
+    const p = payees.find((x) => x.id === payeeId);
+    if (p) setPhone(p.phone || "");
+  }, [payeeId, payees, isNew]);
+
+  const current = payees.find((p) => p.id === payeeId) || null;
+  const name = isNew ? typed.trim() : (current?.name || typed.trim());
+  const n    = Number(amount);
+
+  const dirty =
+    kind !== entry.kind ||
+    (payeeId || null) !== (entry.payeeId || null) ||
+    name !== entry.title ||
+    phone.trim() !== phoneOf(entry) ||
+    purpose.trim() !== (entry.notes || "") ||
+    round2(n) !== entry.amount ||
+    method !== entry.method ||
+    when !== entry.date.slice(0, 10);
+
+  const save = async () => {
+    if (!name)                         { setErr("A name is needed."); return; }
+    if (!Number.isFinite(n) || n <= 0) { setErr("Enter an amount greater than 0."); return; }
+    if (!pin.trim())                   { setErr("The security PIN is needed to save a change."); return; }
+
+    setBusy(true); setErr("");
+    try {
+      let picked = current;
+      if (isNew) {
+        const r = await onAddPayee(typed.trim(), phone, newKind);
+        if ("error" in r) { setErr(r.error); setBusy(false); return; }
+        picked = r.payee;
+      }
+
+      await onSave(entry.id, {
+        kind,
+        date: when,
+        category: kind === "income"
+          ? (picked?.kind === "employee" ? "loan_back" : "other_income")
+          : (picked?.kind === "employee" ? "salary"    : "other"),
+        title: name,
+        amount: round2(n),
+        method,
+        payeeId: picked?.id ?? null,
+        phone: phone.trim(),
+        notes: purpose.trim(),
+      } as Partial<EntryInput>, when, pin.trim());
+    } catch (e: any) {
+      setErr(e?.response?.data?.error || "Could not save that change.");
+      setPin("");
+      setBusy(false);
+    }
+  };
+
+  const tint = kind === "income" ? GREEN : RED;
+
+  return (
+    <div style={st.backdrop} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={st.modal} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={{ ...st.modalHead, borderTopColor: tint }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={st.modalTitle}>Edit entry</div>
+            {/* What it says right now, so the change can be read against it. */}
+            <div style={st.modalSub}>
+              {entry.kind === "income" ? "Income" : "Expense"} · {entry.title} · {rupeesExact(entry.amount)}
+              {" "}{entry.method} · {fmtDate(entry.date.slice(0, 10))}
+            </div>
+          </div>
+          <button type="button" className="ie-nav" style={st.closeBtn} onClick={onClose} title="Close">×</button>
+        </div>
+
+        <div style={st.modalBody}>
+          {/* Direction first — everything below reads differently once it
+              changes, and a figure on the wrong side is a common slip. The
+              two words are the ones written on the register itself, and the
+              pair is only as wide as it needs to be. */}
+          <Field label="Direction">
+            <div style={st.segInline}>
+              {(["income", "expense"] as const).map((k, i) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setKind(k)}
+                  style={{
+                    ...st.segBtn, padding: "10px 24px",
+                    borderLeft: i ? `1px solid ${LINE}` : "none",
+                    background: kind === k ? (k === "income" ? GREEN : RED) : "#fff",
+                    color: kind === k ? "#fff" : MUTED,
+                  }}
+                >{k === "income" ? "Income" : "Expense"}</button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Person">
+            <select
+              className="ie-in"
+              style={{ ...st.in, width: "100%", cursor: "pointer" }}
+              value={payeeId}
+              onChange={(e) => { setPayeeId(e.target.value); setErr(""); }}
+            >
+              <option value="">Nobody / walk-in</option>
+              {employees.length > 0 && (
+                <optgroup label="Employees">
+                  {employees.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </optgroup>
+              )}
+              {outsiders.length > 0 && (
+                <optgroup label="Others">
+                  {outsiders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </optgroup>
+              )}
+              <option value="__other__">+ New name…</option>
+            </select>
+          </Field>
+
+          {isNew ? (
+            <Field label="New name">
+              <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                <input
+                  className="ie-in"
+                  style={{ ...st.in, flex: 1, minWidth: 150 }}
+                  placeholder="Name — the number below is optional"
+                  value={typed}
+                  onChange={(e) => { setTyped(e.target.value); setErr(""); }}
+                />
+                <div style={st.segInline}>
+                  {([["employee", "Employee"], ["outsider", "Other"]] as [PayeeKind, string][]).map(([k, label], i) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setNewKind(k)}
+                      style={{
+                        ...st.segBtn,
+                        borderLeft: i ? `1px solid ${LINE}` : "none",
+                        background: newKind === k ? (k === "employee" ? ACCENT : GOLD) : "#fff",
+                        color: newKind === k ? "#fff" : MUTED,
+                      }}
+                    >{label}</button>
+                  ))}
+                </div>
+              </div>
+            </Field>
+          ) : !payeeId ? (
+            /* With nobody attached the row still needs something to be called,
+               so the written name stays editable on its own. */
+            <Field label="Name on the entry">
+              <input
+                className="ie-in"
+                style={{ ...st.in, width: "100%" }}
+                value={typed}
+                onChange={(e) => { setTyped(e.target.value); setErr(""); }}
+              />
+            </Field>
+          ) : null}
+
+          <div style={st.fieldRow}>
+            <Field label="Amount" grow>
+              <input
+                className="ie-in"
+                style={{ ...st.in, width: "100%", fontWeight: 800, fontSize: 15 }}
+                type="number" min="0" inputMode="decimal"
+                value={amount}
+                onChange={(e) => { setAmount(e.target.value); setErr(""); }}
+              />
+            </Field>
+            <Field label="Paid by" grow>
+              <div style={{ ...st.seg, width: "100%" }}>
+                {(["cash", "online"] as const).map((m, i) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMethod(m)}
+                    style={{
+                      ...st.segBtn, flex: 1, padding: "10px 0",
+                      borderLeft: i ? `1px solid ${LINE}` : "none",
+                      background: method === m ? (m === "cash" ? "#6b625a" : BLUE) : "#fff",
+                      color: method === m ? "#fff" : MUTED,
+                    }}
+                  >{m === "cash" ? "Cash" : "Online"}</button>
+                ))}
+              </div>
+            </Field>
+          </div>
+
+          <div style={st.fieldRow}>
+            <Field label="Phone" grow>
+              <input
+                className="ie-in"
+                style={{ ...st.in, width: "100%" }}
+                type="tel" inputMode="tel" maxLength={15}
+                placeholder="Optional"
+                value={phone}
+                onChange={(e) => { setPhone(e.target.value); setErr(""); }}
+              />
+            </Field>
+            <Field label="Date" grow>
+              <DateField value={when} max={isoDate()} onChange={setWhen} width="100%" />
+            </Field>
+          </div>
+
+          <Field label="Purpose">
+            <input
+              className="ie-in"
+              style={{ ...st.in, width: "100%" }}
+              placeholder="What this money was for"
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+            />
+          </Field>
+
+          {/* Appears once there is something to save. */}
+          {dirty && (
+            <div style={st.pinWrap}>
+              {/* The decoy: hidden from sight and from tabbing, but visible to
+                  the password manager, which stops guessing at the fields the
+                  studio actually types into. */}
+              <input
+                type="text"
+                name="username"
+                autoComplete="username"
+                value="cashbook"
+                readOnly
+                tabIndex={-1}
+                aria-hidden="true"
+                style={st.decoy}
+              />
+              <Field label="Security PIN">
+                <input
+                  className="ie-in"
+                  style={{ ...st.in, width: "100%", letterSpacing: 4, fontWeight: 700 }}
+                  type="password"
+                  inputMode="numeric"
+                  name="cashbook-pin"
+                  autoComplete="one-time-code"
+                  data-lpignore="true"
+                  data-form-type="other"
+                  data-1p-ignore="true"
+                  placeholder="••••"
+                  value={pin}
+                  onChange={(e) => { setPin(e.target.value); setErr(""); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+                />
+              </Field>
+            </div>
+          )}
+
+          {err && <div style={st.addErr}>{err}</div>}
+        </div>
+
+        <div style={st.modalFoot}>
+          <span style={{ fontSize: 11.5, color: FAINT, marginRight: "auto" }}>
+            {dirty
+              ? "The PIN is checked on the server; the change is recorded in Activity."
+              : "Nothing changed yet."}
+          </span>
+          <button type="button" className="ie-ghost" style={st.ghostBtn} onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="ie-add"
+            style={{ ...st.addBtn, background: tint, opacity: dirty && pin.trim() ? 1 : 0.45 }}
+            onClick={save}
+            disabled={busy || !dirty || !pin.trim()}
+          >{busy ? "Saving…" : "Save changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children, grow }: { label: string; children: React.ReactNode; grow?: boolean }) {
+  return (
+    <label style={{ display: "block", marginBottom: 13, flex: grow ? 1 : undefined, minWidth: grow ? 140 : undefined }}>
+      <span style={st.fieldLbl}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
 /* ── ledger ─────────────────────────────────────────────────────────────── */
-function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] }) {
+function Ledger({
+  anchorDate, payees, onEdit,
+}: {
+  anchorDate: string;
+  payees: Payee[];
+  onEdit: (e: EntryRow) => void;
+}) {
   const [view, setView] = useState<LedgerView>("expense");
   const [span, setSpan] = useState<Span>("month");
   const [from, setFrom] = useState(monthStart(anchorDate));
@@ -727,9 +1130,9 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
   const scopeLabel = query.trim() ? `${spanLabel} · “${query.trim()}”` : spanLabel;
 
   const exportRows = (list: (EntryRow & { running?: number })[], name: string) => {
-    const header = ["Date", "In/Out", "Name", "Phone", "Purpose", "Person", "Method", "Amount", "Running total"];
+    const header = ["Date", "Type", "Name", "Phone", "Purpose", "Person", "Method", "Amount", "Running total"];
     const body = list.map((e) => [
-      fmtDate(e.date.slice(0, 10)), e.kind === "income" ? "In" : "Out",
+      fmtDate(e.date.slice(0, 10)), e.kind === "income" ? "Income" : "Expense",
       e.title, phoneOf(e), e.notes || "",
       e.payee?.name || "", e.method, e.amount, e.running ?? "",
     ]);
@@ -751,7 +1154,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
       <tr>
         <td>${fmtDate(e.date.slice(0, 10))}</td>
         <td><b>${e.title}</b>${ph ? `<div class="n">${ph}</div>` : ""}${e.notes ? `<div class="n">${e.notes}</div>` : ""}</td>
-        ${twoWay ? `<td><span class="m">${e.kind === "income" ? "In" : "Out"}</span></td>` : ""}
+        ${twoWay ? `<td><span class="m">${e.kind === "income" ? "Income" : "Expense"}</span></td>` : ""}
         <td><span class="m">${e.method === "cash" ? "Cash" : "Online"}</span></td>
         <td class="amt">${rupeesExact(e.amount)}</td>
         <td class="run">${rupeesExact(e.running || 0)}</td>
@@ -788,7 +1191,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
         <div class="title"><h1>${heading}</h1><div class="per">${scopeLabel}</div></div>
       </div>
       <table>
-        <thead><tr><th>Date</th><th>Name, phone &amp; purpose</th>${twoWay ? "<th>In/Out</th>" : ""}<th>Method</th><th>Amount</th><th>Running</th></tr></thead>
+        <thead><tr><th>Date</th><th>Name, phone &amp; purpose</th>${twoWay ? "<th>Type</th>" : ""}<th>Method</th><th>Amount</th><th>Running</th></tr></thead>
         <tbody>${body}</tbody>
         <tfoot>
           ${twoWay ? `
@@ -812,6 +1215,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
           {([["expense", "Expense"], ["income", "Income"], ["person", "By person"]] as [LedgerView, string][]).map(([id, label]) => (
             <button
               key={id}
+              type="button"
               onClick={() => { setView(id); setPerson(""); }}
               style={{ ...st.tabBtn, background: view === id ? INK : "#fff", color: view === id ? "#fff" : MUTED }}
             >{label}</button>
@@ -833,7 +1237,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
             onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
           />
           {query && (
-            <button className="ie-clear" style={st.searchClear} onClick={() => setQuery("")} title="Clear search">×</button>
+            <button type="button" className="ie-clear" style={st.searchClear} onClick={() => setQuery("")} title="Clear search">×</button>
           )}
         </div>
 
@@ -842,6 +1246,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
             {([["month", monthName(anchorDate).split(" ")[0]], ["range", "Range"], ["all", "All time"]] as [Span, string][]).map(([id, label]) => (
               <button
                 key={id}
+                type="button"
                 onClick={() => setSpan(id)}
                 style={{ ...st.tabBtn, fontSize: 12.5, padding: "8px 14px", background: span === id ? "#6b625a" : "#fff", color: span === id ? "#fff" : MUTED }}
               >{label}</button>
@@ -849,9 +1254,9 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
           </div>
           {span === "range" && (
             <>
-              <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} style={st.dateInput} />
+              <DateField value={from} max={to} onChange={setFrom} width={146} title="From" />
               <span style={{ color: FAINT, fontSize: 12 }}>to</span>
-              <input type="date" value={to} min={from} max={isoDate()} onChange={(e) => setTo(e.target.value)} style={st.dateInput} />
+              <DateField value={to} min={from} max={isoDate()} onChange={setTo} width={146} title="To" />
             </>
           )}
         </div>
@@ -862,7 +1267,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
       {query.trim() && !loading && (
         <div style={st.filterNote}>
           Showing {visible.length} of {rows.length} entr{rows.length === 1 ? "y" : "ies"} matching “{query.trim()}”.
-          {" "}<button className="ie-link" style={st.linkBtn} onClick={() => setQuery("")}>Clear</button>
+          {" "}<button type="button" className="ie-link" style={st.linkBtn} onClick={() => setQuery("")}>Clear</button>
         </div>
       )}
 
@@ -880,6 +1285,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
             twoWay
             standing={{ paid: personPaid, received: personGot }}
             onBack={() => setPerson("")}
+            onEdit={onEdit}
             onExport={() => exportRows(personRows, `ledger-${selected.name}`)}
             onPrint={() => printRows(personRows, `${selected.name} — Statement`,
               round2(personPaid - personGot), INK, true)}
@@ -938,6 +1344,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
           rows={withRunning(view === "income" ? incomeRows : expenseRows)}
           tint={view === "income" ? GREEN : RED}
           emptyNote={query.trim() ? "Nothing matches that search." : "Nothing in this period."}
+          onEdit={onEdit}
           onExport={() => exportRows(withRunning(view === "income" ? incomeRows : expenseRows), `${view}-ledger`)}
           onPrint={() => {
             const list = withRunning(view === "income" ? incomeRows : expenseRows);
@@ -950,7 +1357,7 @@ function Ledger({ anchorDate, payees }: { anchorDate: string; payees: Payee[] })
 }
 
 function LedgerTable({
-  heading, sub, rows, tint, onBack, onExport, onPrint, twoWay, standing, emptyNote,
+  heading, sub, rows, tint, onBack, onExport, onPrint, onEdit, twoWay, standing, emptyNote,
 }: {
   heading: string; sub: string;
   rows: (EntryRow & { running: number })[];
@@ -958,6 +1365,7 @@ function LedgerTable({
   onBack?: () => void;
   onExport: () => void;
   onPrint: () => void;
+  onEdit?: (e: EntryRow) => void;
   /** a person's page mixes both directions, so each row is labelled */
   twoWay?: boolean;
   standing?: { paid: number; received: number };
@@ -971,7 +1379,7 @@ function LedgerTable({
   return (
     <div style={st.panel}>
       <div style={st.panelHead}>
-        {onBack && <button className="ie-nav" style={{ ...st.navBtn, width: 30, height: 30, fontSize: 15 }} onClick={onBack}>‹</button>}
+        {onBack && <button type="button" className="ie-nav" style={{ ...st.navBtn, width: 30, height: 30, fontSize: 15 }} onClick={onBack}>‹</button>}
         <div style={{ minWidth: 0 }}>
           <div style={st.panelTitle}>{heading}</div>
           <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{sub} · {rows.length} {rows.length === 1 ? "entry" : "entries"}</div>
@@ -1008,8 +1416,8 @@ function LedgerTable({
           )}
         </span>
 
-        <button className="ie-ghost" style={st.ghostBtn} onClick={onExport} disabled={!rows.length}>CSV</button>
-        <button className="ie-ghost" style={{ ...st.ghostBtn, background: INK, color: "#fff", borderColor: INK }} onClick={onPrint} disabled={!rows.length}>Print</button>
+        <button type="button" className="ie-ghost" style={st.ghostBtn} onClick={onExport} disabled={!rows.length}>CSV</button>
+        <button type="button" className="ie-ghost" style={{ ...st.ghostBtn, background: INK, color: "#fff", borderColor: INK }} onClick={onPrint} disabled={!rows.length}>Print</button>
       </div>
 
       <div className="ie-colbody" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
@@ -1021,10 +1429,11 @@ function LedgerTable({
               <tr>
                 <th style={st.th}>Date</th>
                 <th style={st.th}>Name, phone &amp; purpose</th>
-                {twoWay && <th style={st.th}>In/Out</th>}
+                {twoWay && <th style={st.th}>Type</th>}
                 <th style={st.th}>Method</th>
                 <th style={{ ...st.th, textAlign: "right" }}>Amount</th>
                 <th style={{ ...st.th, textAlign: "right" }}>Running</th>
+                {onEdit && <th style={{ ...st.th, width: 52 }} />}
               </tr>
             </thead>
             <tbody>
@@ -1046,7 +1455,7 @@ function LedgerTable({
                     {twoWay && (
                       <td style={st.td}>
                         <span style={{ ...st.chip, background: out ? "#fdeaee" : "#e8f6ee", color: out ? RED : GREEN }}>
-                          {out ? "Paid" : "Got"}
+                          {out ? "Expense" : "Income"}
                         </span>
                       </td>
                     )}
@@ -1059,6 +1468,18 @@ function LedgerTable({
                       {twoWay ? (out ? "−" : "+") : ""}{rupeesExact(e.amount)}
                     </td>
                     <td style={{ ...st.td, textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{rupeesExact(e.running)}</td>
+                    {onEdit && (
+                      <td style={{ ...st.td, textAlign: "right", padding: "6px 12px" }}>
+                        <button
+                          type="button"
+                          className="ie-act ie-edit"
+                          style={st.act}
+                          onClick={() => onEdit(e)}
+                          title="Edit this entry"
+                          aria-label="Edit entry"
+                        ><PencilIcon /></button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -1097,9 +1518,11 @@ function Tally({ label, value, color, accent, cash, online }: {
 /* ── styles ─────────────────────────────────────────────────────────────── */
 const CSS = `
   .ie-row:hover{background:${WASH};}
-  .ie-row .ie-del{opacity:0;transition:opacity .15s;}
-  .ie-row:hover .ie-del{opacity:1;}
-  .ie-del:hover{color:${RED} !important;background:#fdeaee;}
+  .ie-row .ie-act,.ie-trow .ie-act{opacity:0;transition:opacity .15s,background .12s,border-color .12s,color .12s;}
+  .ie-row:hover .ie-act,.ie-trow:hover .ie-act{opacity:1;}
+  .ie-act:focus-visible{opacity:1;outline:none;border-color:${ACCENT};box-shadow:0 0 0 3px ${ACCENT}1f;}
+  .ie-edit:hover{color:${ACCENT} !important;background:#fdf1eb;border-color:${ACCENT}66 !important;}
+  .ie-del:hover{color:${RED} !important;background:#fdeaee;border-color:${RED}55 !important;}
   .ie-nav:hover:not(:disabled){border-color:${ACCENT}66;color:${ACCENT};}
   .ie-today:hover:not(:disabled){background:${ACCENT};color:#fff;border-color:${ACCENT};}
   .ie-add:hover:not(:disabled){filter:brightness(1.1);}
@@ -1129,7 +1552,6 @@ const st: Record<string, React.CSSProperties> = {
 
   dateBar:   { display: "flex", alignItems: "center", gap: 6 },
   navBtn:    { width: 34, height: 36, border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 19, lineHeight: 1, cursor: "pointer", transition: "all .15s", flexShrink: 0 },
-  dateInput: { padding: "8px 11px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK, colorScheme: "light" },
   todayBtn:  { padding: "9px 15px", border: `1px solid ${LINE}`, background: "#fff", color: ACCENT, fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", transition: "all .15s" },
   lockBtn:   { display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", transition: "all .15s" },
   error:     { padding: "10px 14px", marginBottom: 14, background: "#fdecea", border: "1px solid #f3cfc2", fontSize: 13, color: "#8a2f16" },
@@ -1177,17 +1599,34 @@ const st: Record<string, React.CSSProperties> = {
   rowAmt:    { fontSize: 14.5, fontWeight: 800, fontVariantNumeric: "tabular-nums", flexShrink: 0, minWidth: 78, textAlign: "right" },
   twoWayCell:{ display: "flex", flexDirection: "column", gap: 1, alignItems: "flex-end", flexShrink: 0, minWidth: 88 },
   twoWayVal: { fontSize: 11.5, fontWeight: 700, fontVariantNumeric: "tabular-nums" },
-  del:       { width: 24, height: 24, border: "none", background: "transparent", color: FAINT, fontSize: 18, lineHeight: 1, cursor: "pointer", flexShrink: 0, padding: 0, borderRadius: 4, transition: "all .12s" },
+  rowActs:   { display: "flex", alignItems: "center", gap: 5, flexShrink: 0, marginLeft: 4 },
+  act:       { width: 28, height: 28, border: `1px solid ${LINE}`, background: "#fff", color: MUTED, cursor: "pointer", flexShrink: 0, padding: 0, borderRadius: 4, display: "inline-flex", alignItems: "center", justifyContent: "center" },
 
   addWrap:   { padding: "12px 16px", borderBottom: `1px solid ${LINE}`, background: WASH },
   addRow:    { display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" },
   newWrap:   { display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", marginTop: 7, padding: "9px 10px", background: "#fff", border: `1px dashed ${ACCENT}66` },
   in:        { boxSizing: "border-box", padding: "9px 11px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK, colorScheme: "light", transition: "border-color .15s, box-shadow .15s" },
   seg:       { display: "flex", border: `1px solid ${LINE}`, flexShrink: 0 },
+  /** Only as wide as its buttons — for a pair sitting on its own line. */
+  segInline: { display: "inline-flex", border: `1px solid ${LINE}`, width: "fit-content", flexShrink: 0 },
   segBtn:    { padding: "9px 13px", border: "none", fontSize: 11.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" },
   addBtn:    { padding: "9px 20px", border: "none", color: "#fff", fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", flexShrink: 0, transition: "filter .15s" },
   addErr:    { fontSize: 12, color: RED, marginTop: 7, fontWeight: 600 },
   backdated: { fontSize: 11.5, color: ACCENT, marginTop: 7, fontWeight: 600 },
+
+  backdrop:  { position: "fixed", inset: 0, background: "rgba(42,35,29,.42)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "6vh 16px 24px", zIndex: 1000, overflowY: "auto" },
+  modal:     { background: "#fff", border: `1px solid ${LINE}`, width: "100%", maxWidth: 520, boxShadow: "0 18px 48px rgba(42,35,29,.22)", display: "flex", flexDirection: "column" },
+  modalHead: { display: "flex", alignItems: "flex-start", gap: 12, padding: "15px 18px", borderTop: "3px solid", borderBottom: `1px solid ${LINE_SOFT}`, background: WASH },
+  modalTitle:{ fontSize: 15.5, fontWeight: 800 },
+  modalSub:  { fontSize: 11.5, color: MUTED, marginTop: 3, lineHeight: 1.5 },
+  closeBtn:  { width: 28, height: 28, marginLeft: "auto", border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 17, lineHeight: 1, cursor: "pointer", flexShrink: 0, transition: "all .15s" },
+  modalBody: { padding: "16px 18px 4px" },
+  modalFoot: { display: "flex", alignItems: "center", gap: 8, padding: "13px 18px", borderTop: `1px solid ${LINE_SOFT}`, background: WASH, flexWrap: "wrap" },
+  fieldRow:  { display: "flex", gap: 11, flexWrap: "wrap" },
+  fieldLbl:  { display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: MUTED, marginBottom: 5 },
+  pinWrap:   { position: "relative", padding: "12px 13px 1px", marginTop: 3, background: "#fdf6ef", border: `1px solid ${ACCENT}33` },
+  /** Off-screen but not display:none — a hidden field the manager ignores. */
+  decoy:     { position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0 0 0 0)", border: 0, opacity: 0 },
 
   ledgerBar: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 },
   searchWrap:{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 240px", maxWidth: 340, minWidth: 190 },
