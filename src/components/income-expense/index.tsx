@@ -13,6 +13,11 @@
 // The add form sits directly under the column header, so a new entry never
 // needs a scroll to the bottom of a long day.
 //
+// The person is CHOSEN BY TYPING, not by hunting: the list of names outgrew
+// the browser's own drop-down long ago, and a wheel is a poor way to find one
+// name among forty. PersonPicker opens a box you type into — a name or a
+// number — and the keyboard does the rest.
+//
 // A new name is saved as a person by NAME — the number is optional, because
 // at the counter a name is always written down and a number often never is.
 //
@@ -33,7 +38,7 @@
 // search box narrows it — a name, a number or a word from the purpose — and
 // the totals, the CSV and the print all follow what is on screen.
 // ─────────────────────────────────────────────────────────────────────────
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   cashbookApi,
   type Entry, type EntryInput, type PayMethod, type TxnKind,
@@ -54,6 +59,9 @@ const phoneOf = (e: EntryRow) => (e.phone || e.payee?.phone || "").trim();
 /** What came back from trying to save a person: the row, or why it failed. */
 type PayeeResult = { payee: Payee } | { error: string };
 
+/** The value the person field carries while a brand-new name is being typed. */
+const NEW_PERSON = "__other__";
+
 /* ── icons ──────────────────────────────────────────────────────────────── */
 const PencilIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -70,6 +78,13 @@ const TrashIcon = () => (
     <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
     <path d="M10 11v6M14 11v6" />
+  </svg>
+);
+
+const SearchIcon = ({ size = 14 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
   </svg>
 );
 
@@ -110,7 +125,7 @@ export default function IncomeExpense() {
 
   const loadPayees = useCallback(async () => {
     if (!unlocked) return;
-    try { setPayees(await payeeApi.list({})); } catch { /* dropdown just stays short */ }
+    try { setPayees(await payeeApi.list({})); } catch { /* the picker just stays short */ }
   }, [unlocked]);
   useEffect(() => { loadPayees(); }, [loadPayees]);
 
@@ -176,7 +191,7 @@ export default function IncomeExpense() {
   };
 
   /**
-   * A name typed here becomes a person, so the dropdown grows on its own and
+   * A name typed here becomes a person, so the list grows on its own and
    * nobody visits a separate screen to pay a new vendor.
    *
    * The NAME is the identity, so the number can be left blank — and a name
@@ -295,6 +310,211 @@ export default function IncomeExpense() {
           onSave={saveEdit}
           onAddPayee={addPayee}
         />
+      )}
+    </div>
+  );
+}
+
+/* ── searchable person picker ────────────────────────────────────────────────
+   The studio's list of names passed forty a while ago, and a native <select>
+   offers nothing but a wheel to get down it — SARUK SK sat below the fold on
+   both columns. This opens the same list under a box you type into: a name, or
+   a phone number by its digits, with arrows to move, Enter to take and Escape
+   to back out. Nothing is hidden that the old list showed — employees still
+   come first, others after — only the hunting is gone.
+
+   The "+ New name…" row carries whatever was typed into the new-name panel, so
+   a name that isn't on file yet is one keystroke away from being one.         */
+function PersonPicker({
+  value, onChange, payees, placeholder = "Choose person…", noneLabel, tone = "expense", style,
+}: {
+  value: string;
+  /** the picked id ("" = nobody, NEW_PERSON = a new name), plus what was typed */
+  onChange: (id: string, typed: string) => void;
+  payees: Payee[];
+  placeholder?: string;
+  /** when given, a row at the top that clears the person */
+  noneLabel?: string;
+  tone?: TxnKind;
+  style?: React.CSSProperties;
+}) {
+  const [open, setOpen]     = useState(false);
+  const [q, setQ]           = useState("");
+  const [active, setActive] = useState(0);
+
+  const wrapRef  = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const listRef  = useRef<HTMLDivElement | null>(null);
+
+  const tint = tone === "income" ? GREEN : RED;
+
+  const selected = payees.find((p) => p.id === value) || null;
+  const isNew    = value === NEW_PERSON;
+
+  /* A name matches on any part of it, so "sk" finds MINTU SK; a number matches
+   * on digits alone, so 8609339511 is found by "8609" or "8609 33". */
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return payees;
+    const digits = term.replace(/\D/g, "");
+    const words  = term.split(/\s+/).filter(Boolean);
+    return payees.filter((p) => {
+      const name = (p.name || "").toLowerCase();
+      if (words.every((w) => name.includes(w))) return true;
+      if (digits && (p.phone || "").replace(/\D/g, "").includes(digits)) return true;
+      return false;
+    });
+  }, [payees, q]);
+
+  const employees = useMemo(() => filtered.filter((p) => p.kind === "employee"), [filtered]);
+  const outsiders = useMemo(() => filtered.filter((p) => p.kind !== "employee"), [filtered]);
+
+  type Item = { key: string; row: "none" | "payee" | "new"; payee?: Payee; group?: string };
+  const items = useMemo<Item[]>(() => {
+    const list: Item[] = [];
+    if (noneLabel && !q.trim()) list.push({ key: "__none__", row: "none" });
+    employees.forEach((p, i) => list.push({ key: p.id, row: "payee", payee: p, group: i === 0 ? "Employees" : undefined }));
+    outsiders.forEach((p, i) => list.push({ key: p.id, row: "payee", payee: p, group: i === 0 ? "Others" : undefined }));
+    list.push({ key: NEW_PERSON, row: "new" });
+    return list;
+  }, [employees, outsiders, noneLabel, q]);
+
+  /* Close when the click lands anywhere else on the page. */
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  /* Opening starts from a clean search with the cursor already in it. */
+  useEffect(() => {
+    if (!open) return;
+    setQ(""); setActive(0);
+    const t = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [open]);
+
+  useEffect(() => { setActive(0); }, [q]);
+
+  /* Keep the highlighted row inside the visible strip while arrowing. */
+  useLayoutEffect(() => {
+    if (!open || !listRef.current) return;
+    listRef.current.querySelector<HTMLElement>(`[data-i="${active}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [active, open]);
+
+  const take = (i: number) => {
+    const it = items[i];
+    if (!it) return;
+    if (it.row === "none")      onChange("", "");
+    else if (it.row === "new")  onChange(NEW_PERSON, q.trim());
+    else                        onChange(it.payee!.id, "");
+    setOpen(false);
+  };
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") { e.preventDefault(); setOpen(true); }
+      return;
+    }
+    const last = items.length - 1;
+    if (e.key === "ArrowDown")      { e.preventDefault(); setActive((i) => (i >= last ? 0 : i + 1)); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); setActive((i) => (i <= 0 ? last : i - 1)); }
+    else if (e.key === "Enter")     { e.preventDefault(); take(active); }
+    else if (e.key === "Escape")    { e.preventDefault(); setOpen(false); }
+    else if (e.key === "Tab")       { setOpen(false); }
+  };
+
+  const label = isNew ? "+ New name…" : selected ? selected.name : placeholder;
+  const muted = !isNew && !selected;
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative", ...style }}>
+      <button
+        type="button"
+        className="ie-in ie-picker"
+        style={{ ...st.in, ...pk.trigger, borderColor: open ? ACCENT : LINE, color: muted ? FAINT : INK }}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={onKey}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={selected?.phone ? `${selected.name} · ${selected.phone}` : label}
+      >
+        <span style={pk.triggerText}>{label}</span>
+        <span style={{ color: FAINT, fontSize: 10, flexShrink: 0 }}>▼</span>
+      </button>
+
+      {open && (
+        <div style={pk.pop}>
+          <div style={pk.searchWrap}>
+            <span style={pk.searchIcon}><SearchIcon size={13} /></span>
+            <input
+              ref={inputRef}
+              className="ie-in"
+              style={pk.searchIn}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={onKey}
+              placeholder="Type a name or number…"
+            />
+          </div>
+
+          <div ref={listRef} className="ie-colbody" style={pk.list} role="listbox">
+            {items.map((it, i) => {
+              const on = i === active;
+
+              if (it.row === "none") {
+                return (
+                  <button
+                    key={it.key} type="button" data-i={i} role="option" aria-selected={!value}
+                    onMouseEnter={() => setActive(i)} onClick={() => take(i)}
+                    style={{ ...pk.opt, background: on ? WASH : "transparent", color: MUTED, fontStyle: "italic" }}
+                  >{noneLabel}</button>
+                );
+              }
+
+              if (it.row === "new") {
+                return (
+                  <div key={it.key}>
+                    <div style={pk.sep} />
+                    <button
+                      type="button" data-i={i} role="option" aria-selected={isNew}
+                      onMouseEnter={() => setActive(i)} onClick={() => take(i)}
+                      style={{ ...pk.opt, background: on ? WASH : "transparent", color: tint, fontWeight: 700 }}
+                    >+ {q.trim() ? `Add “${q.trim()}”` : "New name…"}</button>
+                  </div>
+                );
+              }
+
+              const p = it.payee!;
+              return (
+                <div key={it.key}>
+                  {it.group && <div style={pk.group}>{it.group}</div>}
+                  <button
+                    type="button" data-i={i} role="option" aria-selected={p.id === value}
+                    onMouseEnter={() => setActive(i)} onClick={() => take(i)}
+                    style={{ ...pk.opt, background: on ? WASH : p.id === value ? "#fdf6ef" : "transparent", display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <span style={{ ...st.avatar, width: 22, height: 22, fontSize: 9, background: p.kind === "employee" ? ACCENT : GOLD }}>
+                      {initials(p.name)}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: p.id === value ? 700 : 500 }}>
+                      {p.name}
+                    </span>
+                    {p.phone && <span style={pk.optPhone}>{p.phone}</span>}
+                  </button>
+                </div>
+              );
+            })}
+
+            {employees.length === 0 && outsiders.length === 0 && q.trim() && (
+              <div style={pk.none}>Nobody on file matches “{q.trim()}”.</div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -486,10 +706,7 @@ function AddRow({
   const phoneRef = useRef<HTMLInputElement | null>(null);
   const amtRef   = useRef<HTMLInputElement | null>(null);
 
-  const isNew = payeeId === "__other__";
-
-  const employees = payees.filter((p) => p.kind === "employee");
-  const outsiders = payees.filter((p) => p.kind !== "employee");
+  const isNew = payeeId === NEW_PERSON;
 
   // Picking a saved person fills their number in, so it is visible before the
   // entry is written rather than only afterwards on the row.
@@ -538,7 +755,6 @@ function AddRow({
         notes: purpose.trim(),
       } as EntryInput & { date: string });
       reset();
-      nameRef.current?.focus();
     } catch (e: any) {
       setErr(e?.response?.data?.error || "Could not save that.");
     } finally {
@@ -554,26 +770,19 @@ function AddRow({
       {/* line 1 — who, their number, how much */}
       <div style={st.addRow}>
         {/* Both sides pick from the SAME list of people, so a customer who
-            pays at the counter and is later paid for a job shows one history. */}
-        <select
-          className="ie-in"
-          style={{ ...st.in, flex: 1, minWidth: 120, cursor: "pointer" }}
+            pays at the counter and is later paid for a job shows one history.
+            Typing narrows it; nothing here has to be scrolled to. */}
+        <PersonPicker
           value={payeeId}
-          onChange={(e) => { setPayeeId(e.target.value); setErr(""); }}
-        >
-          <option value="">Choose person…</option>
-          {employees.length > 0 && (
-            <optgroup label="Employees">
-              {employees.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </optgroup>
-          )}
-          {outsiders.length > 0 && (
-            <optgroup label="Others">
-              {outsiders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </optgroup>
-          )}
-          <option value="__other__">+ New name…</option>
-        </select>
+          payees={payees}
+          tone={kind}
+          style={{ flex: 1, minWidth: 130 }}
+          onChange={(id, q) => {
+            setPayeeId(id);
+            if (id === NEW_PERSON) setTyped(q);   // carry the search into the new-name box
+            setErr("");
+          }}
+        />
 
         <input
           ref={phoneRef} className="ie-in"
@@ -725,9 +934,7 @@ function EditModal({
   const [busy,    setBusy]    = useState(false);
   const [err,     setErr]     = useState("");
 
-  const isNew = payeeId === "__other__";
-  const employees = payees.filter((p) => p.kind === "employee");
-  const outsiders = payees.filter((p) => p.kind !== "employee");
+  const isNew = payeeId === NEW_PERSON;
 
   // Escape closes, as it does in every dialog the studio already uses.
   useEffect(() => {
@@ -834,25 +1041,19 @@ function EditModal({
           </Field>
 
           <Field label="Person">
-            <select
-              className="ie-in"
-              style={{ ...st.in, width: "100%", cursor: "pointer" }}
+            <PersonPicker
               value={payeeId}
-              onChange={(e) => { setPayeeId(e.target.value); setErr(""); }}
-            >
-              <option value="">Nobody / walk-in</option>
-              {employees.length > 0 && (
-                <optgroup label="Employees">
-                  {employees.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </optgroup>
-              )}
-              {outsiders.length > 0 && (
-                <optgroup label="Others">
-                  {outsiders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </optgroup>
-              )}
-              <option value="__other__">+ New name…</option>
-            </select>
+              payees={payees}
+              tone={kind}
+              placeholder="Nobody / walk-in"
+              noneLabel="Nobody / walk-in"
+              style={{ width: "100%" }}
+              onChange={(id, q) => {
+                setPayeeId(id);
+                if (id === NEW_PERSON && q) setTyped(q);
+                setErr("");
+              }}
+            />
           </Field>
 
           {isNew ? (
@@ -1224,10 +1425,7 @@ function Ledger({
 
         {/* One box for a name, a number or a word from the purpose. */}
         <div style={st.searchWrap}>
-          <svg style={st.searchIcon} width="14" height="14" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
-          </svg>
+          <span style={st.searchIcon}><SearchIcon /></span>
           <input
             className="ie-in"
             style={st.searchIn}
@@ -1530,6 +1728,7 @@ const CSS = `
   .ie-ghost:hover:not(:disabled){filter:brightness(.96);}
   .ie-ghost:disabled{opacity:.45;cursor:not-allowed;}
   .ie-in:focus{outline:none;border-color:${ACCENT};box-shadow:0 0 0 3px ${ACCENT}1f;}
+  .ie-picker:hover{border-color:${ACCENT}66;}
   .ie-clear:hover{color:${RED} !important;}
   .ie-link:hover{text-decoration:underline;}
   .ie-trow:hover td{background:${WASH};}
@@ -1630,7 +1829,7 @@ const st: Record<string, React.CSSProperties> = {
 
   ledgerBar: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 },
   searchWrap:{ position: "relative", display: "flex", alignItems: "center", flex: "1 1 240px", maxWidth: 340, minWidth: 190 },
-  searchIcon:{ position: "absolute", left: 11, color: FAINT, pointerEvents: "none" },
+  searchIcon:{ position: "absolute", left: 11, color: FAINT, pointerEvents: "none", display: "inline-flex" },
   searchIn:  { boxSizing: "border-box", width: "100%", padding: "9px 30px 9px 32px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK, transition: "border-color .15s, box-shadow .15s" },
   searchClear:{ position: "absolute", right: 6, width: 22, height: 22, border: "none", background: "transparent", color: FAINT, fontSize: 17, lineHeight: 1, cursor: "pointer", padding: 0, transition: "color .12s" },
   filterNote:{ display: "flex", alignItems: "center", gap: 6, padding: "8px 13px", marginBottom: 12, background: "#fdf6ef", border: `1px solid ${ACCENT}33`, fontSize: 12.5, color: "#7a5240", fontWeight: 600 },
@@ -1648,4 +1847,20 @@ const st: Record<string, React.CSSProperties> = {
   table:     { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th:        { position: "sticky", top: 0, background: "#fdf0e7", color: "#7a5240", padding: "9px 14px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, textAlign: "left", borderBottom: `1px solid ${LINE}` },
   td:        { padding: "10px 14px", borderBottom: `1px solid ${LINE_SOFT}`, transition: "background .12s" },
+};
+
+/* ── person picker styles ───────────────────────────────────────────────── */
+const pk: Record<string, React.CSSProperties> = {
+  trigger:    { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", textAlign: "left", fontWeight: 600 },
+  triggerText:{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  pop:        { position: "absolute", zIndex: 80, top: "calc(100% + 4px)", left: 0, right: 0, minWidth: 230, background: "#fff", border: `1px solid ${LINE}`, boxShadow: "0 14px 32px rgba(42,35,29,.18)" },
+  searchWrap: { position: "relative", display: "flex", alignItems: "center", padding: 8, borderBottom: `1px solid ${LINE_SOFT}`, background: WASH },
+  searchIcon: { position: "absolute", left: 19, color: FAINT, pointerEvents: "none", display: "inline-flex" },
+  searchIn:   { boxSizing: "border-box", width: "100%", padding: "8px 10px 8px 30px", border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontFamily: "inherit", color: INK },
+  list:       { maxHeight: 248, overflowY: "auto", padding: "4px 0" },
+  group:      { padding: "7px 12px 3px", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: FAINT },
+  opt:        { width: "100%", textAlign: "left", padding: "7px 12px", border: "none", background: "transparent", fontFamily: "inherit", fontSize: 13, color: INK, cursor: "pointer", lineHeight: 1.35 },
+  optPhone:   { fontSize: 11, color: MUTED, fontVariantNumeric: "tabular-nums", flexShrink: 0 },
+  sep:        { height: 1, background: LINE_SOFT, margin: "4px 0" },
+  none:       { padding: "14px 12px", fontSize: 12.5, color: FAINT },
 };
