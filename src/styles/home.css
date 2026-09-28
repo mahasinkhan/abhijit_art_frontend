@@ -271,3 +271,46 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ---------- hero slides (managed from the admin panel) ---------- */
+.ap-hero-frame > img.ap-hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  z-index: 0;
+  transition: opacity 0.9s ease;
+}
+.ap-hero-frame > img.ap-hero-img.is-on {
+  opacity: 1;
+  z-index: 1;
+  animation: apHeroIn 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes apHeroIn {
+  from { opacity: 0; transform: scale(1.06); }
+  to   { opacity: 1; transform: none; }
+}
+.ap-hero .ap-hero-scrim { z-index: 2; }
+.ap-hero .ap-hero-inner { z-index: 3; }
+
+.ap-hero-dots {
+  position: absolute;
+  z-index: 4;
+  right: clamp(18px, 3vw, 40px);
+  bottom: clamp(18px, 3vw, 36px);
+  display: flex;
+  gap: 10px;
+}
+.ap-hero-dots button {
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.3s ease;
+}
+.ap-hero-dots button.on { background: #ffffff; transform: scale(1.25); }

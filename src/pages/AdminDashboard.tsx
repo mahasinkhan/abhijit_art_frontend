@@ -16,8 +16,9 @@ const Settings         = lazy(() => import("../components/Settings"));
 const Tasks            = lazy(() => import("../components/tasks"));
 const Employees        = lazy(() => import("../components/employees"));
 const QuickOrders      = lazy(() => import("../components/quick-order"));
+const HeroSlides       = lazy(() => import("../components/HeroSlides"));
 
-type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "expenses" | "activity" | "posts" | "employees" | "tasks" | "khata" | "settings";
+type Tab = "bookings" | "customers" | "inventory" | "billing" | "invoices" | "reminders" | "expenses" | "activity" | "posts" | "employees" | "tasks" | "khata" | "hero" | "settings";
 type BillingVariant = "full" | "half";
 
 const ACCENT = "#d9542f";
@@ -54,6 +55,7 @@ const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "khata",     label: "Quick Orders",     Icon: IconKhata     },
   { id: "employees", label: "Employees",        Icon: IconEmployees },
   { id: "tasks",     label: "Tasks",            Icon: IconTasks     },
+  { id: "hero",      label: "Hero Slides",      Icon: IconPosts     },
   { id: "settings",  label: "Settings",         Icon: IconSettings  },
 ];
 
@@ -70,6 +72,7 @@ const TITLES: Record<Tab, string> = {
   khata:     "Quick Orders",
   employees: "Employees",
   tasks:     "Tasks",
+  hero:      "Hero slides",
   settings:  "Settings",
 };
 
@@ -225,6 +228,7 @@ export default function AdminDashboard() {
                 onGoToBilling={() => setActiveTab("billing")}
               />
             )}
+            {activeTab === "hero"      && <HeroSlides />}
             {activeTab === "settings"  && <Settings />}
           </Suspense>
         </main>
